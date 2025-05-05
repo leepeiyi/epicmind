@@ -24,7 +24,7 @@
         <input type="password" placeholder="Password" v-model="password" required />
         <div class="actions">
           <label><input type="checkbox" v-model="remember" /> Remember me</label>
-          <a href="#">Forgot Password?</a>
+          <a @click.prevent="$router.push('/forgot-password')">Forgot Password?</a>
         </div>
         <button type="submit" class="submit-btn">Login</button>
       </form>
