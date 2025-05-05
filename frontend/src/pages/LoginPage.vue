@@ -2,10 +2,6 @@
   <div class="login-page">
     <!-- Left Panel -->
     <div class="left-panel" :style="{ backgroundImage: `url(${studentImage})` }">
-      <div class="bottom-text">
-        <h2>Turn your ideas into reality.</h2>
-        <p>Start for free and get attractive offers from the community</p>
-      </div>
     </div>
 
 
@@ -33,7 +29,10 @@
         <button type="submit" class="submit-btn">Login</button>
       </form>
 
-      <p class="register">Not Registered Yet? <a href="#">Create an account</a></p>
+      <p class="register">
+        Not Registered Yet? <router-link to="/register">Create an account</router-link>
+      </p>
+
     </div>
   </div>
 </template>
@@ -41,6 +40,7 @@
 <script>
 import studentImage from '../assets/student-illustration.png';
 import logoImage from '../assets/epic-mind-logo.png';
+import axios from 'axios';
 
 export default {
   name: 'LoginPage',
@@ -54,10 +54,24 @@ export default {
     };
   },
   methods: {
-    handleLogin() {
-      alert(`Logging in with ${this.email}`);
-    }
-  }
+    async handleLogin() {
+      try {
+        const response = await axios.post('http://localhost:5008/api/user/login', {
+          email: this.email,
+          password: this.password,
+        });
+
+        const { token, user } = response.data;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+
+        this.$router.push('/insert-paper'); 
+        // TODO: route to dashboard
+      } catch (err) {
+        alert(err.response?.data?.error || 'Login failed');
+      }
+    },
+  },
 };
 </script>
 
@@ -72,34 +86,18 @@ export default {
 .left-panel {
   flex: 1;
   background-size: cover;
+  /* Ensures the image covers the entire panel */
   background-position: center;
   background-repeat: no-repeat;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  /* text moves to bottom */
   padding: 3rem 2rem;
   color: white;
   position: relative;
   text-align: center;
 }
 
-.bottom-text {
-  background-color: rgba(0, 0, 0, 0.35);
-  /* optional translucent box */
-  padding: 1.5rem;
-  border-radius: 10px;
-}
-
-.bottom-text h2 {
-  font-size: 36px;
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-}
-
-.bottom-text p {
-  font-size: 16px;
-}
 
 
 .character-box img.character {
@@ -130,13 +128,14 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  /* Add this to center content horizontally */
+  text-align: center;
+  /* Optional: Center text under the logo */
 }
 
 .logo {
-  width: 600px;
-  /* increased from 180px */
-  margin-bottom: 2rem;
-
+  width: 200px;
 }
 
 .subtitle {
@@ -206,6 +205,7 @@ form input {
   text-decoration: none;
 }
 
+
 @media (max-width: 768px) {
   .left-panel {
     display: none;
@@ -222,4 +222,12 @@ form input {
   }
 }
 
+@media (min-width: 769px) and (max-width: 1200px) {
+  .left-panel {
+    background-size: contain;
+    /* Adjust the image size for medium screens */
+    padding: 2rem 1rem;
+    /* Reduce padding for better fit */
+  }
+}
 </style>
