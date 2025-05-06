@@ -19,6 +19,7 @@ const client = new Client({
 // ✅ List of SQL files to execute
 const sqlFiles = [
   path.join(__dirname, 'db', 'users.sql'),
+  path.join(__dirname, 'db', 'question.sql'),
 
 ];
 
