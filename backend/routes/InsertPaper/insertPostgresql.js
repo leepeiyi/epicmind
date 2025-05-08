@@ -1,8 +1,8 @@
-// 🔧 insertPostgresql.js
+// 🔧 insertPostgresql.js (fixed with Pool)
 require("dotenv").config();
-const { Client } = require("pg");
+const { Pool } = require("pg");
 
-const client = new Client({
+const pool = new Pool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   port: process.env.DB_PORT,
@@ -15,23 +15,22 @@ const client = new Client({
 });
 
 const insertJSONPayload = async (parsedJSON) => {
-  try {
-    await client.connect();
-    console.log("✅ Connected to the database");
+  const client = await pool.connect();
 
+  try {
+    console.log("✅ Connected to the database");
     const { paper_name, subject, banding, level, questions } = parsedJSON;
-    const fullPaperName =
-      `${paper_name}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
+    const fullPaperName = `${paper_name}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
 
     for (const item of questions) {
       await client.query(
         `INSERT INTO question (
-                    paper_name, page_number, question_number, question_text,
-                    answer_options, image_paths, topic_label, answer_key,
-                    subject, banding, level
-                 )
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                 ON CONFLICT DO NOTHING;`,
+          paper_name, page_number, question_number, question_text,
+          answer_options, image_paths, topic_label, answer_key,
+          subject, banding, level
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT DO NOTHING;`,
         [
           fullPaperName,
           item.page_number,
@@ -53,8 +52,8 @@ const insertJSONPayload = async (parsedJSON) => {
     console.error("❌ Error inserting JSON data:", err.message);
     throw err;
   } finally {
-    await client.end();
-    console.log("🔌 Disconnected from the database");
+    client.release(); // ✅ important for reusing clients
+    console.log("🔌 Client released");
   }
 };
 
