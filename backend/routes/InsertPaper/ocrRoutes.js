@@ -14,7 +14,9 @@ const { exec } = require("child_process");
 
 const { split_image } = require("./split_image");
 const { OcrExecutionMinor: OcrExamExecutor } = require("./ocrExecutorExam");
-const { OcrExecutionMinor: OcrTopicalExecutor } = require("./ocrExecutorTopical");
+const {
+  OcrExecutionMinor: OcrTopicalExecutor,
+} = require("./ocrExecutorTopical");
 const { topicLabelling } = require("./topicLabelling");
 const insertJSONPayload = require("./insertPostgresql");
 
@@ -80,7 +82,10 @@ router.post("/split_pdf", upload.single("file"), async (req, res) => {
 
     const paperName = req.file.originalname.replace(".pdf", "");
     const { subject, banding = "", level } = req.body;
-    const folderName = `${paperName}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
+    const folderName = `${paperName}_${subject}_${banding}_${level}`.replace(
+      /\s+/g,
+      "_"
+    );
 
     const listCommand = new ListObjectsV2Command({
       Bucket: process.env.S3_BUCKET_NAME,
@@ -94,7 +99,13 @@ router.post("/split_pdf", upload.single("file"), async (req, res) => {
     }
 
     sendProgressUpdate(1, "File submitted");
-    const imageUrls = await split_image(req.file.buffer, paperName, subject, banding, level);
+    const imageUrls = await split_image(
+      req.file.buffer,
+      paperName,
+      subject,
+      banding,
+      level
+    );
     sendProgressUpdate(2, "PDF split into images");
 
     const resultPayload = {
@@ -118,7 +129,9 @@ router.post("/split_pdf", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error in /split_pdf:", error);
-    res.status(500).json({ message: "Internal server error: " + error.message });
+    res
+      .status(500)
+      .json({ message: "Internal server error: " + error.message });
   }
 });
 
@@ -130,7 +143,10 @@ router.post("/split_topical", upload.single("file"), async (req, res) => {
 
     const paperName = req.file.originalname.replace(/\.(pdf|docx)$/i, "");
     const { subject, banding = "", level } = req.body;
-    const folderName = `${paperName}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
+    const folderName = `${paperName}_${subject}_${banding}_${level}`.replace(
+      /\s+/g,
+      "_"
+    );
 
     const listCommand = new ListObjectsV2Command({
       Bucket: process.env.S3_BUCKET_NAME,
@@ -149,15 +165,25 @@ router.post("/split_topical", upload.single("file"), async (req, res) => {
     const isDOCX = req.file.mimetype.includes("wordprocessingml");
 
     if (isPDF) {
-      imageUrls = await split_image(req.file.buffer, paperName, subject, banding, level);
+      imageUrls = await split_image(
+        req.file.buffer,
+        paperName,
+        subject,
+        banding,
+        level
+      );
     } else if (isDOCX) {
-      const tempDocxPath = path.join(os.tmpdir(), `${crypto.randomUUID()}.docx`);
+      const tempDocxPath = path.join(
+        os.tmpdir(),
+        `${crypto.randomUUID()}.docx`
+      );
       await fsp.writeFile(tempDocxPath, req.file.buffer);
 
       const docxBuffer = await fsp.readFile(tempDocxPath);
       const convertedPdf = await new Promise((resolve, reject) => {
         libre.convert(docxBuffer, ".pdf", undefined, (err, done) => {
-          if (err) return reject(new Error(`LibreOffice error: ${err.message}`));
+          if (err)
+            return reject(new Error(`LibreOffice error: ${err.message}`));
           resolve(done);
         });
       });
@@ -166,9 +192,17 @@ router.post("/split_topical", upload.single("file"), async (req, res) => {
       await fsp.writeFile(tempPdfPath, convertedPdf);
 
       const finalPdfBuffer = await fsp.readFile(tempPdfPath);
-      imageUrls = await split_image(finalPdfBuffer, paperName, subject, banding, level);
+      imageUrls = await split_image(
+        finalPdfBuffer,
+        paperName,
+        subject,
+        banding,
+        level
+      );
     } else {
-      return res.status(400).json({ message: "Only PDF or Word files allowed." });
+      return res
+        .status(400)
+        .json({ message: "Only PDF or Word files allowed." });
     }
 
     sendProgressUpdate(2, "Converted to images, running OCR...");
@@ -195,7 +229,9 @@ router.post("/split_topical", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error in /split_topical:", error);
-    res.status(500).json({ message: "Internal server error: " + error.message });
+    res
+      .status(500)
+      .json({ message: "Internal server error: " + error.message });
   }
 });
 
@@ -215,7 +251,9 @@ router.post("/topicLabelling", async (req, res) => {
     res.status(200).json(labelled);
   } catch (error) {
     console.error("❌ Error in /topicLabelling:", error);
-    res.status(500).json({ message: "Topic labelling failed: " + error.message });
+    res
+      .status(500)
+      .json({ message: "Topic labelling failed: " + error.message });
   }
 });
 
@@ -234,7 +272,7 @@ router.get("/questions/:paperName", async (req, res) => {
   const client = await pool.connect();
   try {
     const query = `
-      SELECT question_number, question_text, answer_options, image_paths
+      SELECT question_number, question_text, answer_options, image_paths, answer_key
       FROM question
       WHERE paper_name = $1
       ORDER BY question_number::int
@@ -264,11 +302,76 @@ router.post("/upload_diagram", upload.single("image"), async (req, res) => {
     });
     await s3.send(uploadCommand);
 
-    const url = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(paper_name).replace(/%20/g, "+")}/${fileName}`;
+    const url = `https://${process.env.S3_BUCKET_NAME}.s3.${
+      process.env.S3_REGION
+    }.amazonaws.com/${encodeURIComponent(paper_name).replace(
+      /%20/g,
+      "+"
+    )}/${fileName}`;
     res.json({ image_url: url });
   } catch (err) {
     console.error("Upload diagram failed:", err);
     res.status(500).json({ message: "Upload failed." });
+  }
+});
+
+
+// === Save Edited Paper (UPDATE DB) ===
+router.post("/save_edited_paper", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { paper_name, subject, banding, level, content, upload_type } =
+      req.body;
+
+    if (
+      !paper_name ||
+      !subject ||
+      !banding ||
+      !level ||
+      !content ||
+      !upload_type
+    ) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const fullPaperName =
+      `${paper_name}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
+
+    const parsedQuestions = JSON.parse(content);
+
+    for (const item of parsedQuestions) {
+      await client.query(
+        `
+        UPDATE question
+        SET 
+          question_text = $1,
+          answer_options = $2,
+          image_paths = $3,
+          topic_label = $4,
+          answer_key = $5
+        WHERE paper_name = $6 AND question_number = $7;
+        `,
+        [
+          item.question_text,
+          JSON.stringify(item.answer_options || []),
+          JSON.stringify(item.image_path || []),
+          item.topic_label || "Unknown",
+          typeof item.answer_key === "object"
+            ? JSON.stringify(item.answer_key)
+            : item.answer_key,
+          fullPaperName,
+          item.question_number,
+        ]
+      );
+    }
+
+    console.log(`✅ Paper updated successfully: ${fullPaperName}`);
+    res.status(200).json({ message: "Paper updated successfully" });
+  } catch (err) {
+    console.error("❌ Update failed:", err.message);
+    res.status(500).json({ error: "Failed to update edited paper" });
+  } finally {
+    client.release();
   }
 });
 

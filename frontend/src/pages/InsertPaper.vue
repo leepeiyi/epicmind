@@ -26,41 +26,11 @@
         <iframe v-if="pdfPreviewUrl" :src="pdfPreviewUrl" width="100%" height="500px" class="pdf-preview" />
       </div>
 
-      <div v-if="uploadType" class="fields">
-        <div class="field">
-          <label>Subject</label>
-          <select v-model="form.subject">
-            <option value="" disabled>Select</option>
-            <option>A-Math</option>
-            <option>Math / E-Math</option>
-            <option>Science</option>
-            <option>English</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Banding</label>
-          <select v-model="form.banding">
-            <option value="" disabled>Select</option>
-            <option>Express</option>
-            <option>Normal (Academic)</option>
-            <option>Normal (Technical)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Level</label>
-          <select v-model="form.level">
-            <option value="" disabled>Select</option>
-            <option>Sec 1</option>
-            <option>Sec 2</option>
-            <option>Sec 3</option>
-            <option>Sec 4</option>
-          </select>
-        </div>
-      </div>
+      <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
+        v-model:level="form.level" />
 
       <button v-if="uploadType" class="submit-btn" @click="handleSubmit">Process File</button>
 
-      <!-- Progress Bar -->
       <div v-if="progressMessage" class="progress-bar-wrapper">
         <div class="progress-bar">
           <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }"></div>
@@ -89,17 +59,22 @@
         <button @click="uploadDiagram">Upload Diagram</button>
         <p v-if="uploadedDiagramUrl"><strong>Image URL:</strong> {{ uploadedDiagramUrl }}</p>
       </div>
+
+      <div v-if="markdownContent" class="save-section">
+        <button class="save-btn" @click="saveEditedContent">Save Changes</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import PaperDetails from '../components/PaperDetails.vue';
 import { marked } from 'marked';
 
 export default {
   name: 'InsertPaper',
-  components: { Navbar },
+  components: { Navbar, PaperDetails },
   data() {
     return {
       uploadType: '',
@@ -142,12 +117,12 @@ export default {
         return;
       }
       const formData = new FormData();
-      formData.append("image", this.screenshotFile);
-      formData.append("paper_name", this.paperName);
-      formData.append("question_number", this.selectedQuestionNumber);
+      formData.append('image', this.screenshotFile);
+      formData.append('paper_name', this.paperName);
+      formData.append('question_number', this.selectedQuestionNumber);
       try {
         const response = await fetch('http://localhost:5008/api/ocr/upload_diagram', {
-          method: "POST",
+          method: 'POST',
           body: formData
         });
         const text = await response.text();
@@ -159,11 +134,11 @@ export default {
             alert(`Error: ${result.message}`);
           }
         } catch (e) {
-          console.error("Image upload failed: Not JSON. Raw response:", text);
-          alert("❌ Upload failed: server did not return JSON.");
+          console.error('❌ Image upload failed: Not JSON. Raw response:', text);
+          alert('❌ Upload failed: server did not return JSON.');
         }
       } catch (err) {
-        console.error("Image upload failed:", err);
+        console.error('❌ Image upload failed:', err);
       }
     },
     async handleSubmit() {
@@ -177,10 +152,10 @@ export default {
       this.startTime = new Date();
 
       const formData = new FormData();
-      formData.append("file", this.uploadedFile);
-      formData.append("subject", this.form.subject);
-      formData.append("banding", this.form.banding);
-      formData.append("level", this.form.level);
+      formData.append('file', this.uploadedFile);
+      formData.append('subject', this.form.subject);
+      formData.append('banding', this.form.banding);
+      formData.append('level', this.form.level);
 
       const eventSource = new EventSource('http://localhost:5008/api/ocr/progress-stream');
       eventSource.onmessage = (event) => {
@@ -192,18 +167,15 @@ export default {
         const timeLeft = Math.max(0, Math.round(estimatedTotalTime - elapsed));
         this.progressMessage = `${message} — ~${timeLeft}s left`;
       };
-      eventSource.onerror = () => {
-        eventSource.close();
-      };
+      eventSource.onerror = () => { eventSource.close(); };
 
-      // 👉 Switch between exam and topical endpoint
       const endpoint =
-        this.uploadType === "topical"
-          ? "http://localhost:5008/api/ocr/split_topical"
-          : "http://localhost:5008/api/ocr/split_pdf";
+        this.uploadType === 'topical'
+          ? 'http://localhost:5008/api/ocr/split_topical'
+          : 'http://localhost:5008/api/ocr/split_pdf';
 
       const response = await fetch(endpoint, {
-        method: "POST",
+        method: 'POST',
         body: formData,
       });
 
@@ -214,7 +186,7 @@ export default {
       this.progressMessage = '✅ Done!';
       this.progressPercent = 100;
 
-      const fullPaperName = `${result.paper_name}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+      const fullPaperName = `${result.paper_name}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, '_');
       this.paperName = fullPaperName;
 
       const questionRes = await fetch(`http://localhost:5008/api/ocr/questions/${fullPaperName}`);
@@ -224,9 +196,49 @@ export default {
       this.markdownContent = data.questions.map((q) => {
         const options = (q.answer_options || []).map((opt) => `- **${opt.option}** ${opt.text}`).join('\n');
         const images = (q.image_paths || []).map((img) => `![Diagram](${img.image_url})`).join('\n');
-        const answer = q.answer_key?.correct_answer ? `**Answer:** ${q.answer_key.correct_answer}` : '';
-        return `### Q${q.question_number}\n${q.question_text}\n\n${options}\n\n${images}\n\n${answer}`;
+
+        let answer = '';
+        if (q.answer_key) {
+          try {
+            const parsedAnswer = JSON.parse(q.answer_key);
+            answer = parsedAnswer.correct_answer ? `\n\n**Answer:** ${parsedAnswer.correct_answer}` : '';
+          } catch (error) {
+            console.error('❌ Failed to parse answer_key:', q.answer_key);
+          }
+        }
+
+        return `### Q${q.question_number} (Topic)\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
       }).join('\n\n---\n\n');
+    },
+    async saveEditedContent() {
+      try {
+        const payload = {
+          paper_name: this.paperName,
+          subject: this.form.subject,
+          banding: this.form.banding,
+          level: this.form.level,
+          content: this.markdownContent,
+          upload_type: this.uploadType,
+        };
+
+        const response = await fetch('http://localhost:5008/api/ocr/save_edited_paper', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          alert('✅ Data saved successfully!');
+        } else {
+          alert(`❌ Save failed: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('❌ Error saving data:', error);
+        alert('❌ Failed to save changes.');
+      }
     }
   }
 };
@@ -295,31 +307,6 @@ export default {
   margin-top: 1rem;
 }
 
-.fields {
-  display: flex;
-  gap: 2rem;
-  margin-bottom: 2rem;
-  flex-wrap: wrap;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 200px;
-}
-
-.field label {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-}
-
-.field select {
-  padding: 0.5rem;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-}
-
 .submit-btn {
   background-color: #66CC99;
   color: white;
@@ -369,6 +356,16 @@ export default {
   background-color: #fafafa;
 }
 
+.preview img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1rem auto;
+  object-fit: contain;
+}
+
+
+
 .editor textarea {
   width: 100%;
   padding: 1rem;
@@ -390,5 +387,25 @@ export default {
   border: 1px solid #ccc;
   border-radius: 8px;
   resize: vertical;
+}
+
+.save-section {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.save-btn {
+  background-color: #66CC99;
+  color: white;
+  font-weight: bold;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.save-btn:hover {
+  background-color: #4CAF50;
 }
 </style>

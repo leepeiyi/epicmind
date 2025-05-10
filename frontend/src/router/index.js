@@ -4,6 +4,7 @@ import CreateAccount from "../pages/CreateAccount.vue";
 import InsertPaper from "../pages/InsertPaper.vue";
 import ResetPassword from "../pages/ResetPassword.vue";
 import ForgetPassword from "../pages/ForgetPassword.vue";
+import InsertSyllabus from "../pages/InsertSyllabus.vue";
 
 const routes = [
   { path: "/", name: "Login", component: LoginPage },
@@ -11,6 +12,7 @@ const routes = [
   { path: "/insert-paper", name: "InsertPaper", component: InsertPaper },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/forgot-password", name: "ForgetPassword", component: ForgetPassword },
+  { path: "/insert-syllabus", name: "InsertSyllabus", component: InsertSyllabus },
 ];
 
 const router = createRouter({
