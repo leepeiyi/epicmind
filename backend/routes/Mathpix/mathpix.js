@@ -110,7 +110,7 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
     const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions and a final answer key.
   
   Your task:
-  - Extract each question's number and text
+  - Extract each question's number and text. for the text do not remove anything include all symbols and formatting.
   - Extract answer options (if present)
   - Extract image URLs for each question
   - Match the correct answer for each question using the final answer section
@@ -256,6 +256,31 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
     res.status(500).json({ error: "Upload/Insert failed: " + err.message });
   }
 });
+
+
+router.get('/markdown/:pdf_id', async (req, res) => {
+    try {
+      const { pdf_id } = req.params;
+  
+      if (!pdf_id) {
+        return res.status(400).json({ error: 'Missing PDF ID' });
+      }
+  
+      const response = await axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      });
+  
+      res.setHeader('Content-Type', 'text/plain');
+      res.send(response.data);
+    } catch (err) {
+      console.error('❌ Error fetching MMD from Mathpix:', err.message);
+      res.status(500).json({ error: 'Failed to fetch MMD content', detail: err.message });
+    }
+  });
+  
 
 
 

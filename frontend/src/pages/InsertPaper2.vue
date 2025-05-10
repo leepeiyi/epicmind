@@ -137,7 +137,8 @@ export default {
 
                 this.markdownContent = data.questions.map((q) => {
                     const options = (q.answer_options || [])
-                        .map((opt) => `- **${opt.option}** ${this.wrapLatex(opt.text)}`)
+                        .map((opt) => `- **${opt.option}** ${opt.text}`)
+
                         .join('\n');
 
                     const images = (q.image_paths || [])
@@ -152,13 +153,14 @@ export default {
                                 : q.answer_key;
 
                             const cleanAnswer = parsedAnswer.correct_answer || '';
-                            answer = cleanAnswer ? `\n\n**Answer:** ${this.wrapLatex(cleanAnswer)}` : '';
+                            answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
                         } catch (error) {
                             console.error('❌ Failed to parse answer_key:', q.answer_key);
                         }
                     }
 
-                    return `### Q${q.question_number} (Topic)\n\n${this.wrapLatex(q.question_text)}\n\n${options}\n\n${images}${answer}`;
+                    return `### Q${q.question_number} (Topic)\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
+
                 }).join('\n\n---\n\n');
 
             } catch (err) {
@@ -167,12 +169,7 @@ export default {
         },
         wrapLatex(text) {
             if (!text) return '';
-
-            return text
-                // Convert \frac{...}{...}, \sin, \cos etc. to math mode
-                .replace(/(\\[a-zA-Z]+(?:\{[^}]+\})*)/g, '$$$1$$')
-                // Replace double backslashes (escaped ones from JSON) with single
-                .replace(/\\\\/g, '\\');
+            return text.replace(/\\[a-z]+\{[^}]+\}/g, (match) => `$${match}$`);
         }
 
 

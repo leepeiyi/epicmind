@@ -20,9 +20,15 @@ const insertJSONPayload = async (parsedJSON) => {
   try {
     console.log("✅ Connected to the database");
     const { paper_name, subject, banding, level, questions } = parsedJSON;
-    const fullPaperName = `${paper_name}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
-
+    const fullPaperName =
+      `${paper_name}_${subject}_${banding}_${level}`.replace(/\s+/g, "_");
+    
     for (const item of questions) {
+      console.log("🔍 Storing Q", item.question_number, {
+        text: item.question_text,
+        answer: item.answer_key,
+      });
+      
       await client.query(
         `INSERT INTO question (
           paper_name, page_number, question_number, question_text,
@@ -35,11 +41,11 @@ const insertJSONPayload = async (parsedJSON) => {
           fullPaperName,
           item.page_number,
           item.question_number,
-          item.question_text,
+          item.question_text?.trim(),
           JSON.stringify(item.answer_options || []),
           JSON.stringify(item.image_path || []),
           item.topic_label || "Unknown",
-          item.answer_key,
+          JSON.stringify(item.answer_key || {}),
           subject,
           banding,
           level,
