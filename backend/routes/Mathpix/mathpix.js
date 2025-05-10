@@ -1,4 +1,4 @@
-// === Simulated Markdown OCR Route with Gemini Full Context Extraction ===
+// === Simulated Markdown OCR Route with Gemini Full Context Extraction + Mathpix + Polling ===
 const express = require("express");
 const router = express.Router();
 const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
@@ -8,6 +8,7 @@ const insertJSONPayload = require("../InsertPaper/insertPostgresql");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 const axios = require("axios");
+const FormData = require("form-data");
 
 const s3 = new S3Client({
   region: process.env.S3_REGION,
@@ -20,65 +21,181 @@ const s3 = new S3Client({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// === Step 1: Accept Markdown file via form-data ===
-router.post("/extract_questions_and_keys_from_markdown", upload.single("markdown"), async (req, res) => {
+async function pollMathpixStatus(pdf_id, retries = 10, delay = 4000) {
+  for (let i = 0; i < retries; i++) {
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+    if (response.data.status === "completed") return response.data;
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  throw new Error("Mathpix processing timed out");
+}
+
+// === Upload PDF to Mathpix, then poll until extraction is ready ===
+// === Step 1: Upload PDF to Mathpix and get pdf_id ===
+router.post(
+  "/upload_pdf_to_mathpix",
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res.status(400).json({ error: "PDF file required" });
+
+      const form = new FormData();
+      form.append("file", req.file.buffer, req.file.originalname);
+      form.append(
+        "options_json",
+        JSON.stringify({
+          formats: ["markdown_with_ids", "images"],
+          include_answer_box_crop: true,
+          math_inline_delimiters: ["$", "$"],
+          math_display_delimiters: ["$$", "$$"],
+          sandbox: true,
+        })
+      );
+
+      const uploadRes = await axios.post(
+        "https://api.mathpix.com/v3/pdf",
+        form,
+        {
+          headers: {
+            ...form.getHeaders(),
+            app_id: process.env.MATHPIX_APP_ID,
+            app_key: process.env.MATHPIX_APP_KEY,
+          },
+        }
+      );
+
+      res.json({ pdf_id: uploadRes.data.pdf_id });
+    } catch (err) {
+      console.error("❌ Mathpix upload error:", err);
+      res
+        .status(500)
+        .json({ error: "Failed to upload to Mathpix: " + err.message });
+    }
+  }
+);
+
+router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
-    const markdownContent = req.file.buffer.toString();
-    const { subject, banding, level } = req.body;
-
-    if (!markdownContent || !subject || !banding || !level)
+    const { pdf_id, subject, banding, level, paper_name } = req.body;
+    if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
 
-    const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions, diagrams (via image URLs), and a final answer key.
+    const [mmdRes, linesRes] = await Promise.all([
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.lines.mmd.json`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+    ]);
 
-Your task:
-- Extract each question's number and text
-- Extract answer options (if present)
-- Match the correct answer for each question using the final answer section
+    const markdownContent = mmdRes.data;
 
-Return the result as a JSON array. Do not include explanations.
-
-Each item should follow this structure:
-{
-  "question_number": "1",
-  "question_text": "...",
-  "answer_options": [
-    { "option": "A", "text": "..." },
-    { "option": "B", "text": "..." }
-  ],
-  "answer_key": { "question_number": "1", "correct_answer": "B" },
-  "subject": "${subject}",
-  "banding": "${banding}",
-  "level": "${level}"
-}`;
+    const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions and a final answer key.
+  
+  Your task:
+  - Extract each question's number and text
+  - Extract answer options (if present)
+  - Extract image URLs for each question
+  - Match the correct answer for each question using the final answer section
+  
+  Return the result as a JSON array. Do not include explanations.
+  
+  Each item should follow this structure:
+  {
+    "question_number": "1",
+    "question_text": "...",
+    "answer_options": [
+      { "option": "A", "text": "..." },
+      { "option": "B", "text": "..." }
+    ],
+    "answer_key": { "question_number": "1", "correct_answer": "B" },
+    "image_path": ["..."],
+    "subject": "${subject}",
+    "banding": "${banding}",
+    "level": "${level}"
+  }`;
 
     const result = await model.generateContent([
-      { text: prompt },
-      { text: markdownContent },
+      { text: `${prompt}\n\n${markdownContent}` },
     ]);
 
     const raw =
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
     const jsonMatch = raw.match(/\[\s*{[\s\S]+?}\s*\]/);
     if (!jsonMatch) {
       throw new Error("Could not find valid JSON array in Gemini response");
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    res.json({ questions: parsed });
+
+    // Extract correct image URLs in order from lines.mmd.json
+    const pages = linesRes.data.pages || [];
+    const orderedImageUrls = [];
+    for (const page of pages) {
+      for (const line of page.lines || []) {
+        if (
+          line.text &&
+          line.text.includes("https://cdn.mathpix.com/cropped")
+        ) {
+          const matches = [
+            ...line.text.matchAll(
+              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
+            ),
+          ];
+          for (const match of matches) {
+            orderedImageUrls.push(match[0]);
+          }
+        }
+      }
+    }
+
+    // Replace Gemini image paths with correct ones by order
+    let imageIndex = 0;
+    const updatedQuestions = parsed.map((q) => {
+      const image_path = [];
+      if (Array.isArray(q.image_path) && q.image_path.length > 0) {
+        for (let i = 0; i < q.image_path.length; i++) {
+          if (orderedImageUrls[imageIndex]) {
+            image_path.push(orderedImageUrls[imageIndex]);
+            imageIndex++;
+          }
+        }
+      }
+      return { ...q, image_path };
+    });
+
+    res.json({ questions: updatedQuestions });
   } catch (err) {
-    console.error("❌ Gemini extraction error:", err);
-    res.status(500).json({ error: "Gemini extraction failed: " + err.message });
+    console.error("❌ Extract from MMD + Gemini error:", err);
+    res
+      .status(500)
+      .json({ error: "Extraction from MMD failed: " + err.message });
   }
 });
 
 // === Step 2: Upload extracted image paths to your S3 ===
 router.post("/upload_extracted_images_to_s3", async (req, res) => {
   try {
-    const { paper_name, questions } = req.body;
-    if (!questions || !paper_name) {
-      return res.status(400).json({ error: "Missing paper_name or questions" });
+    const { paper_name, subject, banding, level, questions } = req.body;
+    if (!questions || !paper_name || !subject || !banding || !level) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
     const updatedQuestions = await Promise.all(
@@ -89,7 +206,9 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
           q.image_path.map(async (url, i) => {
             try {
               console.log(`📥 Downloading: ${url}`);
-              const response = await axios.get(url, { responseType: "arraybuffer" });
+              const response = await axios.get(url, {
+                responseType: "arraybuffer",
+              });
               const buffer = Buffer.from(response.data, "binary");
               const fileName = `page-custom_diagram_${q.question_number}_${i}.png`;
               const key = `${paper_name}/${fileName}`;
@@ -103,10 +222,13 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
                 })
               );
 
-              return `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(paper_name)}/${fileName}`;
+              return `https://${process.env.S3_BUCKET_NAME}.s3.${
+                process.env.S3_REGION
+              }.amazonaws.com/${encodeURIComponent(paper_name)}/${fileName}`;
             } catch (err) {
-              console.warn(`⚠️ Failed to upload image for Q${q.question_number}: ${err.message}`);
-              console.log(q.image_path);
+              console.warn(
+                `⚠️ Failed to upload image for Q${q.question_number}: ${err.message}`
+              );
               return url;
             }
           })
@@ -116,11 +238,25 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
       })
     );
 
-    res.json({ questions: updatedQuestions });
+    // ✅ Insert into PostgreSQL
+    await insertJSONPayload({
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions: updatedQuestions,
+    });
+
+    res.json({
+      message: "✅ Uploaded to S3 and inserted to DB",
+      questions: updatedQuestions,
+    });
   } catch (err) {
-    console.error("❌ Image upload replacement error:", err);
-    res.status(500).json({ error: "Image S3 upload failed: " + err.message });
+    console.error("❌ Image upload or DB insert error:", err);
+    res.status(500).json({ error: "Upload/Insert failed: " + err.message });
   }
 });
+
+
 
 module.exports = router;
