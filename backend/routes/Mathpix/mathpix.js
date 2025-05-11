@@ -21,23 +21,6 @@ const s3 = new S3Client({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-async function pollMathpixStatus(pdf_id, retries = 10, delay = 4000) {
-  for (let i = 0; i < retries; i++) {
-    const response = await axios.get(
-      `https://api.mathpix.com/v3/pdf/${pdf_id}`,
-      {
-        headers: {
-          app_id: process.env.MATHPIX_APP_ID,
-          app_key: process.env.MATHPIX_APP_KEY,
-        },
-      }
-    );
-    if (response.data.status === "completed") return response.data;
-    await new Promise((r) => setTimeout(r, delay));
-  }
-  throw new Error("Mathpix processing timed out");
-}
-
 // === Upload PDF to Mathpix, then poll until extraction is ready ===
 // === Step 1: Upload PDF to Mathpix and get pdf_id ===
 router.post(
@@ -83,12 +66,72 @@ router.post(
   }
 );
 
+async function pollMathpixStatus(pdf_id, retries = 10, delay = 4000) {
+  console.log(`⏳ Polling Mathpix status for PDF ID: ${pdf_id}...`);
+
+  for (let i = 0; i < retries; i++) {
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    const status = response.data.status;
+    console.log(`📡 Attempt ${i + 1}: status = ${status}`);
+
+    if (status === "completed") {
+      console.log("✅ Mathpix processing complete.");
+      return response.data;
+    } else if (status === "error") {
+      throw new Error("❌ Mathpix returned an error during processing.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  throw new Error("❌ Mathpix processing timed out after polling.");
+}
+
+router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
+  const { pdf_id } = req.params;
+
+  if (!pdf_id) {
+    return res.status(400).json({ error: "Missing PDF ID" });
+  }
+
+  try {
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    res.setHeader("Content-Type", "text/plain");
+    res.send(response.data); // raw markdown with LaTeX
+  } catch (err) {
+    console.error("❌ Error fetching MMD from Mathpix:", err.message);
+    res.status(500).json({
+      error: "Failed to fetch MMD content",
+      detail: err.message,
+    });
+  }
+});
+
 router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
     const { pdf_id, subject, banding, level, paper_name } = req.body;
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
     }
+    await pollMathpixStatus(pdf_id);
 
     const [mmdRes, linesRes] = await Promise.all([
       axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
@@ -107,30 +150,38 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
 
     const markdownContent = mmdRes.data;
 
-    const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions and a final answer key.
-  
-  Your task:
-  - Extract each question's number and text. for the text do not remove anything include all symbols and formatting.
-  - Extract answer options (if present)
-  - Extract image URLs for each question
-  - Match the correct answer for each question using the final answer section
-  
-  Return the result as a JSON array. Do not include explanations.
-  
-  Each item should follow this structure:
-  {
-    "question_number": "1",
-    "question_text": "...",
-    "answer_options": [
-      { "option": "A", "text": "..." },
-      { "option": "B", "text": "..." }
-    ],
-    "answer_key": { "question_number": "1", "correct_answer": "B" },
-    "image_path": ["..."],
-    "subject": "${subject}",
-    "banding": "${banding}",
-    "level": "${level}"
-  }`;
+    const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions, math expressions (in LaTeX), and a final answer key.
+
+Instructions:
+- Extract each question's number and full text.
+- Keep all LaTeX expressions exactly as-is, including delimiters like \\( ... \\) and $$ ... $$.
+- Extract answer options (if present).
+- Extract image URLs for each question (from ![Diagram](...)).
+- Match the correct answer for each question using the final answer section.
+
+IMPORTANT:
+- Do not remove or alter any math symbols or formatting.
+- Do not modify LaTeX. Do not strip backslashes or parentheses.
+- Preserve all Markdown formatting exactly as shown.
+- Make sure all backslashes are double-escaped for JSON (e.g., \\ instead of \).
+
+
+Return the result as a JSON array. Do not include explanations.
+
+Each item should follow this format:
+{
+  "question_number": "1",
+  "question_text": "...",
+  "answer_options": [
+    { "option": "A", "text": "..." },
+    { "option": "B", "text": "..." }
+  ],
+  "answer_key": { "question_number": "1", "correct_answer": "B" },
+  "image_path": ["..."],
+  "subject": "${subject}",
+  "banding": "${banding}",
+  "level": "${level}"
+}`;
 
     const result = await model.generateContent([
       { text: `${prompt}\n\n${markdownContent}` },
@@ -142,6 +193,7 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
     if (!jsonMatch) {
       throw new Error("Could not find valid JSON array in Gemini response");
     }
+    console.log("📝 Gemini raw response:\n", raw);
 
     const parsed = JSON.parse(jsonMatch[0]);
 
@@ -257,31 +309,32 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
   }
 });
 
+router.get("/markdown/:pdf_id", async (req, res) => {
+  try {
+    const { pdf_id } = req.params;
 
-router.get('/markdown/:pdf_id', async (req, res) => {
-    try {
-      const { pdf_id } = req.params;
-  
-      if (!pdf_id) {
-        return res.status(400).json({ error: 'Missing PDF ID' });
-      }
-  
-      const response = await axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
+    if (!pdf_id) {
+      return res.status(400).json({ error: "Missing PDF ID" });
+    }
+
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
+      {
         headers: {
           app_id: process.env.MATHPIX_APP_ID,
           app_key: process.env.MATHPIX_APP_KEY,
         },
-      });
-  
-      res.setHeader('Content-Type', 'text/plain');
-      res.send(response.data);
-    } catch (err) {
-      console.error('❌ Error fetching MMD from Mathpix:', err.message);
-      res.status(500).json({ error: 'Failed to fetch MMD content', detail: err.message });
-    }
-  });
-  
+      }
+    );
 
-
+    res.setHeader("Content-Type", "text/plain");
+    res.send(response.data);
+  } catch (err) {
+    console.error("❌ Error fetching MMD from Mathpix:", err.message);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch MMD content", detail: err.message });
+  }
+});
 
 module.exports = router;

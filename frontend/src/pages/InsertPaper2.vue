@@ -10,14 +10,15 @@
             <div v-if="recentPapers.length" class="recent-papers">
                 <h3>📄 Recent Uploads</h3>
                 <ul>
-                    <li v-for="p in recentPapers" :key="p.paper_name">
-                        <a href="#" @click.prevent="loadRecentPaper(p.paper_name)">
-                            {{ p.paper_name }}
-                        </a>
-                        – uploaded {{ new Date(p.last_uploaded).toLocaleString() }}
+                    <li v-for="p in recentPapers" :key="p.paper_name" class="recent-item"
+                        @click.prevent="loadRecentPaper(p.paper_name)">
+                        <div class="recent-item-row">
+                            <span class="paper-name">{{ p.paper_name }}</span>
+                            <span class="upload-time">– uploaded {{ new Date(p.last_uploaded).toLocaleString() }}</span>
+                        </div>
                     </li>
-
                 </ul>
+
             </div>
 
             <div class="type-toggle">
@@ -60,9 +61,14 @@
                 </div>
                 <div class="preview">
                     <h3>Preview</h3>
-                    <div v-html="compiledMarkdown"></div>
+                    <div :key="compiledMarkdown" v-html="compiledMarkdown"></div>
                 </div>
             </div>
+
+            <div v-if="markdownContent" class="save-section">
+                <button class="save-btn" @click="saveEditedMarkdown">💾 Save Markdown</button>
+            </div>
+
 
         </div>
     </div>
@@ -111,14 +117,17 @@ export default {
         }
     },
     watch: {
-        markdownContent() {
+        compiledMarkdown() {
             this.$nextTick(() => {
-                if (window.MathJax) {
-                    window.MathJax.typeset();
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise();
                 }
             });
         }
-    },
+    }
+
+    ,
+
     methods: {
         handleFileUpload(event) {
             this.uploadedFile = event.target.files[0];
@@ -138,7 +147,6 @@ export default {
                 this.markdownContent = data.questions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
-
                         .join('\n');
 
                     const images = (q.image_paths || [])
@@ -160,21 +168,146 @@ export default {
                     }
 
                     return `### Q${q.question_number} (Topic)\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
-
                 }).join('\n\n---\n\n');
 
             } catch (err) {
                 console.error('❌ Failed to load recent paper content:', err);
             }
         },
-        wrapLatex(text) {
-            if (!text) return '';
-            return text.replace(/\\[a-z]+\{[^}]+\}/g, (match) => `$${match}$`);
+        async saveEditedMarkdown() {
+            try {
+                const response = await fetch('http://localhost:5008/api/paper/update-question-details', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paper_name: this.paperName,
+                        content: this.markdownContent
+                    })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert('✅ Markdown saved successfully!');
+                } else {
+                    alert(`❌ Save failed: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('❌ Save error:', error);
+                alert('❌ Failed to save markdown');
+            }
+        },
+        async handleSubmit() {
+            if (!this.uploadedFile || !this.form.subject || !this.form.banding || !this.form.level) {
+                alert("Please complete all fields and upload a file.");
+                return;
+            }
+
+            try {
+                // ✅ Step 0: Check if paper already exists
+                const baseName = this.uploadedFile.name.replace(/\.pdf$/i, '').replace(/\s+/g, "_");
+    const paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+    this.paperName = paperName;
+
+    this.progressMessage = "🔎 Checking for existing paper...";
+    this.progressPercent = 10;
+
+    const existsRes = await fetch(`http://localhost:5008/api/paper/exists/${encodeURIComponent(paperName)}`);
+    const { exists } = await existsRes.json();
+    if (exists) {
+        alert(`⚠️ Paper "${paperName}" already exists in the database.`);
+        this.progressMessage = "⚠️ Duplicate paper detected.";
+        this.progressPercent = 0;
+        return;
+    }
+                
+                this.progressMessage = "📤 Uploading PDF to Mathpix...";
+                this.progressPercent = 20;
+
+                // Step 1: Upload PDF to Mathpix
+                const formData = new FormData();
+                formData.append("pdf", this.uploadedFile);
+
+                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                    method: "POST",
+                    body: formData,
+                });
+                const { pdf_id } = await uploadRes.json();
+                if (!pdf_id) throw new Error("Failed to get PDF ID");
+
+                this.progressMessage = "🔍 Extracting questions with Gemini...";
+                this.progressPercent = 40;
+
+                // Step 2: Extract questions from Mathpix Markdown
+                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        pdf_id,
+                        paper_name: this.uploadedFile.name.split(".pdf")[0],
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                    }),
+                });
+
+                const extractData = await extractRes.json();
+                const questions = extractData.questions || [];
+                if (!questions.length) throw new Error("No questions extracted");
+
+                this.progressMessage = "📦 Uploading diagrams to S3...";
+                this.progressPercent = 70;
+
+                // Step 3: Upload images to S3 and insert into DB
+                const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        paper_name: this.uploadedFile.name.split(".pdf")[0],
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        questions,
+                    }),
+                });
+
+                const finalData = await uploadImagesRes.json();
+                const processedQuestions = finalData.questions;
+
+                // Step 4: Convert to markdown
+                this.progressMessage = "📝 Generating markdown preview...";
+                this.progressPercent = 90;
+
+                this.paperName = this.uploadedFile.name.split(".pdf")[0];
+                this.markdownContent = processedQuestions.map((q) => {
+                    const options = (q.answer_options || [])
+                        .map((opt) => `- **${opt.option}** ${opt.text}`)
+                        .join('\n');
+
+                    const images = (q.image_path || [])
+                        .map((img) => `![Diagram](${img})`)
+                        .join('\n');
+
+                    let answer = '';
+                    if (q.answer_key) {
+                        const cleanAnswer = q.answer_key.correct_answer || '';
+                        answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
+                    }
+
+                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
+                }).join('\n\n---\n\n');
+
+                this.progressMessage = "✅ All done!";
+                this.progressPercent = 100;
+            } catch (error) {
+                console.error("❌ handleSubmit error:", error);
+                alert("❌ Something went wrong: " + error.message);
+                this.progressMessage = "";
+                this.progressPercent = 0;
+            }
         }
 
 
     }
-
 };
 </script>
 
@@ -191,26 +324,37 @@ export default {
     margin-bottom: 2rem;
 }
 
-.recent-papers {
-    margin-bottom: 2rem;
-    background: #f8f8f8;
-    padding: 1rem;
-    border-radius: 10px;
-    border: 1px solid #ddd;
-}
-
-.recent-papers h3 {
-    margin-top: 0;
-    color: #333;
-}
-
-.recent-papers ul {
-    padding-left: 1rem;
-}
-
-.recent-papers li {
+.recent-item {
+    list-style: none;
     margin-bottom: 0.5rem;
+    cursor: pointer;
 }
+
+.recent-item-row {
+    padding: 1rem;
+    border-radius: 8px;
+    background-color: #f8f8f8;
+    transition: background-color 0.2s ease;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.recent-item-row:hover {
+    background-color: #e0f5ed;
+    /* light mint green */
+}
+
+.paper-name {
+    font-weight: 600;
+    color: #333;
+    flex-shrink: 0;
+}
+
+.upload-time {
+    color: #888;
+}
+
 
 .type-toggle {
     display: flex;
@@ -354,8 +498,9 @@ export default {
 }
 
 .save-section {
-    text-align: center;
     margin-top: 2rem;
+    display: flex;
+    justify-content: center;
 }
 
 .save-btn {
@@ -367,7 +512,11 @@ export default {
     border-radius: 12px;
     font-size: 18px;
     cursor: pointer;
+    width: 100%;
+    max-width: 1200px;
+    /* same as .upload-page max-width */
 }
+
 
 .save-btn:hover {
     background-color: #4CAF50;

@@ -1,7 +1,7 @@
 // routes/paperRoutes.js or similar
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -16,7 +16,7 @@ const pool = new Pool({
 });
 
 // GET recent 3 papers based on latest inserted question timestamp
-router.get('/recent', async (req, res) => {
+router.get("/recent", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(`
@@ -35,21 +35,112 @@ router.get('/recent', async (req, res) => {
 });
 
 // GET questions by paper_name
-router.get('/questions/:paper_name', async (req, res) => {
-    const { paper_name } = req.params;
-    try {
-      const client = await pool.connect();
-      const result = await client.query(
-        'SELECT * FROM question WHERE paper_name = $1 ORDER BY question_number ASC',
-        [paper_name]
+router.get("/questions/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT * FROM question WHERE paper_name = $1 ORDER BY question_number ASC",
+      [paper_name]
+    );
+    client.release();
+    res.json({ questions: result.rows });
+  } catch (err) {
+    console.error("❌ Failed to fetch questions:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/update-question-details", async (req, res) => {
+  const { paper_name, content } = req.body;
+  if (!paper_name || !content) {
+    return res.status(400).json({ error: "Missing paper_name or content" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const questionBlocks = content.split(/\n---+\n/); // Separate by markdown divider
+    const updates = [];
+
+    for (const block of questionBlocks) {
+      const matchQNum = block.match(/^### Q(\d+)/m);
+      if (!matchQNum) continue;
+
+      const question_number = matchQNum[1];
+
+      // Extract question_text
+      const questionTextMatch = block.match(
+        /### Q\d+ \(Topic\)\n\n([\s\S]*?)\n\n(-|\!|\*\*|$)/
       );
-      client.release();
-      res.json({ questions: result.rows });
-    } catch (err) {
-      console.error("❌ Failed to fetch questions:", err.message);
-      res.status(500).json({ error: "Internal server error" });
+      const question_text = questionTextMatch
+        ? questionTextMatch[1].trim()
+        : null;
+
+      // Extract answer options
+      const answerOptions = [];
+      const optionRegex = /- \*\*(A|B|C|D)\*\* (.*)/g;
+      let match;
+      while ((match = optionRegex.exec(block)) !== null) {
+        answerOptions.push({ option: match[1], text: match[2] });
+      }
+
+      // Extract image paths
+      const imagePaths = [];
+      const imageRegex = /!\[.*?\]\((.*?)\)/g;
+      while ((match = imageRegex.exec(block)) !== null) {
+        imagePaths.push(match[1]);
+      }
+
+      // Extract answer key (if exists)
+      let answerKey = {};
+      const answerMatch = block.match(/\*\*Answer:\*\* ([A-D])\b/);
+      if (answerMatch) {
+        answerKey = { question_number, correct_answer: answerMatch[1] };
+      }
+
+      updates.push(
+        client.query(
+          `UPDATE question
+             SET question_text = $1,
+                 answer_options = $2,
+                 image_paths = $3,
+                 answer_key = $4
+             WHERE paper_name = $5 AND question_number = $6`,
+          [
+            question_text,
+            JSON.stringify(answerOptions),
+            JSON.stringify(imagePaths),
+            JSON.stringify(answerKey),
+            paper_name,
+            question_number,
+          ]
+        )
+      );
     }
-  });
-  
+
+    await Promise.all(updates);
+    res.json({ message: "✅ All questions updated successfully" });
+  } catch (err) {
+    console.error("❌ Update error:", err.message);
+    res.status(500).json({ error: "Update failed: " + err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// In your Express backend
+router.get("/exists/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  const client = await pool.connect();
+  try {
+    const result = await client.query("SELECT 1 FROM question WHERE paper_name = $1 LIMIT 1", [paper_name]);
+    res.json({ exists: result.rowCount > 0 });
+  } catch (err) {
+    console.error("❌ DB check error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
 
 module.exports = router;
