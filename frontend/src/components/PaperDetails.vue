@@ -29,7 +29,7 @@
                 <option>Sec 4</option>
             </select>
         </div>
-        
+
         <!-- Topic Dropdown - Shown for all math subjects in topical mode -->
         <div v-if="showTopicDropdown" class="field">
             <label>Topic</label>
@@ -48,10 +48,10 @@ export default {
         subject: String,
         banding: String,
         level: String,
-        topic: String,
+        topic_label: String,
         uploadType: String,
     },
-    emits: ["update:subject", "update:banding", "update:level", "update:topic"],
+    emits: ["update:subject", "update:banding", "update:level", "update:topic_label"],
     data() {
         return {
             mathSec1Topics: [
@@ -61,7 +61,7 @@ export default {
                 "04 Introduction to Algebra",
                 "05 Algebraic Manipulation",
                 "06 Simple Equations in One Unknown",
-                "07 Angles and Parallel Lines", 
+                "07 Angles and Parallel Lines",
                 "08 Triangles and Polygons",
                 "09 Rate, Ratio and Speed",
                 "10 Percentage",
@@ -98,7 +98,7 @@ export default {
                 "08 Congruence Similarity Test",
                 "09 Trigo",
                 "10 Application of Trigo",
-                "11 Arc and Sectors", 
+                "11 Arc and Sectors",
                 "12 Properties of Circles"
             ],
             mathSec4Topics: [
@@ -142,18 +142,18 @@ export default {
         showTopicDropdown() {
             // Only show topic dropdown in topical mode and for any math subject
             if (this.uploadType !== "topical") return false;
-            
+
             // For Math/E-Math subject, show for all levels
             if (this.localSubject === "Math / E-Math") {
                 return true;
             }
-            
+
             // For A-Math subject, show for Sec 3 and Sec 4
-            if (this.localSubject === "A-Math" && 
+            if (this.localSubject === "A-Math" &&
                 (this.localLevel === "Sec 3" || this.localLevel === "Sec 4")) {
                 return true;
             }
-            
+
             return false;
         },
         availableTopics() {
@@ -205,12 +205,12 @@ export default {
                 this.$emit("update:topic", "");
             },
         },
-        localTopic: {
+        localTopicLabel: { // Changed from localTopic
             get() {
-                return this.topic;
+                return this.topic_label; // Changed from this.topic
             },
             set(value) {
-                this.$emit("update:topic", value);
+                this.$emit("update:topic_label", value); // Changed
             }
         }
     },

@@ -4,7 +4,7 @@ const router = express.Router();
 const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
-const insertJSONPayload = require("../Mathpix/insertPostgresql");
+const insertJSONPayload = require("../InsertPaper/insertPostgresql");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 const axios = require("axios");
@@ -127,7 +127,7 @@ router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
 
 router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
-    const { pdf_id, subject, banding, level, paper_name, paper_type, topic} =
+    const { pdf_id, subject, banding, level, paper_name, paper_type, topic } =
       req.body;
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -171,6 +171,7 @@ Return the result as a JSON array. Do not include explanations.
 
 Each item should follow this format:
 {
+  
   "question_number": "1",
   "question_text": "...",
   "answer_options": [
@@ -182,8 +183,9 @@ Each item should follow this format:
   "subject": "${subject}",
   "banding": "${banding}",
   "level": "${level}",
-   "paper_type": "${paper_type}",
-    "topic": "${topic || ''}" (if any, if not leave it empty)
+  "paper_type": "${paper_type}",
+  "topic_label": "${topic || ""}" // Changed from topic
+
 }`;
 
     const result = await model.generateContent([
@@ -192,11 +194,8 @@ Each item should follow this format:
 
     const raw =
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const jsonMatch = raw.match(/\[\s*{[\s\S]+?}\s*\]/);
-    if (!jsonMatch) {
-      throw new Error("Could not find valid JSON array in Gemini response");
-    }
     console.log("📝 Gemini raw response:\n", raw);
+    const jsonMatch = raw.match(/\[\s*{[\s\S]+?}\s*\]/);
 
     const parsed = JSON.parse(jsonMatch[0]);
 
@@ -248,7 +247,7 @@ Each item should follow this format:
 // === Step 2: Upload extracted image paths to your S3 ===
 router.post("/upload_extracted_images_to_s3", async (req, res) => {
   try {
-    const { paper_name, subject, banding, level, paper_type, topic, questions } = req.body;
+    const { paper_name, subject, banding, level, questions } = req.body;
     if (!questions || !paper_name || !subject || !banding || !level) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -299,8 +298,6 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
       subject,
       banding,
       level,
-      paper_type,
-      topic,
       questions: updatedQuestions,
     });
 

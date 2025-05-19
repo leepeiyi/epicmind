@@ -52,7 +52,7 @@ const insertJSONPayload = async (parsedJSON) => {
       await client.query(
         `INSERT INTO question (
           paper_name, question_number, question_text, answer_options, 
-          image_paths, answer_key, subject, banding, level, paper_type, topic
+          image_paths, answer_key, subject, banding, level, paper_type, topic_label
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           paper_name,
@@ -65,7 +65,7 @@ const insertJSONPayload = async (parsedJSON) => {
           banding,
           level,
           paper_type,
-          topic // New parameter
+          topic_label, // Changed from topic
         ]
       );
     }

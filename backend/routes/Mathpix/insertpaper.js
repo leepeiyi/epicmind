@@ -21,7 +21,7 @@ router.get("/recent", async (req, res) => {
     const client = await pool.connect();
     const result = await client.query(`
       SELECT paper_name, MAX(created_at) as last_uploaded,
-       MAX(topic) as topic,
+       MAX(topic_label) as topic_label,
        MAX(paper_type) as paper_type
       FROM question
       GROUP BY paper_name
@@ -136,13 +136,15 @@ router.get("/exists/:paper_name", async (req, res) => {
   const { paper_name } = req.params;
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT 1 FROM question WHERE paper_name = $1 LIMIT 1", [paper_name]);
+    const result = await client.query(
+      "SELECT 1 FROM question WHERE paper_name = $1 LIMIT 1",
+      [paper_name]
+    );
     res.json({ exists: result.rowCount > 0 });
   } catch (err) {
     console.error("❌ DB check error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
-
 
 module.exports = router;

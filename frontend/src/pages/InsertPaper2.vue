@@ -14,7 +14,7 @@
                         @click.prevent="loadRecentPaper(p.paper_name)">
                         <div class="recent-item-row">
                             <span class="paper-name">{{ p.paper_name }}</span>
-                            <span v-if="p.topic" class="paper-topic">{{ p.topic }}</span>
+                            <span v-if="p.topic_label" class="paper-topic">{{ p.topic_label }}</span>
                             <span class="upload-time">– uploaded {{ new Date(p.last_uploaded).toLocaleString() }}</span>
                         </div>
                     </li>
@@ -42,7 +42,7 @@
             </div>
 
             <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
-                v-model:level="form.level" v-model:topic="form.topic" :uploadType="uploadType" />
+                v-model:level="form.level" v-model:topic_label="form.topic_label" :uploadType="uploadType" />
 
             <button v-if="uploadType" class="submit-btn" @click="handleSubmit">Process File</button>
 
@@ -85,7 +85,7 @@ export default {
     data() {
         return {
             uploadType: '',
-            form: { subject: '', banding: '', level: '', topic: '' },
+            form: { subject: '', banding: '', level: '', topic_label: '' },
             uploadedFile: null,
             pdfPreviewUrl: '',
             markdownContent: '',
@@ -201,8 +201,7 @@ export default {
                 alert("Please complete all fields and upload a file.");
                 return;
             }
-            if (this.uploadType === "topical" &&
-                !this.form.topic) {
+            if (this.uploadType === "topical" && !this.form.topic_label) {
                 alert("Please select a topic for Math / E-Math Sec 1.");
                 return;
             }
@@ -253,7 +252,7 @@ export default {
                         banding: this.form.banding,
                         level: this.form.level,
                         paper_type: this.uploadType,
-                        topic: this.uploadType === "topical" ? this.form.topic : null
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null // Changed
                     }),
                 });
 
@@ -273,9 +272,9 @@ export default {
                         subject: this.form.subject,
                         banding: this.form.banding,
                         level: this.form.level,
-                        paper_type: this.uploadType, // Add this line
+                        paper_type: this.uploadType,
                         questions,
-                        topic: this.uploadType === "topical" ? this.form.topic : null
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null // Changed
                     }),
                 });
 
