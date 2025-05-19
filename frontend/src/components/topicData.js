@@ -1,0 +1,83 @@
+export const mathTopicsData = {
+    mathSec1: [
+        "01 Factors and Multiples",
+        "02 Real Numbers",
+        "03 Approximation and Estimation",
+        "04 Introduction to Algebra",
+        "05 Algebraic Manipulation",
+        "06 Simple Equations in One Unknown",
+        "07 Angles and Parallel Lines",
+        "08 Triangles and Polygons",
+        "09 Rate, Ratio and Speed",
+        "10 Percentage",
+        "11 Sequences and Number Pattern",
+        "12 Linear Functions and Graphs",
+        "13 Perimeter and Area Plane Figures",
+        "14 Volume and Surface Area Prism Cylinders",
+        "15 Data Handling"
+    ],
+    mathSec2: [
+        "01 Linear Inequalities",
+        "02 Simultaneous Graphs",
+        "03 Simultaneous Equations",
+        "04 Algebra Expansion and Factorisation",
+        "05 Quadratic Graphs",
+        "06 Quadratic Solving",
+        "07 Proportion",
+        "08 Congruence and Similarity",
+        "09 Pythagoras Thm",
+        "10 Trigo",
+        "11 Volume and Surface Area Pyra cone sphere",
+        "12 Stats Diagrams",
+        "13 Mean Median Mode",
+        "14 Probability"
+    ],
+    mathSec3: [
+        "01 Quadratic",
+        "02 Linear Inequalities",
+        "03 Indices",
+        "04 Coordinate Geometry",
+        "05 Graphs Plot",
+        "06 Graphs Sketch",
+        "07 Speed Time",
+        "08 Congruence Similarity Test",
+        "09 Trigo",
+        "10 Application of Trigo",
+        "11 Arc and Sectors",
+        "12 Properties of Circles"
+    ],
+    mathSec4: [
+        "01 Sets",
+        "02 Stats",
+        "03 Probability",
+        "04 Matrices",
+        "05 Vectors"
+    ],
+    amathSec3: [
+        "01 Simultaneous Eqns",
+        "02 Quadratics and Inequalities",
+        "03 Polynomials",
+        "04 Partial Fractions",
+        "05 Indices and Surds",
+        "06 Logarithms",
+        "07 Binomial Thm",
+        "08 Coordinate Geometry",
+        "09 Circles",
+        "10 Linear Law",
+        "11 Trigo Eqn Graph Identities",
+        "12 Further Trigo",
+        "13 Trigo R-Formula"
+    ],
+    amathSec4: [
+        "01 Differentiation Basics",
+        "02 Differentiation Tangent Normal",
+        "03 Differentiation Increasing and Decreasing",
+        "04 Differentiation Rates Of Change",
+        "05 Differentiation Max n Min",
+        "06 Differentiation Tri Log n E",
+        "07 Integration Basics",
+        "08 Integration Area",
+        "09 Kinematics",
+        "11 Plane Geometry"
+    ]
+};

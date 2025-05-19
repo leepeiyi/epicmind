@@ -14,6 +14,8 @@ const mathpixRoutes = require('./routes/Mathpix/mathpix');
 app.use('/api/mathpix', mathpixRoutes);
 const paperRoutes = require('./routes/Mathpix/insertpaper');
 app.use('/api/paper', paperRoutes);
+const generateRoutes = require('./routes/Mathpix/generate');
+app.use('/api/generate', generateRoutes);
 
 
 const PORT = 5008;

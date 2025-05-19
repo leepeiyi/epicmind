@@ -38,7 +38,7 @@ export default {
       navItems: [
         { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper' },
         { icon: 'BookOpen', label: 'Mathstery', route: '/mathstery' },
-        { icon: 'FolderOpen', label: 'Topical Revision', route: '/topical-revision' },
+        { icon: 'FolderOpen', label: 'Topical Revision', route: '/generate-topical' },
         { icon: 'Star', label: 'Favourites', route: '/favourites' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' },
         { icon: 'FilePlus', label: 'Insert Syllabus', route: '/insert-syllabus' },
