@@ -130,32 +130,37 @@
                 <p>{{ loadingMessage }} ({{ progressPercent }}%)</p>
             </div>
 
-            <!-- Quiz Preview -->
-            <div v-if="generatedQuiz.length" class="quiz-preview">
+            <!-- Quiz Preview - Styled similar to InsertPaper's preview -->
+            <div v-if="generatedQuiz.length" class="preview-wrapper">
                 <h2>Quiz Preview</h2>
-                <div class="question-list">
-                    <div v-for="(question, index) in generatedQuiz" :key="index" class="question-card">
-                        <h3>Q{{ index + 1 }}</h3>
-                        <div v-html="question.text"></div>
-                        <div v-if="question.image_url" class="question-image">
-                            <img :src="question.image_url" alt="Question diagram" />
-                        </div>
-                        <div v-if="question.options && question.options.length" class="options-list">
-                            <div v-for="option in question.options" :key="option.id" class="option-item">
-                                <strong>{{ option.label }}.</strong> {{ option.text }}
+                <div class="preview-container">
+                    <div class="preview-content">
+                        <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item">
+                            <h3>Question {{ index + 1 }}</h3>
+                            <div class="question-text" v-html="question.text"></div>
+                            
+                            <div v-if="question.image_url" class="question-image">
+                                <img :src="question.image_url" alt="Question diagram" />
                             </div>
-                        </div>
-                        <div class="question-meta">
-                            <span class="question-topic">{{ question.topic }}</span>
-                            <span class="question-difficulty">{{ question.difficulty }}</span>
-                            <span v-if="question.source" class="question-source">{{ question.source }}</span>
+                            
+                            <div v-if="question.options && question.options.length" class="options-list">
+                                <div v-for="option in question.options" :key="option.id" class="option-item">
+                                    <strong>{{ option.option }}.</strong> {{ option.text }}
+                                </div>
+                            </div>
+                            
+                            <div class="question-meta">
+                                <span class="question-topic">{{ question.topic }}</span>
+                                <span class="question-difficulty">{{ question.difficulty }}</span>
+                                <span v-if="question.source" class="question-source">{{ question.source }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <div class="quiz-actions">
-                    <button class="save-quiz-btn" @click="saveQuiz">Save Quiz</button>
-                    <button class="regenerate-btn" @click="generateQuiz">Regenerate</button>
+                <div class="save-section">
+                    <button class="save-btn" @click="saveQuiz">💾 Save Quiz</button>
+                    <button class="regenerate-btn" @click="generateQuiz">🔄 Regenerate</button>
                 </div>
             </div>
         </div>
@@ -258,7 +263,6 @@ export default {
 
             try {
                 // In a real implementation, you would fetch subtopics from the backend
-                // This is a placeholder
                 const response = await fetch(`http://localhost:5008/api/topics/subtopics?subject=${this.form.subject}&level=${this.form.level}&topic=${this.form.topic}`);
                 const data = await response.json();
                 this.subTopics = data.subtopics || [];
@@ -279,7 +283,12 @@ export default {
             this.progressPercent = 10;
 
             try {
-                // Simulate API request
+                // Generate default quiz name if empty
+                if (!this.form.quizName) {
+                    this.form.quizName = `${this.form.subject} ${this.form.level} - ${this.form.topic} Quiz`;
+                }
+                
+                // Simulate API request progress
                 setTimeout(() => {
                     this.loadingMessage = 'Analyzing question bank...';
                     this.progressPercent = 40;
@@ -290,7 +299,7 @@ export default {
                     this.progressPercent = 70;
                 }, 1000);
 
-                // In a real implementation, you would fetch from the backend
+                // Call the backend API to generate the quiz
                 const response = await fetch('http://localhost:5008/api/quiz/generate', {
                     method: 'POST',
                     headers: {
@@ -311,19 +320,41 @@ export default {
                     })
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to generate quiz');
+                }
+
                 const result = await response.json();
                 this.generatedQuiz = result.questions;
 
+                // Process the quiz questions to support MathJax if needed
+                this.generatedQuiz.forEach(question => {
+                    // Process the math expressions in question text if needed
+                    if (question.text.includes('$')) {
+                        // No additional processing needed as MathJax will handle this
+                    }
+                });
+
                 this.loadingMessage = 'Quiz generated successfully!';
                 this.progressPercent = 100;
+
+                // Scroll to the preview section
+                setTimeout(() => {
+                    const previewElement = document.querySelector('.preview-wrapper');
+                    if (previewElement) {
+                        previewElement.scrollIntoView({ behavior: 'smooth' });
+                    }
+                }, 100);
             } catch (error) {
                 console.error('Failed to generate quiz:', error);
                 
-                // Mock data for demo purposes
-                this.generatedQuiz = this.getMockQuestions();
+                alert(`Failed to generate quiz: ${error.message}`);
                 
-                this.loadingMessage = 'Quiz generated with sample data';
-                this.progressPercent = 100;
+                // For demo or testing purposes, you can use mock data if the API fails
+                // this.generatedQuiz = this.getMockQuestions();
+                // this.loadingMessage = 'Quiz generated with sample data';
+                // this.progressPercent = 100;
             } finally {
                 setTimeout(() => {
                     this.loading = false;
@@ -341,6 +372,10 @@ export default {
             }
 
             try {
+                this.loading = true;
+                this.loadingMessage = 'Saving quiz...';
+                this.progressPercent = 50;
+
                 const response = await fetch('http://localhost:5008/api/quiz/save', {
                     method: 'POST',
                     headers: {
@@ -358,15 +393,23 @@ export default {
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert(`Quiz "${this.form.quizName}" saved successfully!`);
-                    // Optionally redirect to the quiz folder or quiz view
-                    // this.$router.push(`/quiz-folder/${result.quizId}`);
+                    this.progressPercent = 100;
+                    this.loadingMessage = 'Quiz saved successfully!';
+                    
+                    setTimeout(() => {
+                        alert(`Quiz "${this.form.quizName}" saved successfully!`);
+                        this.loading = false;
+                        
+                        // Optionally redirect to the quiz folder or quiz view
+                        // this.$router.push(`/quiz-folder/${result.quizId}`);
+                    }, 500);
                 } else {
-                    alert(`Failed to save quiz: ${result.error}`);
+                    throw new Error(result.error || 'Failed to save quiz');
                 }
             } catch (error) {
                 console.error('Failed to save quiz:', error);
-                alert('Failed to save quiz due to a network error. Please try again.');
+                this.loading = false;
+                alert('Failed to save quiz: ' + error.message);
             }
         },
         getMockQuestions() {
@@ -430,6 +473,20 @@ export default {
         'form.topic'() {
             this.updateSubTopics();
         }
+    },
+    mounted() {
+        // Initialize MathJax if it exists
+        if (window.MathJax) {
+            window.MathJax.typesetPromise?.();
+        }
+    },
+    updated() {
+        // Refresh MathJax rendering when content updates
+        this.$nextTick(() => {
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise();
+            }
+        });
     }
 };
 </script>
@@ -611,31 +668,56 @@ h1 {
     transition: width 0.3s ease;
 }
 
-.quiz-preview {
+/* Preview Styling - Similar to InsertPaper */
+.preview-wrapper {
     margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
 }
 
-.question-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
+.preview-wrapper h2 {
+    margin-bottom: 1.5rem;
+    color: #333;
+}
+
+.preview-container {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
     margin-bottom: 2rem;
 }
 
-.question-card {
-    background-color: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+.preview-content {
+    padding: 2rem;
+    max-height: 800px;
+    overflow-y: auto;
 }
 
-.question-card h3 {
-    margin-top: 0;
-    color: #66CC99;
+.question-item {
+    margin-bottom: 2.5rem;
+    padding-bottom: 2rem;
     border-bottom: 1px solid #eee;
-    padding-bottom: 0.5rem;
+}
+
+.question-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.question-item h3 {
+    color: #66CC99;
     margin-bottom: 1rem;
+    font-size: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.question-text {
+    margin-bottom: 1rem;
+    line-height: 1.5;
 }
 
 .question-image {
@@ -647,6 +729,7 @@ h1 {
     max-width: 100%;
     max-height: 300px;
     border: 1px solid #eee;
+    border-radius: 4px;
 }
 
 .options-list {
@@ -655,8 +738,9 @@ h1 {
 
 .option-item {
     margin-bottom: 0.5rem;
-    padding: 0.5rem;
+    padding: 0.5rem 0.8rem;
     border-radius: 4px;
+    transition: background-color 0.2s;
 }
 
 .option-item:hover {
@@ -667,12 +751,11 @@ h1 {
     margin-top: 1rem;
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
-    font-size: 0.9rem;
+    gap: 0.7rem;
+    font-size: 0.85rem;
 }
 
 .question-topic, .question-difficulty, .question-source {
-    background-color: #f0f0f0;
     padding: 0.3rem 0.7rem;
     border-radius: 15px;
 }
@@ -692,22 +775,24 @@ h1 {
     color: #5a7d2a;
 }
 
-.quiz-actions {
+.save-section {
     display: flex;
     gap: 1rem;
-    margin-top: 2rem;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
 }
 
-.save-quiz-btn, .regenerate-btn {
-    padding: 0.8rem 1.5rem;
+.save-btn, .regenerate-btn {
+    padding: 1rem 1.5rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-weight: bold;
     cursor: pointer;
     transition: background-color 0.2s;
+    font-size: 1rem;
 }
 
-.save-quiz-btn {
+.save-btn {
     background-color: #66CC99;
     color: white;
     flex: 2;
@@ -719,7 +804,7 @@ h1 {
     flex: 1;
 }
 
-.save-quiz-btn:hover {
+.save-btn:hover {
     background-color: #55bb88;
 }
 
@@ -736,9 +821,13 @@ h1 {
         min-width: 100%;
     }
     
-    .selection-container, .optional-selection-row, .form-row, .checkbox-group, .quiz-actions {
+    .selection-container, .optional-selection-row, .form-row, .checkbox-group, .save-section {
         flex-direction: column;
         gap: 1rem;
+    }
+    
+    .preview-content {
+        padding: 1rem;
     }
 }
 </style>

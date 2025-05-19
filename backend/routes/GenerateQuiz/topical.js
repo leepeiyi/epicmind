@@ -1,11 +1,33 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { Pool } = require("pg");
+
+// Create a PostgreSQL connection pool
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  port: process.env.DB_PORT,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
+});
+
+// Test database connection
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('Database connection error:', err);
+  } else {
+    console.log('Database connected successfully. Server time:', res.rows[0].now);
+  }
+});
 
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // Generate a quiz using Gemini AI
 router.post('/generate', async (req, res) => {
@@ -41,13 +63,12 @@ router.post('/generate', async (req, res) => {
                 q.answer_options, 
                 q.answer_key, 
                 q.topic_label, 
-                q.subtopic,
+                q.sub_topic,
                 q.difficulty_level,
-                q.source_type,
-                q.source_year,
-                q.image_path
+                q.paper_type,
+                q.image_paths
             FROM 
-                questions q
+                question q
             WHERE 
                 q.subject = $1 
                 AND q.banding = $2 
@@ -66,7 +87,7 @@ router.post('/generate', async (req, res) => {
 
         // Add optional filters
         if (subTopic) {
-            query += ` AND q.subtopic = $${paramIndex}`;
+            query += ` AND q.sub_topic = $${paramIndex}`;
             queryParams.push(subTopic);
             paramIndex++;
         }
@@ -104,8 +125,8 @@ router.post('/generate', async (req, res) => {
         query += ` LIMIT $${paramIndex}`;
         queryParams.push(maxCandidates);
 
-        // Execute query to get candidate questions
-        const result = await db.query(query, queryParams);
+        // Execute query to get candidate questions using pool
+        const result = await pool.query(query, queryParams);
         
         if (result.rows.length === 0) {
             return res.status(404).json({
@@ -272,7 +293,7 @@ Respond only with a JSON array of the selected question IDs in your recommended 
     }
 });
 
-// Save a generated quiz (same as before)
+// Save a generated quiz with question_ids array
 router.post('/save', async (req, res) => {
     try {
         const {
@@ -291,33 +312,24 @@ router.post('/save', async (req, res) => {
             });
         }
 
-        // First, create the quiz folder
-        const quizInsertResult = await db.query(
+        // Extract question IDs from the questions array
+        const questionIds = questions.map(q => q.id);
+
+        // Insert quiz with the array of question IDs using pool
+        const quizInsertResult = await pool.query(
             `INSERT INTO quiz_folders (
                 name, 
                 subject, 
                 banding, 
                 level, 
-                topic, 
+                topic,
+                question_ids,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id`,
-            [quizName, subject, banding, level, topic]
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id`,
+            [quizName, subject, banding, level, topic, questionIds]
         );
 
         const quizId = quizInsertResult.rows[0].id;
-
-        // Then, add the questions to the quiz_questions junction table
-        for (let i = 0; i < questions.length; i++) {
-            const question = questions[i];
-            await db.query(
-                `INSERT INTO quiz_questions (
-                    quiz_id, 
-                    question_id, 
-                    position
-                ) VALUES ($1, $2, $3)`,
-                [quizId, question.id, i + 1]
-            );
-        }
 
         return res.json({
             success: true,
@@ -328,9 +340,158 @@ router.post('/save', async (req, res) => {
         console.error('Error saving quiz:', error);
         return res.status(500).json({
             success: false,
-            error: 'Server error'
+            error: 'Server error: ' + error.message
         });
     }
+});
+
+// Get a quiz with all its questions
+router.get('/:quizId', async (req, res) => {
+    try {
+        const { quizId } = req.params;
+        
+        // Get the quiz details using pool
+        const quizResult = await pool.query(
+            'SELECT * FROM quiz_folders WHERE id = $1',
+            [quizId]
+        );
+        
+        if (quizResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Quiz not found'
+            });
+        }
+        
+        const quiz = quizResult.rows[0];
+        
+        // If there are no question IDs, return just the quiz info
+        if (!quiz.question_ids || quiz.question_ids.length === 0) {
+            return res.json({
+                success: true,
+                quiz: {
+                    ...quiz,
+                    questions: []
+                }
+            });
+        }
+        
+        // Get all questions associated with this quiz using pool
+        const questionsResult = await pool.query(
+            'SELECT * FROM questions WHERE id = ANY($1) ORDER BY array_position($1, id)',
+            [quiz.question_ids]
+        );
+        
+        // Process the questions (parse JSON fields, etc.)
+        const questions = questionsResult.rows.map(row => {
+            // Process answer options if they exist
+            let options = [];
+            if (row.answer_options) {
+                if (typeof row.answer_options === 'string') {
+                    try {
+                        options = JSON.parse(row.answer_options);
+                    } catch (e) {
+                        console.error('Error parsing answer options:', e);
+                    }
+                } else {
+                    options = row.answer_options;
+                }
+            }
+
+            // Process answer key
+            let answerKey = {};
+            if (row.answer_key) {
+                if (typeof row.answer_key === 'string') {
+                    try {
+                        answerKey = JSON.parse(row.answer_key);
+                    } catch (e) {
+                        console.error('Error parsing answer key:', e);
+                    }
+                } else {
+                    answerKey = row.answer_key;
+                }
+            }
+
+            return {
+                id: row.id,
+                text: row.question_text,
+                options: options,
+                image_url: Array.isArray(row.image_path) ? row.image_path[0] : row.image_path,
+                topic: row.topic_label,
+                difficulty: row.difficulty_level || 'Medium',
+                source: row.source_type === 'past_year' 
+                    ? `Past Year ${row.source_year}` 
+                    : 'Topical Exercise',
+                answer: answerKey.correct_answer || ''
+            };
+        });
+        
+        return res.json({
+            success: true,
+            quiz: {
+                ...quiz,
+                questions
+            }
+        });
+    } catch (error) {
+        console.error('Error retrieving quiz:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Server error: ' + error.message
+        });
+    }
+});
+
+// Get all quizzes (basic info, no questions)
+router.get('/', async (req, res) => {
+    try {
+        const { subject, level } = req.query;
+        
+        let query = 'SELECT id, name, subject, level, topic, created_at FROM quiz_folders';
+        const queryParams = [];
+        
+        // Add filters if provided
+        if (subject || level) {
+            query += ' WHERE';
+            
+            if (subject) {
+                query += ' subject = $1';
+                queryParams.push(subject);
+            }
+            
+            if (subject && level) {
+                query += ' AND';
+            }
+            
+            if (level) {
+                query += ` level = $${queryParams.length + 1}`;
+                queryParams.push(level);
+            }
+        }
+        
+        // Order by creation date, newest first
+        query += ' ORDER BY created_at DESC';
+        
+        // Execute query using pool
+        const result = await pool.query(query, queryParams);
+        
+        return res.json({
+            success: true,
+            quizzes: result.rows
+        });
+    } catch (error) {
+        console.error('Error retrieving quizzes:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Server error: ' + error.message
+        });
+    }
+});
+
+// Handle database connection errors
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1);
 });
 
 module.exports = router;
