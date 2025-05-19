@@ -147,4 +147,44 @@ router.get("/exists/:paper_name", async (req, res) => {
   }
 });
 
+router.post("/update-question-numbers", async (req, res) => {
+  const { paper_name, questions } = req.body;
+  if (!paper_name || !questions || !Array.isArray(questions)) {
+    return res.status(400).json({ error: "Missing paper_name or questions" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Begin transaction
+    await client.query("BEGIN");
+
+    for (const question of questions) {
+      await client.query(
+        `UPDATE question 
+         SET question_number = $1
+         WHERE paper_name = $2 AND id = $3`,
+        [question.question_number, paper_name, question.id]
+      );
+    }
+
+    // Commit transaction
+    await client.query("COMMIT");
+
+    res.json({
+      success: true,
+      message: "Question numbers updated successfully",
+    });
+  } catch (err) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("❌ Update question numbers error:", err.message);
+    res
+      .status(500)
+      .json({ error: "Failed to update question numbers: " + err.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

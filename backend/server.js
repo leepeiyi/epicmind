@@ -10,8 +10,6 @@ const client = require("./databasepg");
 //insert routes
 const userAccountRoutes = require('./routes/UserAccount/auth');
 app.use('/api/user', userAccountRoutes);
-const ocrRoutes = require('./routes/InsertPaper/ocrRoutes');
-app.use("/api/ocr", ocrRoutes);
 const mathpixRoutes = require('./routes/Mathpix/mathpix');
 app.use('/api/mathpix', mathpixRoutes);
 const paperRoutes = require('./routes/Mathpix/insertpaper');

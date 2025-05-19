@@ -56,16 +56,16 @@ const insertJSONPayload = async (parsedJSON) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           paper_name,
-          question.question_number,
-          question.question_text,
-          JSON.stringify(question.answer_options),
-          JSON.stringify(question.image_path),
-          JSON.stringify(question.answer_key),
+          item.question_number, // Changed from question.question_number
+          item.question_text, // Changed from question.question_text
+          JSON.stringify(item.answer_options), // Changed
+          JSON.stringify(item.image_path), // Changed
+          JSON.stringify(item.answer_key), // Changed
           subject,
           banding,
           level,
-          paper_type,
-          topic_label, // Changed from topic
+          parsedJSON.paper_type, // Add paper_type from parsedJSON
+          parsedJSON.topic_label, // Changed from topic
         ]
       );
     }

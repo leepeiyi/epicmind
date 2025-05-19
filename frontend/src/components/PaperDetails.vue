@@ -33,7 +33,7 @@
         <!-- Topic Dropdown - Shown for all math subjects in topical mode -->
         <div v-if="showTopicDropdown" class="field">
             <label>Topic</label>
-            <select v-model="localTopic">
+            <select v-model="localTopicLabel">
                 <option value="" disabled>Select Topic</option>
                 <option v-for="topic in availableTopics" :key="topic" :value="topic">{{ topic }}</option>
             </select>
@@ -133,7 +133,6 @@ export default {
                 "07 Integration Basics",
                 "08 Integration Area",
                 "09 Kinematics",
-                "10 Int Rev",
                 "11 Plane Geometry"
             ]
         };
@@ -184,7 +183,7 @@ export default {
             set(value) {
                 this.$emit("update:subject", value);
                 // Reset topic if subject changes
-                this.$emit("update:topic", "");
+                this.$emit("update:topic_label", "");
             },
         },
         localBanding: {
@@ -202,15 +201,15 @@ export default {
             set(value) {
                 this.$emit("update:level", value);
                 // Reset topic because level changed
-                this.$emit("update:topic", "");
+                this.$emit("update:topic_label", "");
             },
         },
-        localTopicLabel: { // Changed from localTopic
+        localTopicLabel: {
             get() {
-                return this.topic_label; // Changed from this.topic
+                return this.topic_label;
             },
             set(value) {
-                this.$emit("update:topic_label", value); // Changed
+                this.$emit("update:topic_label", value);
             }
         }
     },
@@ -218,15 +217,12 @@ export default {
         // Reset topic if uploadType changes to "exam"
         uploadType(newValue) {
             if (newValue !== "topical") {
-                this.$emit("update:topic", "");
+                this.$emit("update:topic_label", "");
             }
         }
     }
 };
 </script>
-
-
-
 
 <style scoped>
 .fields {

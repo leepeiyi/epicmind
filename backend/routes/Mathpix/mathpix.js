@@ -4,7 +4,7 @@ const router = express.Router();
 const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
-const insertJSONPayload = require("../InsertPaper/insertPostgresql");
+const insertJSONPayload = require("../Mathpix/insertPostgresql");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 const axios = require("axios");
@@ -23,6 +23,161 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // === Upload PDF to Mathpix, then poll until extraction is ready ===
 // === Step 1: Upload PDF to Mathpix and get pdf_id ===
+
+const PDFParser = require("pdf-parse");
+
+// Add this endpoint to mathpix.js
+router.post("/get_pdf_page_count", upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "PDF file required" });
+
+    const dataBuffer = req.file.buffer;
+    const pdfData = await PDFParser(dataBuffer);
+
+    res.json({ pageCount: pdfData.numpages });
+  } catch (err) {
+    console.error("❌ Error getting PDF page count:", err);
+    res.status(500).json({ error: "Failed to get PDF page count" });
+  }
+});
+
+// Test endpoint for PDF page count
+router.post("/test/pdf-page-count", upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No PDF file uploaded" });
+    }
+
+    const PDFParser = require("pdf-parse");
+    const dataBuffer = req.file.buffer;
+
+    console.log("🧪 Testing PDF page count functionality...");
+
+    try {
+      const pdfData = await PDFParser(dataBuffer);
+      const pageCount = pdfData.numpages;
+
+      console.log(`✅ PDF page count test successful: ${pageCount} pages`);
+      return res.json({ success: true, pageCount });
+    } catch (pdfError) {
+      console.error("❌ PDF parse error:", pdfError);
+      return res.status(500).json({
+        error: "Failed to parse PDF",
+        details: pdfError.message,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Test error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Test endpoint for Mathpix API connection (no actual upload)
+router.post("/test/mathpix-connection", async (req, res) => {
+  try {
+    console.log("🧪 Testing Mathpix API connection...");
+
+    // Just check if we can connect to Mathpix API
+    const testResponse = await axios.get(
+      "https://api.mathpix.com/v3/app-info",
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    console.log("✅ Mathpix API connection test successful");
+    return res.json({
+      success: true,
+      apiInfo: testResponse.data,
+      credentials: {
+        app_id_valid: !!process.env.MATHPIX_APP_ID,
+        app_key_valid: !!process.env.MATHPIX_APP_KEY,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Mathpix API connection test failed:", error);
+    return res.status(500).json({
+      error: "Failed to connect to Mathpix API",
+      details: error.message,
+      credentials: {
+        app_id_valid: !!process.env.MATHPIX_APP_ID,
+        app_key_valid: !!process.env.MATHPIX_APP_KEY,
+      },
+    });
+  }
+});
+
+// Test endpoint for batch parameter handling
+router.post("/test/batch-params", upload.single("pdf"), async (req, res) => {
+  try {
+    console.log("🧪 Testing batch parameter handling...");
+
+    const { startPage, endPage, batchSize } = req.body;
+
+    // Validate parameters
+    const parsedStartPage = startPage ? parseInt(startPage) : null;
+    const parsedEndPage = endPage ? parseInt(endPage) : null;
+    const parsedBatchSize = batchSize ? parseInt(batchSize) : 5;
+
+    // If file is provided, get actual page count
+    let actualPageCount = null;
+    if (req.file) {
+      const PDFParser = require("pdf-parse");
+      const dataBuffer = req.file.buffer;
+      const pdfData = await PDFParser(dataBuffer);
+      actualPageCount = pdfData.numpages;
+    }
+
+    // Calculate batches
+    const result = {
+      parsedParams: {
+        startPage: parsedStartPage,
+        endPage: parsedEndPage,
+        batchSize: parsedBatchSize,
+      },
+      actualFile: {
+        provided: !!req.file,
+        pageCount: actualPageCount,
+      },
+      batchCalculations: null,
+    };
+
+    // If we have either actual page count or end page, calculate batches
+    const pageCount = actualPageCount || parsedEndPage;
+    if (pageCount) {
+      const totalBatches = Math.ceil(pageCount / parsedBatchSize);
+      const batches = [];
+
+      for (let i = 0; i < totalBatches; i++) {
+        const batchStart = i * parsedBatchSize + 1;
+        const batchEnd = Math.min((i + 1) * parsedBatchSize, pageCount);
+
+        batches.push({
+          batchNumber: i + 1,
+          startPage: batchStart,
+          endPage: batchEnd,
+          pageCount: batchEnd - batchStart + 1,
+        });
+      }
+
+      result.batchCalculations = {
+        totalPages: pageCount,
+        totalBatches,
+        batches,
+      };
+    }
+
+    console.log("✅ Batch parameter test successful");
+    return res.json(result);
+  } catch (error) {
+    console.error("❌ Batch parameter test failed:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 router.post(
   "/upload_pdf_to_mathpix",
   upload.single("pdf"),
@@ -31,18 +186,31 @@ router.post(
       if (!req.file)
         return res.status(400).json({ error: "PDF file required" });
 
+      // Get page range parameters if provided
+      const startPage = req.body.startPage
+        ? parseInt(req.body.startPage)
+        : null;
+      const endPage = req.body.endPage ? parseInt(req.body.endPage) : null;
+
       const form = new FormData();
       form.append("file", req.file.buffer, req.file.originalname);
-      form.append(
-        "options_json",
-        JSON.stringify({
-          formats: ["markdown_with_ids", "images"],
-          include_answer_box_crop: true,
-          math_inline_delimiters: ["$", "$"],
-          math_display_delimiters: ["$$", "$$"],
-          sandbox: true,
-        })
-      );
+
+      // Create options object
+      const options = {
+        formats: ["markdown_with_ids", "images"],
+        include_answer_box_crop: true,
+        math_inline_delimiters: ["$", "$"],
+        math_display_delimiters: ["$$", "$$"],
+        sandbox: true,
+      };
+
+      // Add page range if provided
+      if (startPage && endPage) {
+        options.page_range = `${startPage}-${endPage}`;
+        console.log(`🔍 Processing PDF pages ${startPage}-${endPage}`);
+      }
+
+      form.append("options_json", JSON.stringify(options));
 
       const uploadRes = await axios.post(
         "https://api.mathpix.com/v3/pdf",
@@ -127,11 +295,22 @@ router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
 
 router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
-    const { pdf_id, subject, banding, level, paper_name, paper_type, topic } =
-      req.body;
+    const {
+      pdf_id,
+      subject,
+      banding,
+      level,
+      paper_name,
+      paper_type,
+      topic_label, // Changed from topic
+      startPage, // Add these params
+      endPage, // Add these params
+    } = req.body;
+
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
     }
+
     await pollMathpixStatus(pdf_id);
 
     const [mmdRes, linesRes] = await Promise.all([
@@ -151,6 +330,12 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
 
     const markdownContent = mmdRes.data;
 
+    // Build the page range note if applicable
+    const pageRangeNote =
+      startPage && endPage
+        ? `- Focus only on pages ${startPage} to ${endPage}.`
+        : "";
+
     const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions, math expressions (in LaTeX), and a final answer key.
 
 Instructions:
@@ -159,6 +344,7 @@ Instructions:
 - Extract answer options (if present).
 - Extract image URLs for each question (from ![Diagram](...)).
 - Match the correct answer for each question using the final answer section.
+${pageRangeNote}
 
 IMPORTANT:
 - Do not remove or alter any math symbols or formatting.
@@ -184,8 +370,7 @@ Each item should follow this format:
   "banding": "${banding}",
   "level": "${level}",
   "paper_type": "${paper_type}",
-  "topic_label": "${topic || ""}" // Changed from topic
-
+  "topic_label": "${topic_label || ""}"
 }`;
 
     const result = await model.generateContent([
@@ -203,6 +388,15 @@ Each item should follow this format:
     const pages = linesRes.data.pages || [];
     const orderedImageUrls = [];
     for (const page of pages) {
+      // If startPage and endPage are defined, filter pages by range
+      if (
+        startPage &&
+        endPage &&
+        (page.page_num < startPage || page.page_num > endPage)
+      ) {
+        continue; // Skip pages outside the requested range
+      }
+
       for (const line of page.lines || []) {
         if (
           line.text &&
@@ -232,6 +426,12 @@ Each item should follow this format:
           }
         }
       }
+
+      // Add page information if available
+      if (startPage && endPage) {
+        q.page_range = `${startPage}-${endPage}`;
+      }
+
       return { ...q, image_path };
     });
 
@@ -245,26 +445,37 @@ Each item should follow this format:
 });
 
 // === Step 2: Upload extracted image paths to your S3 ===
+// === Step 2: Upload extracted image paths to your S3 ===
 router.post("/upload_extracted_images_to_s3", async (req, res) => {
   try {
-    const { paper_name, subject, banding, level, questions } = req.body;
+    const {
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions,
+      paper_type,
+      topic_label,
+    } = req.body;
     if (!questions || !paper_name || !subject || !banding || !level) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     const updatedQuestions = await Promise.all(
-      questions.map(async (q) => {
-        if (!Array.isArray(q.image_path)) return q;
+      questions.map(async (question) => {
+        // Changed 'q' to 'question' for clarity
+        if (!Array.isArray(question.image_path)) return question;
 
         const newPaths = await Promise.all(
-          q.image_path.map(async (url, i) => {
+          question.image_path.map(async (url, i) => {
             try {
               console.log(`📥 Downloading: ${url}`);
               const response = await axios.get(url, {
                 responseType: "arraybuffer",
               });
               const buffer = Buffer.from(response.data, "binary");
-              const fileName = `page-custom_diagram_${q.question_number}_${i}.png`;
+              // Use question instead of q here
+              const fileName = `page-custom_diagram_${question.question_number}_${i}.png`;
               const key = `${paper_name}/${fileName}`;
 
               await s3.send(
@@ -281,24 +492,26 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
               }.amazonaws.com/${encodeURIComponent(paper_name)}/${fileName}`;
             } catch (err) {
               console.warn(
-                `⚠️ Failed to upload image for Q${q.question_number}: ${err.message}`
+                `⚠️ Failed to upload image for Q${question.question_number}: ${err.message}`
               );
               return url;
             }
           })
         );
 
-        return { ...q, image_path: newPaths };
+        return { ...question, image_path: newPaths };
       })
     );
 
-    // ✅ Insert into PostgreSQL
+    // ✅ Insert into PostgreSQL - include paper_type and topic_label
     await insertJSONPayload({
       paper_name,
       subject,
       banding,
       level,
       questions: updatedQuestions,
+      paper_type, // Include these
+      topic_label, // Include these
     });
 
     res.json({
