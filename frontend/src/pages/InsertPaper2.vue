@@ -14,11 +14,11 @@
                         @click.prevent="loadRecentPaper(p.paper_name)">
                         <div class="recent-item-row">
                             <span class="paper-name">{{ p.paper_name }}</span>
+                            <span v-if="p.topic" class="paper-topic">{{ p.topic }}</span>
                             <span class="upload-time">– uploaded {{ new Date(p.last_uploaded).toLocaleString() }}</span>
                         </div>
                     </li>
                 </ul>
-
             </div>
 
             <div class="type-toggle">
@@ -42,7 +42,7 @@
             </div>
 
             <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
-                v-model:level="form.level" />
+                v-model:level="form.level" v-model:topic="form.topic" :uploadType="uploadType" />
 
             <button v-if="uploadType" class="submit-btn" @click="handleSubmit">Process File</button>
 
@@ -85,7 +85,7 @@ export default {
     data() {
         return {
             uploadType: '',
-            form: { subject: '', banding: '', level: '' },
+            form: { subject: '', banding: '', level: '', topic: '' },
             uploadedFile: null,
             pdfPreviewUrl: '',
             markdownContent: '',
@@ -201,25 +201,29 @@ export default {
                 alert("Please complete all fields and upload a file.");
                 return;
             }
-
+            if (this.uploadType === "topical" &&
+                !this.form.topic) {
+                alert("Please select a topic for Math / E-Math Sec 1.");
+                return;
+            }
             try {
                 // ✅ Step 0: Check if paper already exists
                 const baseName = this.uploadedFile.name.replace(/\.pdf$/i, '').replace(/\s+/g, "_");
-    const paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
-    this.paperName = paperName;
+                const paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+                this.paperName = paperName;
 
-    this.progressMessage = "🔎 Checking for existing paper...";
-    this.progressPercent = 10;
+                this.progressMessage = "🔎 Checking for existing paper...";
+                this.progressPercent = 10;
 
-    const existsRes = await fetch(`http://localhost:5008/api/paper/exists/${encodeURIComponent(paperName)}`);
-    const { exists } = await existsRes.json();
-    if (exists) {
-        alert(`⚠️ Paper "${paperName}" already exists in the database.`);
-        this.progressMessage = "⚠️ Duplicate paper detected.";
-        this.progressPercent = 0;
-        return;
-    }
-                
+                const existsRes = await fetch(`http://localhost:5008/api/paper/exists/${encodeURIComponent(paperName)}`);
+                const { exists } = await existsRes.json();
+                if (exists) {
+                    alert(`⚠️ Paper "${paperName}" already exists in the database.`);
+                    this.progressMessage = "⚠️ Duplicate paper detected.";
+                    this.progressPercent = 0;
+                    return;
+                }
+
                 this.progressMessage = "📤 Uploading PDF to Mathpix...";
                 this.progressPercent = 20;
 
@@ -238,6 +242,7 @@ export default {
                 this.progressPercent = 40;
 
                 // Step 2: Extract questions from Mathpix Markdown
+                // In handleSubmit method, when extracting questions from Mathpix
                 const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -247,6 +252,8 @@ export default {
                         subject: this.form.subject,
                         banding: this.form.banding,
                         level: this.form.level,
+                        paper_type: this.uploadType,
+                        topic: this.uploadType === "topical" ? this.form.topic : null
                     }),
                 });
 
@@ -266,7 +273,9 @@ export default {
                         subject: this.form.subject,
                         banding: this.form.banding,
                         level: this.form.level,
+                        paper_type: this.uploadType, // Add this line
                         questions,
+                        topic: this.uploadType === "topical" ? this.form.topic : null
                     }),
                 });
 
@@ -520,5 +529,11 @@ export default {
 
 .save-btn:hover {
     background-color: #4CAF50;
+}
+
+.paper-topic {
+    color: #66CC99;
+    font-weight: 500;
+    margin-left: 0.5rem;
 }
 </style>

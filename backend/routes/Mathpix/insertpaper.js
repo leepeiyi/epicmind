@@ -20,7 +20,9 @@ router.get("/recent", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(`
-      SELECT paper_name, MAX(created_at) as last_uploaded
+      SELECT paper_name, MAX(created_at) as last_uploaded,
+       MAX(topic) as topic,
+       MAX(paper_type) as paper_type
       FROM question
       GROUP BY paper_name
       ORDER BY last_uploaded DESC

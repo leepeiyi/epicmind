@@ -10,5 +10,6 @@ CREATE TABLE IF NOT EXISTS question (
     answer_options JSONB,
     image_paths JSONB,  -- Keeping JSONB as per the second table
     topic_label TEXT,
-    answer_key VARCHAR(255)
+    answer_key VARCHAR(255),
+    paper_type VARCHAR(50),
 );

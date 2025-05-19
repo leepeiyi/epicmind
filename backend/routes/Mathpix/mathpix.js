@@ -4,7 +4,7 @@ const router = express.Router();
 const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
-const insertJSONPayload = require("../InsertPaper/insertPostgresql");
+const insertJSONPayload = require("../Mathpix/insertPostgresql");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 const axios = require("axios");
@@ -127,7 +127,8 @@ router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
 
 router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
-    const { pdf_id, subject, banding, level, paper_name } = req.body;
+    const { pdf_id, subject, banding, level, paper_name, paper_type, topic} =
+      req.body;
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -180,7 +181,9 @@ Each item should follow this format:
   "image_path": ["..."],
   "subject": "${subject}",
   "banding": "${banding}",
-  "level": "${level}"
+  "level": "${level}",
+   "paper_type": "${paper_type}",
+    "topic": "${topic || ''}" (if any, if not leave it empty)
 }`;
 
     const result = await model.generateContent([
@@ -245,7 +248,7 @@ Each item should follow this format:
 // === Step 2: Upload extracted image paths to your S3 ===
 router.post("/upload_extracted_images_to_s3", async (req, res) => {
   try {
-    const { paper_name, subject, banding, level, questions } = req.body;
+    const { paper_name, subject, banding, level, paper_type, topic, questions } = req.body;
     if (!questions || !paper_name || !subject || !banding || !level) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -296,6 +299,8 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
       subject,
       banding,
       level,
+      paper_type,
+      topic,
       questions: updatedQuestions,
     });
 
