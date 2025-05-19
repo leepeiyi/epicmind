@@ -54,7 +54,7 @@
                 <p>{{ progressMessage }} ({{ progressPercent }}%)</p>
                 <p v-if="batchProcessing">
                     Processing batch {{ currentBatch }}/{{ totalBatches }} (pages {{ currentBatchStart }}-{{
-                    currentBatchEnd }})
+                        currentBatchEnd }})
                 </p>
             </div>
 
@@ -247,6 +247,7 @@ export default {
         async loadRecentPaper(paperName) {
             try {
                 const res = await fetch(`http://localhost:5008/api/ocr/questions/${paperName}`);
+                console.log('Recent paper response:', res);
                 const data = await res.json();
                 this.questionCount = data.questions.length;
                 this.paperName = paperName;
@@ -301,71 +302,6 @@ export default {
             } catch (error) {
                 console.error('❌ Save error:', error);
                 alert('❌ Failed to save markdown');
-            }
-        },
-        async processBatch(startPage, endPage) {
-            try {
-                // Upload PDF to Mathpix with page range
-                const formData = new FormData();
-                formData.append("pdf", this.uploadedFile);
-                formData.append("startPage", startPage);
-                formData.append("endPage", endPage);
-
-                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
-                    method: "POST",
-                    body: formData,
-                });
-                const { pdf_id } = await uploadRes.json();
-                if (!pdf_id) throw new Error("Failed to get PDF ID");
-
-                this.progressMessage = `🔍 Extracting questions from pages ${startPage}-${endPage}...`;
-                this.progressPercent = 40 + (this.currentBatch / this.totalBatches) * 30;
-
-                // Extract questions from Mathpix Markdown with page range
-                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        pdf_id,
-                        paper_name: this.uploadedFile.name.split(".pdf")[0],
-                        subject: this.form.subject,
-                        banding: this.form.banding,
-                        level: this.form.level,
-                        paper_type: this.uploadType,
-                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                        startPage,
-                        endPage
-                    }),
-                });
-
-                const extractData = await extractRes.json();
-                const questions = extractData.questions || [];
-                if (!questions.length) return [];
-
-                this.progressMessage = `📦 Uploading diagrams from pages ${startPage}-${endPage}...`;
-                this.progressPercent = 70 + (this.currentBatch / this.totalBatches) * 20;
-
-                // Upload images to S3
-                const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        paper_name: this.uploadedFile.name.split(".pdf")[0],
-                        subject: this.form.subject,
-                        banding: this.form.banding,
-                        level: this.form.level,
-                        paper_type: this.uploadType,
-                        questions,
-                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                        batchNumber: this.currentBatch
-                    }),
-                });
-
-                const finalData = await uploadImagesRes.json();
-                return finalData.questions || [];
-            } catch (error) {
-                console.error(`❌ Error processing batch ${startPage}-${endPage}:`, error);
-                return [];
             }
         },
         async handleSubmit() {
@@ -423,8 +359,63 @@ export default {
                     // Reset batch processing flags
                     this.batchProcessing = false;
                 } else {
-                    // Standard processing for small PDFs (your existing code)
-                    // ...
+                    // Standard processing for small PDFs
+                    this.progressMessage = "📤 Uploading PDF to Mathpix...";
+                    this.progressPercent = 20;
+
+                    // Step 1: Upload PDF to Mathpix
+                    const formData = new FormData();
+                    formData.append("pdf", this.uploadedFile);
+
+                    const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                        method: "POST",
+                        body: formData,
+                    });
+                    const { pdf_id } = await uploadRes.json();
+                    if (!pdf_id) throw new Error("Failed to get PDF ID");
+
+                    this.progressMessage = "🔍 Extracting questions with Gemini...";
+                    this.progressPercent = 40;
+
+                    // Step 2: Extract questions from Mathpix Markdown
+                    const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            pdf_id,
+                            paper_name: this.uploadedFile.name.split(".pdf")[0],
+                            subject: this.form.subject,
+                            banding: this.form.banding,
+                            level: this.form.level,
+                            paper_type: this.uploadType,
+                            topic_label: this.uploadType === "topical" ? this.form.topic_label : null
+                        }),
+                    });
+
+                    const extractData = await extractRes.json();
+                    const questions = extractData.questions || [];
+                    if (!questions.length) throw new Error("No questions extracted");
+
+                    this.progressMessage = "📦 Uploading diagrams to S3...";
+                    this.progressPercent = 70;
+
+                    // Step 3: Upload images to S3 and insert into DB
+                    const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            paper_name: this.uploadedFile.name.split(".pdf")[0],
+                            subject: this.form.subject,
+                            banding: this.form.banding,
+                            level: this.form.level,
+                            paper_type: this.uploadType,
+                            questions,
+                            topic_label: this.uploadType === "topical" ? this.form.topic_label : null
+                        }),
+                    });
+
+                    const finalData = await uploadImagesRes.json();
+                    this.allProcessedQuestions = finalData.questions || [];
                 }
 
                 // Step 4: Convert to markdown
