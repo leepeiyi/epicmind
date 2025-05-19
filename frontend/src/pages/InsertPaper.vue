@@ -246,7 +246,7 @@ export default {
 
         async loadRecentPaper(paperName) {
             try {
-                const res = await fetch(`http://localhost:5008/api/ocr/questions/${paperName}`);
+                const res = await fetch(`http://localhost:5008/api/paper/questions/${paperName}`);
                 console.log('Recent paper response:', res);
                 const data = await res.json();
                 this.questionCount = data.questions.length;
