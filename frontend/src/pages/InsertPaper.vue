@@ -43,7 +43,8 @@
             </div>
 
             <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
-                v-model:level="form.level" v-model:topic_label="form.topic_label" v-model:year="form.year" :uploadType="uploadType" />
+                v-model:level="form.level" v-model:topic_label="form.topic_label" v-model:year="form.year"
+                :uploadType="uploadType" />
 
             <button v-if="uploadType" class="submit-btn" @click="handleSubmit">Process File</button>
 
@@ -58,7 +59,43 @@
                 </p>
             </div>
 
-            <!-- markdown preview, image upload, and save section remain unchanged -->
+            <!-- Repositioned LaTeX Converter - now appears before the markdown editor/preview -->
+            <div v-if="markdownContent" class="latex-converter-section">
+                <h3>LaTeX Converter</h3>
+                <div class="latex-converter">
+                    <div class="converter-input-area">
+                        <textarea v-model="textToConvert"
+                            placeholder="Paste math expression here (e.g., 2-\frac{1}{x+2}-\frac{3}{4-x})"
+                            class="converter-input"></textarea>
+                        <div class="converter-buttons">
+                            <button @click="convertToLatex" class="convert-btn">Convert to LaTeX</button>
+                            <button @click="clearConverter" class="clear-btn">Clear</button>
+                        </div>
+                    </div>
+
+                    <div class="converter-output-area">
+                        <div v-if="convertedLatex" class="converted-output">
+                            <div class="output-column">
+                                <h5>Dollar Format ($...$):</h5>
+                                <div class="output-box">
+                                    <pre>{{ convertedLatex.dollar }}</pre>
+                                    <button @click="copyToClipboard(convertedLatex.dollar)" class="copy-btn">
+                                        📋 Copy
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="output-column">
+                                <h5>Preview:</h5>
+                                <div class="preview-box">
+                                    <div v-html="convertedLatex.dollar" class="latex-preview"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- markdown editor and preview section -->
             <div v-if="markdownContent" class="output-wrapper">
                 <div class="editor">
                     <h3>Markdown Editor</h3>
@@ -73,8 +110,6 @@
             <div v-if="markdownContent" class="save-section">
                 <button class="save-btn" @click="saveEditedMarkdown">💾 Save Markdown</button>
             </div>
-
-
         </div>
     </div>
 </template>
@@ -91,7 +126,7 @@ export default {
     data() {
         return {
             uploadType: '',
-            form: { subject: '', banding: '', level: '', topic_label: '', year: null},
+            form: { subject: '', banding: '', level: '', topic_label: '', year: null },
             uploadedFile: null,
             pdfPreviewUrl: '',
             markdownContent: '',
@@ -113,7 +148,9 @@ export default {
             totalBatches: 0,
             currentBatchStart: 0,
             currentBatchEnd: 0,
-            allProcessedQuestions: []
+            allProcessedQuestions: [],
+            textToConvert: '',
+            convertedLatex: null
         };
     },
     computed: {
@@ -129,6 +166,9 @@ export default {
 
             // Load PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            
+            // Configure MathJax
+            this.configureMathJax();
         } catch (err) {
             console.error('❌ Failed to fetch recent papers:', err);
         }
@@ -137,12 +177,86 @@ export default {
         compiledMarkdown() {
             this.$nextTick(() => {
                 if (window.MathJax && window.MathJax.typesetPromise) {
-                    window.MathJax.typesetPromise();
+                    window.MathJax.typesetPromise()
+                        .then(() => {
+                            console.log('✅ MathJax rendering complete');
+                        })
+                        .catch(err => {
+                            console.error('❌ MathJax error:', err);
+                        });
                 }
             });
         }
     },
     methods: {
+        // Configure MathJax for LaTeX rendering
+        configureMathJax() {
+            window.MathJax = {
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                    processEscapes: true
+                },
+                options: {
+                    enableMenu: false
+                }
+            };
+
+            if (!window.MathJax || !window.MathJax.typesetPromise) {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+                script.async = true;
+                document.head.appendChild(script);
+            }
+        },
+
+        // LaTeX conversion methods
+        convertToLatex() {
+            if (!this.textToConvert.trim()) {
+                alert('Please enter a math expression to convert');
+                return;
+            }
+
+            // Process the input - prepare it for LaTeX
+            let processedText = this.textToConvert
+                .trim()
+                // Handle common patterns that need fixing
+                .replace(/\\frac(\{.*?\})(\{.*?\})/g, '\\frac$1$2') // Ensure proper \frac formatting
+                .replace(/(\d)([a-zA-Z])/g, '$1 $2') // Add space between numbers and variables
+                .replace(/([a-zA-Z])(\d)/g, '$1^$2') // Convert letter followed by number to power notation
+                .replace(/\^(\d+)([a-zA-Z])/g, '^$1 $2') // Add space after powers
+                .replace(/\\+/g, '\\'); // Replace multiple backslashes with a single one
+
+            this.convertedLatex = {
+                dollar: `$${processedText}$`,
+                display: `$$${processedText}$$`
+            };
+
+            // Render the preview
+            this.$nextTick(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise();
+                }
+            });
+        },
+
+        clearConverter() {
+            this.textToConvert = '';
+            this.convertedLatex = null;
+        },
+
+        copyToClipboard(text) {
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    alert('Copied to clipboard!');
+                })
+                .catch(err => {
+                    console.error('Failed to copy:', err);
+                    alert('Failed to copy to clipboard');
+                });
+        },
+        
+        // File handling methods
         async handleFileUpload(event) {
             this.uploadedFile = event.target.files[0];
             this.pdfPreviewUrl = URL.createObjectURL(this.uploadedFile);
@@ -178,6 +292,8 @@ export default {
                 this.pdfPageCount = 0;
             }
         },
+        
+        // Batch processing methods
         async processBatch(startPage, endPage) {
             try {
                 // Upload PDF to Mathpix with page range
@@ -244,10 +360,10 @@ export default {
             }
         },
 
+        // Paper loading and saving methods
         async loadRecentPaper(paperName) {
             try {
                 const res = await fetch(`http://localhost:5008/api/paper/questions/${paperName}`);
-                console.log('Recent paper response:', res);
                 const data = await res.json();
                 this.questionCount = data.questions.length;
                 this.paperName = paperName;
@@ -282,6 +398,7 @@ export default {
                 console.error('❌ Failed to load recent paper content:', err);
             }
         },
+        
         async saveEditedMarkdown() {
             try {
                 const response = await fetch('http://localhost:5008/api/paper/update-question-details', {
@@ -304,6 +421,8 @@ export default {
                 alert('❌ Failed to save markdown');
             }
         },
+        
+        // Main submission handler
         async handleSubmit() {
             if (!this.uploadedFile || !this.form.subject || !this.form.banding || !this.form.level) {
                 alert("Please complete all fields and upload a file.");
@@ -450,7 +569,23 @@ export default {
 
                 // Generate markdown content from questions
                 this.markdownContent = this.allProcessedQuestions.map((q) => {
-                    // ... (your existing markdown generation code)
+                    const options = (q.answer_options || [])
+                        .map((opt) => `- **${opt.option}** ${opt.text}`)
+                        .join('\n');
+
+                    const images = Array.isArray(q.image_path) 
+                        ? q.image_path.map((img) => `![Diagram](${img})`) 
+                        : [];
+
+                    let answer = '';
+                    if (q.answer_key) {
+                        const cleanAnswer = typeof q.answer_key === 'string' 
+                            ? (JSON.parse(q.answer_key).correct_answer || '')
+                            : (q.answer_key.correct_answer || '');
+                        answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
+                    }
+
+                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
                 }).join('\n\n---\n\n');
 
                 this.progressMessage = "✅ All done!";
@@ -468,6 +603,7 @@ export default {
 </script>
 
 <style scoped>
+/* Keep all existing styles */
 .upload-page {
     padding: 3rem;
     max-width: 1200px;
@@ -475,6 +611,125 @@ export default {
     font-family: Arial, sans-serif;
 }
 
+/* Add styles for LaTeX converter in its new position */
+.latex-converter-section {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    background-color: #f5f5f5;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+}
+
+.latex-converter {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    .latex-converter {
+        flex-direction: row;
+    }
+    
+    .converter-input-area {
+        width: 40%;
+    }
+    
+    .converter-output-area {
+        width: 60%;
+    }
+}
+
+.converter-input {
+    width: 100%;
+    height: 100px;
+    padding: 0.75rem;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+}
+
+.converter-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.convert-btn, .clear-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.convert-btn {
+    background: #66CC99;
+    color: white;
+}
+
+.clear-btn {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+}
+
+.converted-output {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.output-column {
+    flex: 1;
+    min-width: 200px;
+}
+
+.output-box {
+    position: relative;
+    background: white;
+    border: 1px solid #ddd;
+    padding: 0.75rem;
+    padding-right: 40px; /* Space for copy button */
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+}
+
+.output-box pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: monospace;
+}
+
+.copy-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.preview-box {
+    padding: 1rem;
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+    min-height: 50px;
+}
+
+.latex-preview {
+    font-size: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+/* Keep all other existing styles */
 .subtitle {
     color: #666;
     margin-bottom: 2rem;
@@ -498,7 +753,6 @@ export default {
 
 .recent-item-row:hover {
     background-color: #e0f5ed;
-    /* light mint green */
 }
 
 .paper-name {
@@ -510,7 +764,6 @@ export default {
 .upload-time {
     color: #888;
 }
-
 
 .type-toggle {
     display: flex;
@@ -595,7 +848,7 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 2rem;
-    margin-top: 3rem;
+    margin-top: 2rem;
 }
 
 @media (min-width: 1024px) {
@@ -624,19 +877,6 @@ export default {
     display: block;
     margin: 1rem auto;
     object-fit: contain;
-}
-
-.editor textarea {
-    width: 100%;
-    padding: 1.5rem;
-    font-family: 'Courier New', monospace;
-    font-size: 16px;
-    line-height: 1.6;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    background-color: white;
-    min-height: 600px;
-    resize: vertical;
 }
 
 .markdown-editor {
@@ -670,9 +910,7 @@ export default {
     cursor: pointer;
     width: 100%;
     max-width: 1200px;
-    /* same as .upload-page max-width */
 }
-
 
 .save-btn:hover {
     background-color: #4CAF50;

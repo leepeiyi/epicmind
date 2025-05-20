@@ -58,19 +58,19 @@ router.post("/update-question-details", async (req, res) => {
   if (!paper_name || !content) {
     return res.status(400).json({ error: "Missing paper_name or content" });
   }
-
+  
   const client = await pool.connect();
-
+  
   try {
     const questionBlocks = content.split(/\n---+\n/); // Separate by markdown divider
     const updates = [];
-
+    
     for (const block of questionBlocks) {
       const matchQNum = block.match(/^### Q(\d+)/m);
       if (!matchQNum) continue;
-
+      
       const question_number = matchQNum[1];
-
+      
       // Extract question_text
       const questionTextMatch = block.match(
         /### Q\d+ \(Topic\)\n\n([\s\S]*?)\n\n(-|\!|\*\*|$)/
@@ -78,7 +78,7 @@ router.post("/update-question-details", async (req, res) => {
       const question_text = questionTextMatch
         ? questionTextMatch[1].trim()
         : null;
-
+      
       // Extract answer options
       const answerOptions = [];
       const optionRegex = /- \*\*(A|B|C|D)\*\* (.*)/g;
@@ -86,41 +86,58 @@ router.post("/update-question-details", async (req, res) => {
       while ((match = optionRegex.exec(block)) !== null) {
         answerOptions.push({ option: match[1], text: match[2] });
       }
-
+      
       // Extract image paths
       const imagePaths = [];
       const imageRegex = /!\[.*?\]\((.*?)\)/g;
       while ((match = imageRegex.exec(block)) !== null) {
         imagePaths.push(match[1]);
       }
-
-      // Extract answer key (if exists)
-      let answerKey = {};
-      const answerMatch = block.match(/\*\*Answer:\*\* ([A-D])\b/);
-      if (answerMatch) {
-        answerKey = { question_number, correct_answer: answerMatch[1] };
+      
+      // Extract answer key (if exists) - IMPROVED VERSION
+      let answerKey = null;
+      // First, get the existing answer key from the database
+      const existingAnswerQuery = await client.query(
+        `SELECT answer_key FROM question WHERE paper_name = $1 AND question_number = $2`,
+        [paper_name, question_number]
+      );
+      
+      // Use existing answer_key as a default
+      if (existingAnswerQuery.rows.length > 0 && existingAnswerQuery.rows[0].answer_key) {
+        answerKey = existingAnswerQuery.rows[0].answer_key;
       }
-
+      
+      // Now try to find an answer in the markdown - improved regex that matches more formats
+      const answerMatch = block.match(/\*\*Answer:\*\* ([\s\S]+?)(?=\n\n|\n$|$)/);
+      if (answerMatch) {
+        const answerText = answerMatch[1].trim();
+        // Create a new answer key object
+        answerKey = { 
+          question_number, 
+          correct_answer: answerText 
+        };
+      }
+      
       updates.push(
         client.query(
-          `UPDATE question
-             SET question_text = $1,
-                 answer_options = $2,
-                 image_paths = $3,
-                 answer_key = $4
-             WHERE paper_name = $5 AND question_number = $6`,
+          `UPDATE question 
+           SET question_text = $1,
+               answer_options = $2,
+               image_paths = $3,
+               answer_key = $4
+           WHERE paper_name = $5 AND question_number = $6`,
           [
             question_text,
             JSON.stringify(answerOptions),
             JSON.stringify(imagePaths),
-            JSON.stringify(answerKey),
+            answerKey ? JSON.stringify(answerKey) : null,
             paper_name,
             question_number,
           ]
         )
       );
     }
-
+    
     await Promise.all(updates);
     res.json({ message: "✅ All questions updated successfully" });
   } catch (err) {
