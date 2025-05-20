@@ -99,27 +99,6 @@ router.post('/generate', async (req, res) => {
             paramIndex++;
         }
 
-        // Source type filters
-        const sourceConditions = [];
-        
-        if (includePastYears) {
-            sourceConditions.push(`q.source_type = 'past_year'`);
-            
-            if (yearFrom && yearTo) {
-                query += ` AND (q.source_year >= $${paramIndex} AND q.source_year <= $${paramIndex + 1})`;
-                queryParams.push(yearFrom, yearTo);
-                paramIndex += 2;
-            }
-        }
-        
-        if (includeTopical) {
-            sourceConditions.push(`q.source_type = 'topical'`);
-        }
-        
-        if (sourceConditions.length > 0) {
-            query += ` AND (${sourceConditions.join(' OR ')})`;
-        }
-
         // Get more candidates than needed for Gemini to choose from
         const maxCandidates = Math.min(questionCount * 3, 50); // Get 3x or up to 50 questions
         query += ` LIMIT $${paramIndex}`;

@@ -6,6 +6,8 @@ import ResetPassword from "../pages/ResetPassword.vue";
 import ForgetPassword from "../pages/ForgetPassword.vue";
 import GenerateTopical from "../pages/GenerateTopical.vue";
 import TutorVetting from "../pages/TutorVetting.vue";
+import QuizFolder from "../pages/QuizFolder.vue";
+import QuizView from "../pages//QuizView.vue";
 
 const routes = [
   { path: "/", name: "Login", component: LoginPage },
@@ -15,6 +17,8 @@ const routes = [
   { path: "/forgot-password", name: "ForgetPassword", component: ForgetPassword },
   { path: "/generate-topical", name: "GenerateTopical", component: GenerateTopical},
   { path: "/tutor-vetting", name: "TutorVetting", component: TutorVetting },
+  { path : "/quiz-folder", name: "QuizFolder", component: QuizFolder},
+  { path: '/quiz/:id', name: 'QuizView',component: QuizView },
 
 ];
 

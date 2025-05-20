@@ -16,6 +16,9 @@ const paperRoutes = require('./routes/Mathpix/insertpaper');
 app.use('/api/paper', paperRoutes);
 const generateRoutes = require('./routes/GenerateQuiz/topical');
 app.use('/api/quiz', generateRoutes);
+const quizRoutes = require('./routes/QuizFolder/getQuiz');
+app.use('/api/quiz', quizRoutes);
+
 
 
 const PORT = 5008;

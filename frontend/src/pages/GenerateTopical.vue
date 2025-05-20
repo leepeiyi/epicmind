@@ -15,7 +15,7 @@
                             <option>English</option>
                         </select>
                     </div>
-                    
+
                     <div class="selection-item">
                         <label>Banding</label>
                         <select v-model="form.banding">
@@ -25,7 +25,7 @@
                             <option>Normal (Technical)</option>
                         </select>
                     </div>
-                    
+
                     <div class="selection-item">
                         <label>Level</label>
                         <select v-model="form.level" @change="updateTopics">
@@ -36,7 +36,7 @@
                             <option>Sec 4</option>
                         </select>
                     </div>
-                    
+
                     <div class="selection-item">
                         <label>Topic</label>
                         <select v-model="form.topic" :disabled="!topics.length">
@@ -64,7 +64,7 @@
                             </option>
                         </select>
                     </div>
-                    
+
                     <div class="selection-item">
                         <label>Difficulty Level (Optional)</label>
                         <select v-model="form.difficultyLevel">
@@ -84,7 +84,7 @@
                         <label>No. of questions:</label>
                         <input type="number" v-model="form.questionCount" min="1" max="50" class="number-input" />
                     </div>
-                    
+
                     <div class="form-group">
                         <label>Quiz Folder Name:</label>
                         <input type="text" v-model="form.quizName" placeholder="My Custom Quiz" class="text-input" />
@@ -100,13 +100,13 @@
                         <input type="checkbox" v-model="form.includePastYears" />
                         Include Past Year Papers
                     </label>
-                    
+
                     <label class="checkbox-label">
                         <input type="checkbox" v-model="form.includeTopical" />
                         Include Topical Questions
                     </label>
                 </div>
-                
+
                 <div v-if="form.includePastYears" class="year-filter">
                     <label>Year Range:</label>
                     <div class="year-inputs">
@@ -138,17 +138,17 @@
                         <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item">
                             <h3>Question {{ index + 1 }}</h3>
                             <div class="question-text" v-html="question.text"></div>
-                            
+
                             <div v-if="question.image_url" class="question-image">
                                 <img :src="question.image_url" alt="Question diagram" />
                             </div>
-                            
+
                             <div v-if="question.options && question.options.length" class="options-list">
                                 <div v-for="option in question.options" :key="option.id" class="option-item">
                                     <strong>{{ option.option }}.</strong> {{ option.text }}
                                 </div>
                             </div>
-                            
+
                             <div class="question-meta">
                                 <span class="question-topic">{{ question.topic }}</span>
                                 <span class="question-difficulty">{{ question.difficulty }}</span>
@@ -157,7 +157,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="save-section">
                     <button class="save-btn" @click="saveQuiz">💾 Save Quiz</button>
                     <button class="regenerate-btn" @click="generateQuiz">🔄 Regenerate</button>
@@ -202,11 +202,11 @@ export default {
     },
     computed: {
         isFormValid() {
-            return this.form.subject && 
-                   this.form.banding && 
-                   this.form.level && 
-                   this.form.topic && 
-                   this.form.questionCount > 0;
+            return this.form.subject &&
+                this.form.banding &&
+                this.form.level &&
+                this.form.topic &&
+                this.form.questionCount > 0;
         }
     },
     methods: {
@@ -215,15 +215,15 @@ export default {
             this.form.topic = '';
             this.form.subTopic = '';
             this.subTopics = [];
-            
+
             if (!this.form.subject || !this.form.level) {
                 this.topics = [];
                 return;
             }
-            
+
             // Get topics based on subject and level
             if (this.form.subject === 'Math / E-Math') {
-                switch(this.form.level) {
+                switch (this.form.level) {
                     case 'Sec 1':
                         this.topics = mathTopicsData.mathSec1;
                         break;
@@ -240,7 +240,7 @@ export default {
                         this.topics = [];
                 }
             } else if (this.form.subject === 'A-Math') {
-                switch(this.form.level) {
+                switch (this.form.level) {
                     case 'Sec 3':
                         this.topics = mathTopicsData.amathSec3;
                         break;
@@ -287,7 +287,7 @@ export default {
                 if (!this.form.quizName) {
                     this.form.quizName = `${this.form.subject} ${this.form.level} - ${this.form.topic} Quiz`;
                 }
-                
+
                 // Simulate API request progress
                 setTimeout(() => {
                     this.loadingMessage = 'Analyzing question bank...';
@@ -327,6 +327,12 @@ export default {
 
                 const result = await response.json();
                 this.generatedQuiz = result.questions;
+                this.$nextTick(() => {
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        window.MathJax.typesetPromise();
+                    }
+                });
+
 
                 // Process the quiz questions to support MathJax if needed
                 this.generatedQuiz.forEach(question => {
@@ -348,9 +354,9 @@ export default {
                 }, 100);
             } catch (error) {
                 console.error('Failed to generate quiz:', error);
-                
+
                 alert(`Failed to generate quiz: ${error.message}`);
-                
+
                 // For demo or testing purposes, you can use mock data if the API fails
                 // this.generatedQuiz = this.getMockQuestions();
                 // this.loadingMessage = 'Quiz generated with sample data';
@@ -395,11 +401,11 @@ export default {
                 if (response.ok) {
                     this.progressPercent = 100;
                     this.loadingMessage = 'Quiz saved successfully!';
-                    
+
                     setTimeout(() => {
                         alert(`Quiz "${this.form.quizName}" saved successfully!`);
                         this.loading = false;
-                        
+
                         // Optionally redirect to the quiz folder or quiz view
                         // this.$router.push(`/quiz-folder/${result.quizId}`);
                     }, 500);
@@ -579,7 +585,8 @@ h1 {
     font-weight: bold;
 }
 
-.number-input, .text-input {
+.number-input,
+.text-input {
     width: 100%;
     padding: 0.7rem;
     border: 1px solid #ccc;
@@ -755,7 +762,9 @@ h1 {
     font-size: 0.85rem;
 }
 
-.question-topic, .question-difficulty, .question-source {
+.question-topic,
+.question-difficulty,
+.question-source {
     padding: 0.3rem 0.7rem;
     border-radius: 15px;
 }
@@ -782,7 +791,8 @@ h1 {
     margin-bottom: 2rem;
 }
 
-.save-btn, .regenerate-btn {
+.save-btn,
+.regenerate-btn {
     padding: 1rem 1.5rem;
     border: none;
     border-radius: 8px;
@@ -816,16 +826,21 @@ h1 {
     .quiz-generator-page {
         padding: 1rem;
     }
-    
-    .selection-item, .form-group {
+
+    .selection-item,
+    .form-group {
         min-width: 100%;
     }
-    
-    .selection-container, .optional-selection-row, .form-row, .checkbox-group, .save-section {
+
+    .selection-container,
+    .optional-selection-row,
+    .form-row,
+    .checkbox-group,
+    .save-section {
         flex-direction: column;
         gap: 1rem;
     }
-    
+
     .preview-content {
         padding: 1rem;
     }
