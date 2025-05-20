@@ -17,7 +17,7 @@
                 <tr v-for="(q, i) in questions" :key="i">
                     <td>{{ i + 1 }}</td>
                     <td>
-                        <div v-html="q.question_text"></div>
+                        <div v-html="formatQuestionText(q.question_text)"></div>
                         <div v-if="q.image_paths?.length">
                             <img v-for="(img, index) in q.image_paths" :key="index" :src="img" class="print-diagram" />
                         </div>
@@ -29,6 +29,8 @@
 </template>
 
 <script>
+import { marked } from 'marked';
+
 export default {
     data() {
         return {
@@ -37,6 +39,49 @@ export default {
             subject: '',
             level: ''
         };
+    },
+    methods: {
+        formatQuestionText(text) {
+            if (!text) return '';
+            
+            // Check if the text contains math expressions that need LaTeX delimiters
+            // Common math expressions like frac, sqrt, etc.
+            const mathPatterns = ['frac', '\\sqrt', '\\sum', '\\int', '\\lim', '\\prod', '^2', '_'];
+            
+            // If contains math pattern but no LaTeX delimiters, wrap with delimiters
+            let needsDelimiters = false;
+            
+            for (const pattern of mathPatterns) {
+                if (text.includes(pattern) && 
+                   !text.includes('$') && 
+                   !text.includes('\\(') && 
+                   !text.includes('\\[')) {
+                    needsDelimiters = true;
+                    break;
+                }
+            }
+            
+            if (needsDelimiters) {
+                // Check if this is an "Express..." question which typically has inline math
+                if (text.toLowerCase().includes('express')) {
+                    // For inline math expressions
+                    text = text.replace(/(Express\s+)(.*)(in\s+partial\s+fractions)/i, '$1$$$2$$\u00A0$3');
+                } else {
+                    // For display math expressions
+                    text = `${text.replace(/\s*=\s*/, ' $$=$$\u00A0')}`;
+                }
+            }
+            
+            // Process with marked to convert markdown to HTML
+            return marked(text);
+        },
+        
+        renderMathJax() {
+            if (window.MathJax?.typesetPromise) {
+                return window.MathJax.typesetPromise();
+            }
+            return Promise.resolve();
+        }
     },
     created() {
         const query = this.$route.query;
@@ -52,26 +97,43 @@ export default {
                 .then(res => res.json())
                 .then(data => {
                     this.questions = data;
-                    this.$nextTick(() => {
-                        // Ensure MathJax renders and trigger print
-                        if (window.MathJax?.typesetPromise) window.MathJax.typesetPromise().then(() => window.print());
-                        else window.print();
-                    });
+                    
+                    // Give time for the DOM to update with the new content
+                    setTimeout(() => {
+                        this.renderMathJax().then(() => {
+                            // After MathJax has processed everything, trigger print
+                            window.print();
+                        }).catch(err => {
+                            console.error('❌ Error rendering MathJax:', err);
+                            window.print();
+                        });
+                    }, 300); // Longer delay to ensure DOM is fully updated
                 })
                 .catch(err => console.error('❌ Error fetching quiz:', err));
         }
     },
     mounted() {
+        // Configure MathJax if not already configured
+        if (window.MathJax && !window.MathJax.configured) {
+            window.MathJax = {
+                ...window.MathJax,
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']]
+                },
+                svg: {
+                    fontCache: 'global'
+                },
+                configured: true
+            };
+        }
+        
         this.$nextTick(() => {
-            if (window.MathJax?.typesetPromise) {
-                window.MathJax.typesetPromise();
-            }
+            this.renderMathJax();
         });
     }
-
 };
 </script>
-
 
 <style scoped>
 .print-wrapper {

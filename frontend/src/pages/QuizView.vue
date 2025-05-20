@@ -217,7 +217,8 @@ export default {
                     ? JSON.parse(this.currentQuestion.answer_key)
                     : this.currentQuestion.answer_key;
 
-                return parsed.correct_answer || '';
+                // Process through marked just like the question text
+                return parsed.correct_answer ? marked(parsed.correct_answer) : '';
             } catch {
                 return '';
             }
@@ -230,7 +231,7 @@ export default {
             return this.hasOptions ? this.selectedOption !== '' : this.userAnswer.trim() !== '';
         }
     },
-   
+
     created() {
         this.quizId = this.$route.params.id;
         this.fetchQuizData();
