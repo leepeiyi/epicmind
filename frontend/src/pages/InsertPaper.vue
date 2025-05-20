@@ -1,6 +1,11 @@
 <template>
     <div>
         <Navbar />
+        <div v-if="isSaving" class="overlay-spinner">
+            <div class="spinner"></div>
+            <p>Saving Markdown...</p>
+        </div>
+
         <div class="upload-page">
             <h1>Upload Documents</h1>
             <p class="subtitle">
@@ -150,7 +155,9 @@ export default {
             currentBatchEnd: 0,
             allProcessedQuestions: [],
             textToConvert: '',
-            convertedLatex: null
+            convertedLatex: null,
+            isSaving: false,
+
         };
     },
     computed: {
@@ -166,7 +173,7 @@ export default {
 
             // Load PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-            
+
             // Configure MathJax
             this.configureMathJax();
         } catch (err) {
@@ -255,7 +262,7 @@ export default {
                     alert('Failed to copy to clipboard');
                 });
         },
-        
+
         // File handling methods
         async handleFileUpload(event) {
             this.uploadedFile = event.target.files[0];
@@ -292,7 +299,7 @@ export default {
                 this.pdfPageCount = 0;
             }
         },
-        
+
         // Batch processing methods
         async processBatch(startPage, endPage) {
             try {
@@ -398,8 +405,9 @@ export default {
                 console.error('❌ Failed to load recent paper content:', err);
             }
         },
-        
+
         async saveEditedMarkdown() {
+            this.isSaving = true;
             try {
                 const response = await fetch('http://localhost:5008/api/paper/update-question-details', {
                     method: 'POST',
@@ -419,9 +427,12 @@ export default {
             } catch (error) {
                 console.error('❌ Save error:', error);
                 alert('❌ Failed to save markdown');
+            } finally {
+                this.isSaving = false;
             }
         },
-        
+
+
         // Main submission handler
         async handleSubmit() {
             if (!this.uploadedFile || !this.form.subject || !this.form.banding || !this.form.level) {
@@ -573,13 +584,13 @@ export default {
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
 
-                    const images = Array.isArray(q.image_path) 
-                        ? q.image_path.map((img) => `![Diagram](${img})`) 
+                    const images = Array.isArray(q.image_path)
+                        ? q.image_path.map((img) => `![Diagram](${img})`)
                         : [];
 
                     let answer = '';
                     if (q.answer_key) {
-                        const cleanAnswer = typeof q.answer_key === 'string' 
+                        const cleanAnswer = typeof q.answer_key === 'string'
                             ? (JSON.parse(q.answer_key).correct_answer || '')
                             : (q.answer_key.correct_answer || '');
                         answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
@@ -630,11 +641,11 @@ export default {
     .latex-converter {
         flex-direction: row;
     }
-    
+
     .converter-input-area {
         width: 40%;
     }
-    
+
     .converter-output-area {
         width: 60%;
     }
@@ -656,7 +667,8 @@ export default {
     gap: 0.5rem;
 }
 
-.convert-btn, .clear-btn {
+.convert-btn,
+.clear-btn {
     padding: 0.5rem 1rem;
     border: none;
     border-radius: 5px;
@@ -690,7 +702,8 @@ export default {
     background: white;
     border: 1px solid #ddd;
     padding: 0.75rem;
-    padding-right: 40px; /* Space for copy button */
+    padding-right: 40px;
+    /* Space for copy button */
     border-radius: 5px;
     margin-bottom: 0.5rem;
 }
@@ -921,4 +934,38 @@ export default {
     font-weight: 500;
     margin-left: 0.5rem;
 }
+.overlay-spinner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.85);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 18px;
+  color: #333;
+}
+
+.spinner {
+  border: 6px solid #eee;
+  border-top: 6px solid #66cc99;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+    font-family: Arial, sans-serif;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 </style>
