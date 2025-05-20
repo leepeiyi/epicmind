@@ -8,6 +8,7 @@ import GenerateTopical from "../pages/GenerateTopical.vue";
 import TutorVetting from "../pages/TutorVetting.vue";
 import QuizFolder from "../pages/QuizFolder.vue";
 import QuizView from "../pages//QuizView.vue";
+import PrintView from "../components/PrintView.vue";  
 
 const routes = [
   { path: "/", name: "Login", component: LoginPage },
@@ -19,6 +20,7 @@ const routes = [
   { path: "/tutor-vetting", name: "TutorVetting", component: TutorVetting },
   { path : "/quiz-folder", name: "QuizFolder", component: QuizFolder},
   { path: '/quiz/:id', name: 'QuizView',component: QuizView },
+  { path: '/print-view', name: 'PrintView', component: PrintView},
 
 ];
 
