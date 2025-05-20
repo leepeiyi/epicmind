@@ -43,7 +43,7 @@
             </div>
 
             <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
-                v-model:level="form.level" v-model:topic_label="form.topic_label" :uploadType="uploadType" />
+                v-model:level="form.level" v-model:topic_label="form.topic_label" v-model:year="form.year" :uploadType="uploadType" />
 
             <button v-if="uploadType" class="submit-btn" @click="handleSubmit">Process File</button>
 
@@ -91,7 +91,7 @@ export default {
     data() {
         return {
             uploadType: '',
-            form: { subject: '', banding: '', level: '', topic_label: '' },
+            form: { subject: '', banding: '', level: '', topic_label: '', year: null},
             uploadedFile: null,
             pdfPreviewUrl: '',
             markdownContent: '',

@@ -4,8 +4,8 @@ import CreateAccount from "../pages/CreateAccount.vue";
 import InsertPaper from "../pages/InsertPaper.vue";
 import ResetPassword from "../pages/ResetPassword.vue";
 import ForgetPassword from "../pages/ForgetPassword.vue";
-import InsertSyllabus from "../pages/InsertSyllabus.vue";
 import GenerateTopical from "../pages/GenerateTopical.vue";
+import TutorVetting from "../pages/TutorVetting.vue";
 
 const routes = [
   { path: "/", name: "Login", component: LoginPage },
@@ -13,8 +13,9 @@ const routes = [
   { path: "/insert-paper", name: "InsertPaper", component: InsertPaper },
   { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
   { path: "/forgot-password", name: "ForgetPassword", component: ForgetPassword },
-  { path: "/insert-syllabus", name: "InsertSyllabus", component: InsertSyllabus },
   { path: "/generate-topical", name: "GenerateTopical", component: GenerateTopical},
+  { path: "/tutor-vetting", name: "TutorVetting", component: TutorVetting },
+
 ];
 
 const router = createRouter({

@@ -41,7 +41,7 @@ export default {
         { icon: 'FolderOpen', label: 'Topical Revision', route: '/generate-topical' },
         { icon: 'Star', label: 'Favourites', route: '/favourites' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' },
-        { icon: 'FilePlus', label: 'Insert Syllabus', route: '/insert-syllabus' },
+        { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting' },
       ],
     };
   },

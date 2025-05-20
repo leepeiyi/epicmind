@@ -1,6 +1,11 @@
 <template>
     <div class="fields">
         <div class="field">
+            <label>Year (Optional)</label>
+            <input type="number" min="2000" max="2099" placeholder="e.g. 2023" v-model="localYear" />
+        </div>
+
+        <div class="field">
             <label>Subject</label>
             <select v-model="localSubject">
                 <option value="" disabled>Select</option>
@@ -42,6 +47,8 @@
 </template>
 
 <script>
+import { mathTopicsData } from './topicData';
+
 export default {
     name: "PaperDetails",
     props: {
@@ -50,171 +57,60 @@ export default {
         level: String,
         topic_label: String,
         uploadType: String,
+        year: Number
     },
-    emits: ["update:subject", "update:banding", "update:level", "update:topic_label"],
-    data() {
-        return {
-            mathSec1Topics: [
-                "01 Factors and Multiples",
-                "02 Real Numbers",
-                "03 Approximation and Estimation",
-                "04 Introduction to Algebra",
-                "05 Algebraic Manipulation",
-                "06 Simple Equations in One Unknown",
-                "07 Angles and Parallel Lines",
-                "08 Triangles and Polygons",
-                "09 Rate, Ratio and Speed",
-                "10 Percentage",
-                "11 Sequences and Number Pattern",
-                "12 Linear Functions and Graphs",
-                "13 Perimeter and Area Plane Figures",
-                "14 Volume and Surface Area Prism Cylinders",
-                "15 Data Handling"
-            ],
-            mathSec2Topics: [
-                "01 Linear Inequalities",
-                "02 Simultaneous Graphs",
-                "03 Simultaneous Equations",
-                "04 Algebra Expansion and Factorisation",
-                "05 Quadratic Graphs",
-                "06 Quadratic Solving",
-                "07 Proportion",
-                "08 Congruence and Similarity",
-                "09 Pythagoras Thm",
-                "10 Trigo",
-                "11 Volume and Surface Area Pyra cone sphere",
-                "12 Stats Diagrams",
-                "13 Mean Median Mode",
-                "14 Probability"
-            ],
-            mathSec3Topics: [
-                "01 Quadratic",
-                "02 Linear Inequalities",
-                "03 Indices",
-                "04 Coordinate Geometry",
-                "05 Graphs Plot",
-                "06 Graphs Sketch",
-                "07 Speed Time",
-                "08 Congruence Similarity Test",
-                "09 Trigo",
-                "10 Application of Trigo",
-                "11 Arc and Sectors",
-                "12 Properties of Circles"
-            ],
-            mathSec4Topics: [
-                "01 Sets",
-                "02 Stats",
-                "03 Probability",
-                "04 Matrices",
-                "05 Vectors"
-            ],
-            amathSec3Topics: [
-                "01 Simultaneous Eqns",
-                "02 Quadratics and Inequalities",
-                "03 Polynomials",
-                "04 Partial Fractions",
-                "05 Indices and Surds",
-                "06 Logarithms",
-                "07 Binomial Thm",
-                "08 Coordinate Geometry",
-                "09 Circles",
-                "10 Linear Law",
-                "11 Trigo Eqn Graph Identities",
-                "12 Further Trigo",
-                "13 Trigo R-Formula"
-            ],
-            amathSec4Topics: [
-                "01 Differentiation Basics",
-                "02 Differentiation Tangent Normal",
-                "03 Differentiation Increasing and Decreasing",
-                "04 Differentiation Rates Of Change",
-                "05 Differentiation Max n Min",
-                "06 Differentiation Tri Log n E",
-                "07 Integration Basics",
-                "08 Integration Area",
-                "09 Kinematics",
-                "11 Plane Geometry"
-            ]
-        };
-    },
+    emits: [
+        "update:subject",
+        "update:banding",
+        "update:level",
+        "update:topic_label",
+        "update:year"
+    ],
     computed: {
-        showTopicDropdown() {
-            // Only show topic dropdown in topical mode and for any math subject
-            if (this.uploadType !== "topical") return false;
-
-            // For Math/E-Math subject, show for all levels
-            if (this.localSubject === "Math / E-Math") {
-                return true;
-            }
-
-            // For A-Math subject, show for Sec 3 and Sec 4
-            if (this.localSubject === "A-Math" &&
-                (this.localLevel === "Sec 3" || this.localLevel === "Sec 4")) {
-                return true;
-            }
-
-            return false;
-        },
         availableTopics() {
-            // Return the appropriate topic list based on the selected level and subject
-            if (this.localSubject === "Math / E-Math") {
-                if (this.localLevel === "Sec 1") {
-                    return this.mathSec1Topics;
-                } else if (this.localLevel === "Sec 2") {
-                    return this.mathSec2Topics;
-                } else if (this.localLevel === "Sec 3") {
-                    return this.mathSec3Topics;
-                } else if (this.localLevel === "Sec 4") {
-                    return this.mathSec4Topics;
-                }
-            } else if (this.localSubject === "A-Math") {
-                if (this.localLevel === "Sec 3") {
-                    return this.amathSec3Topics;
-                } else if (this.localLevel === "Sec 4") {
-                    return this.amathSec4Topics;
-                }
-            }
-            return [];
+            const levelMap = {
+                'Sec 1': 'mathSec1',
+                'Sec 2': 'mathSec2',
+                'Sec 3': this.localSubject === 'A-Math' ? 'amathSec3' : 'mathSec3',
+                'Sec 4': this.localSubject === 'A-Math' ? 'amathSec4' : 'mathSec4'
+            };
+            return mathTopicsData[levelMap[this.localLevel]] || [];
+        },
+        showTopicDropdown() {
+            if (this.uploadType !== "topical") return false;
+            return (
+                this.localSubject === "Math / E-Math" ||
+                (this.localSubject === "A-Math" && ["Sec 3", "Sec 4"].includes(this.localLevel))
+            );
         },
         localSubject: {
-            get() {
-                return this.subject;
-            },
+            get() { return this.subject; },
             set(value) {
                 this.$emit("update:subject", value);
-                // Reset topic if subject changes
                 this.$emit("update:topic_label", "");
             },
         },
         localBanding: {
-            get() {
-                return this.banding;
-            },
-            set(value) {
-                this.$emit("update:banding", value);
-            },
+            get() { return this.banding; },
+            set(value) { this.$emit("update:banding", value); },
         },
         localLevel: {
-            get() {
-                return this.level;
-            },
+            get() { return this.level; },
             set(value) {
                 this.$emit("update:level", value);
-                // Reset topic because level changed
                 this.$emit("update:topic_label", "");
             },
         },
         localTopicLabel: {
-            get() {
-                return this.topic_label;
-            },
-            set(value) {
-                this.$emit("update:topic_label", value);
-            }
+            get() { return this.topic_label; },
+            set(value) { this.$emit("update:topic_label", value); }
+        },
+        localYear: {
+            get() { return this.year; },
+            set(value) { this.$emit("update:year", value); }
         }
     },
     watch: {
-        // Reset topic if uploadType changes to "exam"
         uploadType(newValue) {
             if (newValue !== "topical") {
                 this.$emit("update:topic_label", "");
@@ -222,6 +118,7 @@ export default {
         }
     }
 };
+
 </script>
 
 <style scoped>
