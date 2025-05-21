@@ -9,6 +9,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 const axios = require("axios");
 const FormData = require("form-data");
+const fs = require("fs-extra");
+const { PDFDocument } = require("pdf-lib");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
 
 const s3 = new S3Client({
   region: process.env.S3_REGION,
@@ -175,6 +179,49 @@ router.post("/test/batch-params", upload.single("pdf"), async (req, res) => {
   } catch (error) {
     console.error("❌ Batch parameter test failed:", error);
     return res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/split_batch", upload.single("pdf"), async (req, res) => {
+  try {
+    const { startPage, endPage } = req.body;
+    const start = parseInt(startPage, 10);
+    const end = parseInt(endPage, 10);
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No PDF uploaded." });
+    }
+
+    const pdfPath = req.file.path;
+    const fullPdfBytes = req.file.buffer;
+    const fullPdfDoc = await PDFDocument.load(fullPdfBytes);
+    const totalPages = fullPdfDoc.getPageCount();
+
+    if (start < 1 || end > totalPages || start > end) {
+      return res.status(400).json({ error: "Invalid page range." });
+    }
+
+    const newPdfDoc = await PDFDocument.create();
+    const copiedPages = await newPdfDoc.copyPages(
+      fullPdfDoc,
+      Array.from({ length: end - start + 1 }, (_, i) => i + start - 1)
+    );
+    copiedPages.forEach((page) => newPdfDoc.addPage(page));
+
+    const newPdfBytes = await newPdfDoc.save();
+    const batchFilename = `split_batch_${uuidv4()}.pdf`;
+    const batchFilePath = path.join("uploads", batchFilename);
+
+    await fs.ensureDir("uploads"); // ✅ makes sure uploads folder exists
+    await fs.writeFile(batchFilePath, newPdfBytes);
+
+    // Respond with path to batch file (you can customize to serve as a downloadable file or pass as a buffer)
+    res.json({ batch_path: batchFilePath });
+  } catch (error) {
+    console.error("❌ Error splitting PDF:", error);
+    res.status(500).json({ error: "Failed to split PDF batch." });
+  } finally {
+    if (req.file?.path) await fs.remove(req.file.path); // clean original upload
   }
 });
 

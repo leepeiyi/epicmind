@@ -148,7 +148,7 @@ export default {
             recentPapers: [],
             pdfPageCount: 0,
             batchProcessing: false,
-            batchSize: 5,
+            batchSize: 3,
             currentBatch: 0,
             totalBatches: 0,
             currentBatchStart: 0,
@@ -445,7 +445,7 @@ export default {
             }
 
             try {
-                // ✅ Step 0: Check if paper already exists
+                // Step 0: Check if paper exists
                 const baseName = this.uploadedFile.name.replace(/\.pdf$/i, '').replace(/\s+/g, "_");
                 const paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
                 this.paperName = paperName;
@@ -462,99 +462,28 @@ export default {
                     return;
                 }
 
-                // Reset processing variables
+                // Start batch processing
                 this.allProcessedQuestions = [];
+                this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
+                this.batchProcessing = this.totalBatches > 1;
 
-                // Check if we need batch processing (> 5 pages)
-                if (this.pdfPageCount > this.batchSize) {
-                    this.batchProcessing = true;
-                    this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
+                for (let i = 0; i < this.totalBatches; i++) {
+                    this.currentBatch = i + 1;
+                    const startPage = i * this.batchSize + 1;
+                    const endPage = Math.min((i + 1) * this.batchSize, this.pdfPageCount);
 
-                    // Process each batch
-                    for (let i = 0; i < this.totalBatches; i++) {
-                        this.currentBatch = i + 1;
-                        this.currentBatchStart = i * this.batchSize + 1;
-                        this.currentBatchEnd = Math.min((i + 1) * this.batchSize, this.pdfPageCount);
+                    this.progressMessage = `📤 Processing batch ${this.currentBatch}/${this.totalBatches}...`;
+                    this.progressPercent = 20 + (i / this.totalBatches) * 40;
 
-                        this.progressMessage = `📤 Uploading PDF batch ${this.currentBatch}/${this.totalBatches} to Mathpix...`;
-                        this.progressPercent = 20 + (i / this.totalBatches) * 20;
-
-                        // Process this batch
-                        const batchQuestions = await this.processBatch(this.currentBatchStart, this.currentBatchEnd);
-
-                        // Add questions to allProcessedQuestions
-                        this.allProcessedQuestions = [...this.allProcessedQuestions, ...batchQuestions];
-                    }
-
-                    // Reset batch processing flags
-                    this.batchProcessing = false;
-                } else {
-                    // Standard processing for small PDFs
-                    this.progressMessage = "📤 Uploading PDF to Mathpix...";
-                    this.progressPercent = 20;
-
-                    // Step 1: Upload PDF to Mathpix
-                    const formData = new FormData();
-                    formData.append("pdf", this.uploadedFile);
-
-                    const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
-                        method: "POST",
-                        body: formData,
-                    });
-                    const { pdf_id } = await uploadRes.json();
-                    if (!pdf_id) throw new Error("Failed to get PDF ID");
-
-                    this.progressMessage = "🔍 Extracting questions with Gemini...";
-                    this.progressPercent = 40;
-
-                    // Step 2: Extract questions from Mathpix Markdown
-                    const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            pdf_id,
-                            paper_name: this.uploadedFile.name.split(".pdf")[0],
-                            subject: this.form.subject,
-                            banding: this.form.banding,
-                            level: this.form.level,
-                            paper_type: this.uploadType,
-                            topic_label: this.uploadType === "topical" ? this.form.topic_label : null
-                        }),
-                    });
-
-                    const extractData = await extractRes.json();
-                    const questions = extractData.questions || [];
-                    if (!questions.length) throw new Error("No questions extracted");
-
-                    this.progressMessage = "📦 Uploading diagrams to S3...";
-                    this.progressPercent = 70;
-
-                    // Step 3: Upload images to S3 and insert into DB
-                    const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            paper_name: this.uploadedFile.name.split(".pdf")[0],
-                            subject: this.form.subject,
-                            banding: this.form.banding,
-                            level: this.form.level,
-                            paper_type: this.uploadType,
-                            questions,
-                            topic_label: this.uploadType === "topical" ? this.form.topic_label : null
-                        }),
-                    });
-
-                    const finalData = await uploadImagesRes.json();
-                    this.allProcessedQuestions = finalData.questions || [];
+                    const batchQuestions = await this.processBatch(startPage, endPage);
+                    this.allProcessedQuestions = [...this.allProcessedQuestions, ...batchQuestions];
                 }
 
-                // Step 4: Convert to markdown
+                // Renumber questions if batched
                 this.progressMessage = "📝 Generating markdown preview...";
                 this.progressPercent = 90;
 
-                // If we processed in batches, we need to ensure question numbers are sequential
                 if (this.batchProcessing) {
-                    // Sort questions by page and position
                     this.allProcessedQuestions.sort((a, b) => {
                         if (a.page_number !== b.page_number) {
                             return a.page_number - b.page_number;
@@ -562,12 +491,10 @@ export default {
                         return a.position_on_page - b.position_on_page;
                     });
 
-                    // Renumber questions sequentially
                     this.allProcessedQuestions.forEach((q, index) => {
                         q.question_number = index + 1;
                     });
 
-                    // Optional: Save the renumbered questions back to the database
                     await fetch("http://localhost:5008/api/paper/update-question-numbers", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -578,7 +505,7 @@ export default {
                     });
                 }
 
-                // Generate markdown content from questions
+                // Generate markdown
                 this.markdownContent = this.allProcessedQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
@@ -601,6 +528,7 @@ export default {
 
                 this.progressMessage = "✅ All done!";
                 this.progressPercent = 100;
+
             } catch (error) {
                 console.error("❌ handleSubmit error:", error);
                 alert("❌ Something went wrong: " + error.message);
@@ -608,7 +536,79 @@ export default {
                 this.progressPercent = 0;
                 this.batchProcessing = false;
             }
-        },
+        }
+        ,
+        async processBatch(startPage, endPage) {
+            // 1️⃣ Split PDF to get only pages for this batch
+            const splitFormData = new FormData();
+            splitFormData.append("pdf", this.uploadedFile);
+            splitFormData.append("startPage", startPage);
+            splitFormData.append("endPage", endPage);
+
+            const splitRes = await fetch("http://localhost:5008/api/mathpix/split_batch", {
+                method: "POST",
+                body: splitFormData,
+            });
+            const splitData = await splitRes.json();
+
+            if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
+
+            // 2️⃣ Fetch the actual split file as a blob (because path is local to server)
+            const batchFileRes = await fetch(`http://localhost:5008/${splitData.batch_path}`);
+            const batchBlob = await batchFileRes.blob();
+
+            // 3️⃣ Send the split batch to Mathpix
+            const uploadFormData = new FormData();
+            uploadFormData.append("pdf", batchBlob, `batch_${startPage}_to_${endPage}.pdf`);
+
+            const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                method: "POST",
+                body: uploadFormData,
+            });
+            const { pdf_id } = await uploadRes.json();
+            if (!pdf_id) throw new Error("Failed to upload batch to Mathpix");
+
+            // 4️⃣ Extract questions from Mathpix
+            const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    pdf_id,
+                    paper_name: this.paperName,
+                    subject: this.form.subject,
+                    banding: this.form.banding,
+                    level: this.form.level,
+                    paper_type: this.uploadType,
+                    topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                    startPage,
+                    endPage,
+                }),
+            });
+
+            const extractData = await extractRes.json();
+            const questions = extractData.questions || [];
+            if (!questions.length) throw new Error("No questions extracted");
+
+            // 5️⃣ Upload extracted images to S3 and store in DB
+            const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    paper_name: this.paperName,
+                    subject: this.form.subject,
+                    banding: this.form.banding,
+                    level: this.form.level,
+                    paper_type: this.uploadType,
+                    questions,
+                    topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                }),
+            });
+
+            const finalData = await uploadImagesRes.json();
+            return finalData.questions || [];
+        }
+
+        ,
     }
 };
 </script>
@@ -934,38 +934,38 @@ export default {
     font-weight: 500;
     margin-left: 0.5rem;
 }
+
 .overlay-spinner {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(255, 255, 255, 0.85);
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: 18px;
-  color: #333;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.85);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    color: #333;
 }
 
 .spinner {
-  border: 6px solid #eee;
-  border-top: 6px solid #66cc99;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
+    border: 6px solid #eee;
+    border-top: 6px solid #66cc99;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
     font-family: Arial, sans-serif;
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+    to {
+        transform: rotate(360deg);
+    }
 }
-
 </style>

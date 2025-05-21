@@ -20,6 +20,9 @@ const quizRoutes = require('./routes/QuizFolder/getQuiz');
 app.use('/api/quiz', quizRoutes);
 const quizAssignmentRoutes = require('./routes/QuizFolder/assignQuiz');
 app.use('/api/quiz', quizAssignmentRoutes);
+const path = require("path");
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 
 
 const PORT = 5008;
