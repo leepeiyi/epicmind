@@ -273,9 +273,6 @@ export default {
 
 <style scoped>
 .vetting-page {
-    max-width: 1200px;
-    margin: auto;
-    padding: 2rem;
     font-family: Arial, sans-serif;
 }
 

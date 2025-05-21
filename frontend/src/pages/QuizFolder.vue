@@ -1,5 +1,5 @@
 <template>
-    <div class="quiz-folder-page">
+    <div class="quiz-folder">
         <Navbar />
 
         <div class="main-header">
@@ -1060,10 +1060,7 @@ export default {
 </script>
 
 <style scoped>
-.quiz-folder-page {
-    max-width: 1200px;
-    margin: auto;
-    padding: 2rem;
+.quiz-folder {
     font-family: Arial, sans-serif;
 }
 
