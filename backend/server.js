@@ -18,7 +18,8 @@ const generateRoutes = require('./routes/GenerateQuiz/topical');
 app.use('/api/quiz', generateRoutes);
 const quizRoutes = require('./routes/QuizFolder/getQuiz');
 app.use('/api/quiz', quizRoutes);
-
+const quizAssignmentRoutes = require('./routes/QuizFolder/assignQuiz');
+app.use('/api/quiz', quizAssignmentRoutes);
 
 
 const PORT = 5008;
