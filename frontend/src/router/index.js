@@ -11,22 +11,110 @@ import QuizView from "../pages//QuizView.vue";
 import PrintView from "../components/PrintView.vue";  
 
 const routes = [
-  { path: "/", name: "Login", component: LoginPage },
-  { path: "/register", name: "Register", component: CreateAccount },
-  { path: "/insert-paper", name: "InsertPaper", component: InsertPaper },
-  { path: "/reset-password", name: "ResetPassword", component: ResetPassword },
-  { path: "/forgot-password", name: "ForgetPassword", component: ForgetPassword },
-  { path: "/generate-topical", name: "GenerateTopical", component: GenerateTopical},
-  { path: "/tutor-vetting", name: "TutorVetting", component: TutorVetting },
-  { path : "/quiz-folder", name: "QuizFolder", component: QuizFolder},
-  { path: '/quiz/:id', name: 'QuizView',component: QuizView },
-  { path: '/print-view', name: 'PrintView', component: PrintView},
-
+  { 
+    path: "/", 
+    name: "Login", 
+    component: LoginPage,
+    meta: { requiresAuth: false }
+  },
+  { 
+    path: "/register", 
+    name: "Register", 
+    component: CreateAccount,
+    meta: { requiresAuth: false }
+  },
+  { 
+    path: "/insert-paper", 
+    name: "InsertPaper", 
+    component: InsertPaper,
+    meta: { requiresAuth: true }
+  },
+  { 
+    path: "/reset-password", 
+    name: "ResetPassword", 
+    component: ResetPassword,
+    meta: { requiresAuth: false }
+  },
+  { 
+    path: "/forgot-password", 
+    name: "ForgetPassword", 
+    component: ForgetPassword,
+    meta: { requiresAuth: false }
+  },
+  { 
+    path: "/generate-topical", 
+    name: "GenerateTopical", 
+    component: GenerateTopical,
+    meta: { requiresAuth: true }
+  },
+  { 
+    path: "/tutor-vetting", 
+    name: "TutorVetting", 
+    component: TutorVetting,
+    meta: { requiresAuth: true, requiresRole: 'teacher' }
+  },
+  { 
+    path: "/quiz-folder", 
+    name: "QuizFolder", 
+    component: QuizFolder,
+    meta: { requiresAuth: true }
+  },
+  { 
+    path: '/quiz/:id', 
+    name: 'QuizView',
+    component: QuizView,
+    meta: { requiresAuth: true }
+  },
+  { 
+    path: '/print-view', 
+    name: 'PrintView', 
+    component: PrintView,
+    meta: { requiresAuth: true }
+  },
 ];
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+});
+
+// Navigation guard
+router.beforeEach((to, from, next) => {
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiresRole = to.matched.some(record => record.meta.requiresRole);
+  
+  // Get token and user from session storage
+  const token = sessionStorage.getItem('token');
+  const userStr = sessionStorage.getItem('user');
+  let user = null;
+  
+  if (userStr) {
+    try {
+      user = JSON.parse(userStr);
+    } catch (e) {
+      console.error('Failed to parse user from session storage:', e);
+    }
+  }
+  
+  // Handle authentication
+  if (requiresAuth && !token) {
+    // Redirect to login if authentication is required but user is not logged in
+    return next({ path: '/' });
+  }
+  
+  // Handle role-based access
+  if (requiresRole && (!user || user.role !== to.meta.requiresRole)) {
+    // If page requires specific role that user doesn't have, redirect to safe page
+    return next({ path: '/insert-paper' });
+  }
+  
+  // Redirect to dashboard if user is already logged in and tries to access login/register
+  if (!requiresAuth && token && (to.path === '/' || to.path === '/register')) {
+    return next({ path: '/insert-paper' });
+  }
+  
+  // Otherwise, proceed normally
+  next();
 });
 
 export default router;

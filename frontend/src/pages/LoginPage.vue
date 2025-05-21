@@ -62,11 +62,15 @@ export default {
         });
 
         const { token, user } = response.data;
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
 
-        this.$router.push('/insert-paper'); 
-        // TODO: route to dashboard
+        // Store in sessionStorage instead of localStorage
+        sessionStorage.setItem('token', token);
+        sessionStorage.setItem('user', JSON.stringify(user));
+
+        // Dispatch a custom event to notify components that user logged in
+        window.dispatchEvent(new Event('storage'));
+
+        this.$router.push('/insert-paper');
       } catch (err) {
         alert(err.response?.data?.error || 'Login failed');
       }
