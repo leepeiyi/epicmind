@@ -13,6 +13,19 @@ const fs = require("fs-extra");
 const { PDFDocument } = require("pdf-lib");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  port: process.env.DB_PORT,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
+});
 
 const s3 = new S3Client({
   region: process.env.S3_REGION,
@@ -401,7 +414,10 @@ IMPORTANT:
 
 
 Return the result as a JSON array. Do not include explanations.
-
+- If question_number is 1a, 1b, 1c — group under 1
+                - Format each sub-answer as (a), (b), etc.
+                - Return a JSON array like: 
+                  { "question_number": "1", "question_text": "(a) ..., (b) ..." },
 Each item should follow this format:
 {
   
@@ -423,6 +439,7 @@ Each item should follow this format:
     const result = await model.generateContent([
       { text: `${prompt}\n\n${markdownContent}` },
     ]);
+    
 
     const raw =
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -488,6 +505,250 @@ Each item should follow this format:
     res
       .status(500)
       .json({ error: "Extraction from MMD failed: " + err.message });
+  }
+});
+
+// Extract answers from Mathpix MMD
+router.post("/extract_answers_from_mmd", async (req, res) => {
+  try {
+    const { pdf_id, paper_name } = req.body;
+
+    if (!pdf_id) {
+      return res.status(400).json({ error: "PDF ID is required" });
+    }
+
+    console.log(`📝 Extracting answers from Mathpix for PDF ID: ${pdf_id}`);
+
+    // Get the Mathpix MMD and lines data for the PDF
+    const [mmdRes, linesRes] = await Promise.all([
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.lines.mmd.json`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+    ]);
+
+    // Extract the raw MMD text
+    let mmdText = "";
+    if (mmdRes.data && typeof mmdRes.data === "string") {
+      mmdText = mmdRes.data;
+    } else if (mmdRes.data && mmdRes.data.mmd) {
+      mmdText = mmdRes.data.mmd;
+    }
+    console.log(mmdText);
+    if (!mmdText) {
+      console.error("❌ Invalid MMD data structure:", mmdRes.data);
+      return res
+        .status(400)
+        .json({ error: "Failed to extract MMD content from Mathpix" });
+    }
+
+    console.log(`📋 Extracted ${mmdText.length} characters of MMD text`);
+
+    // Use Gemini AI with a more specific prompt to extract mathematical answers
+    const geminiResponse = await axios.post(
+      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
+      {
+        contents: [
+          {
+            parts: [
+              {
+                text: `
+                You are an expert mathematics answer parser. Parse this mathematics answer key document and extract all question answers.
+
+                IMPORTANT GUIDELINES:
+                answer is usually at the end of the question so before the end 
+                1. Extract ONLY the answers, not the working or solutions
+                2. Watch for tabular layouts with question numbers like "1a", "1b", "2a", etc.
+                3. For questions with LaTeX, extract just the final result, not all steps
+                4. If the answer is a numerical value or expression, extract it exactly
+                5. For multiple-choice questions, just extract the letter (A, B, C, D)
+                6. Handle complex mathematical notation correctly
+
+                Return a JSON array where each object has:
+                Take the list of math answers from the document and regroup them by main number:
+                - If question_number is 1a, 1b, 1c — group under 1
+                - Format each sub-answer as (a), (b), etc.
+                - Return a JSON array like: 
+                  [{ "question_number": "1", "correct_answer": "(a) ..., (b) ..." }, ...]
+                - correct_answer: The answer, which may be a numerical value, expression, letter, or mathematical result
+                - confidence: Your confidence level (high, medium, low)
+                
+                ANSWER KEY CONTENT:
+                ${mmdText}
+                
+                FORMAT AS VALID JSON WITHOUT CODE BLOCK MARKERS.
+                `,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.8,
+          topK: 16,
+          maxOutputTokens: 8192,
+        },
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY,
+        },
+      }
+    );
+
+    // --- Start of modifications for response handling ---
+
+    // Safely access the generated text from the Gemini response
+    const geminiGeneratedText =
+      geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!geminiGeneratedText) {
+      console.error(
+        "❌ Gemini did not return a valid text response or it was filtered."
+      );
+      return res.status(500).json({
+        error:
+          "Failed to get generated text from Gemini API. Response may be empty or filtered.",
+        rawGeminiResponse: geminiResponse.data, // Log the full data for debugging
+      });
+    }
+
+    console.log(
+      "💬 Gemini response (first 200 chars):",
+      geminiGeneratedText.substring(0, 200) + "..."
+    );
+
+    let answersData;
+    try {
+      // The model often wraps the JSON in markdown code blocks (```json...```)
+      // We need to remove these markers before parsing.
+      // Use a more robust regex to ensure it catches variations and newlines.
+      const cleanedResponse = geminiGeneratedText
+        .replace(/^```json\s*|```\s*$/g, "") // Remove '```json\n' from start and '\n```' from end, including any surrounding whitespace
+        .trim(); // Trim any remaining whitespace
+
+      answersData = JSON.parse(cleanedResponse);
+
+      // Ensure it's always an array, even if Gemini returns a single object
+      if (!Array.isArray(answersData)) {
+        answersData = [answersData];
+      }
+
+      // Clean up and standardize the question numbers
+      answersData = answersData.map((item) => {
+        if (item.question_number !== undefined) {
+          // Convert to string to handle cases where it might be a number
+          item.question_number = String(item.question_number);
+          // Optional: Trim whitespace from question_number if necessary
+          item.question_number = item.question_number.trim();
+        }
+        // Optional: Trim whitespace from correct_answer if necessary
+        if (item.correct_answer && typeof item.correct_answer === "string") {
+          item.correct_answer = item.correct_answer.trim();
+        }
+        return item;
+      });
+
+      // Sort by question number (this logic looks good for alphanumeric)
+      answersData.sort((a, b) => {
+        if (!a.question_number || !b.question_number) return 0;
+
+        const aMatches = a.question_number.match(/^(\d+)([a-z]*)$/i);
+        const bMatches = b.question_number.match(/^(\d+)([a-z]*)$/i);
+
+        if (aMatches && bMatches) {
+          const aNum = parseInt(aMatches[1]);
+          const bNum = parseInt(bMatches[1]);
+
+          if (aNum !== bNum) return aNum - bNum;
+
+          // Compare the alphabetical part if numbers are equal
+          return (aMatches[2] || "").localeCompare(bMatches[2] || "");
+        }
+
+        // Fallback for non-standard question numbers
+        return a.question_number.localeCompare(b.question_number);
+      });
+    } catch (error) {
+      console.error("❌ Failed to parse Gemini JSON response:", error);
+      return res.status(500).json({
+        error:
+          "Failed to parse answer key data from Gemini. Response may be malformed JSON.",
+        rawResponseContent: geminiGeneratedText, // Log the content that failed to parse
+        parsingError: error.message,
+      });
+    }
+
+    console.info(
+      `✅ Successfully extracted ${answersData.length} answers from answer key`
+    );
+
+    // Return the structured answers
+    return res.json({
+      answers: answersData,
+      paper_name: paper_name,
+    });
+
+    // --- End of modifications for response handling ---
+  } catch (error) {
+    console.error("❌ Error extracting answers from MMD:", error);
+    // Log the full error object if it's an Axios error for more details
+    if (axios.isAxiosError(error)) {
+      console.error(
+        "Axios error details:",
+        error.response?.data || error.message
+      );
+    }
+    return res
+      .status(500)
+      .json({ error: "Failed to extract answers: " + error.message });
+  }
+});
+
+router.post("/update_answer_keys_direct", async (req, res) => {
+  try {
+    const { paper_name, answers } = req.body;
+
+    if (!paper_name || !Array.isArray(answers)) {
+      return res
+        .status(400)
+        .json({ error: "Missing paper_name or answers array" });
+    }
+
+    let updated = 0;
+
+    for (const item of answers) {
+      const { question_number, correct_answer } = item;
+      if (!question_number) continue;
+
+      const answer_key = {
+        question_number,
+        correct_answer: correct_answer || "",
+      };
+
+      const result = await pool.query(
+        `UPDATE question SET answer_key = $1 WHERE paper_name = $2 AND question_number = $3`,
+        [JSON.stringify(answer_key), paper_name, question_number]
+      );
+
+      if (result.rowCount > 0) updated++;
+    }
+
+    res.json({ success: true, updated });
+  } catch (err) {
+    console.error("❌ Error in update_answer_keys_direct:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to update answers", details: err.message });
   }
 });
 

@@ -32,13 +32,62 @@
                     Revision</button>
             </div>
 
-            <div v-if="uploadType" class="dropzone" @dragover.prevent @drop.prevent="handleFileDrop">
+            <div v-if="uploadType" class="separate-answer-toggle">
+                <label class="checkbox-label">
+                    <input type="checkbox" v-model="hasSeparateAnswerKey">
+                    Answer key is in a separate file
+                </label>
+            </div>
+
+            <!-- Single upload area (existing) -->
+            <div v-if="uploadType && !hasSeparateAnswerKey" class="dropzone" @dragover.prevent
+                @drop.prevent="handleFileDrop">
                 <p><strong>Drag & drop files</strong></p>
                 <p>Or</p>
                 <label class="file-btn">
                     Browse Files
                     <input type="file" hidden @change="handleFileUpload" />
                 </label>
+            </div>
+
+            <!-- Dual upload areas (new) -->
+            <div v-if="uploadType && hasSeparateAnswerKey" class="dual-dropzone">
+                <div class="dropzone questions-dropzone" @dragover.prevent @drop.prevent="handleQuestionFileDrop">
+                    <p><strong>Questions File</strong></p>
+                    <p>Drag & drop questions file</p>
+                    <p>Or</p>
+                    <label class="file-btn">
+                        Browse Files
+                        <input type="file" hidden @change="handleQuestionFileUpload" />
+                    </label>
+                </div>
+
+                <div class="dropzone answers-dropzone" @dragover.prevent @drop.prevent="handleAnswerFileDrop">
+                    <p><strong>Answer Key File</strong></p>
+                    <p>Drag & drop answer key file</p>
+                    <p>Or</p>
+                    <label class="file-btn">
+                        Browse Files
+                        <input type="file" hidden @change="handleAnswerFileUpload" />
+                    </label>
+                </div>
+            </div>
+
+            <!-- File previews -->
+            <div v-if="hasSeparateAnswerKey" class="uploaded-files-preview">
+                <div v-if="questionsFile" class="uploaded-file">
+                    <p><strong>Questions File:</strong> {{ questionsFile.name }}</p>
+                    <p v-if="questionsPdfPageCount > 0"><strong>Pages:</strong> {{ questionsPdfPageCount }}</p>
+                    <iframe v-if="questionsPdfPreviewUrl" :src="questionsPdfPreviewUrl" width="100%" height="300px"
+                        class="pdf-preview" />
+                </div>
+
+                <div v-if="answerKeyFile" class="uploaded-file">
+                    <p><strong>Answer Key File:</strong> {{ answerKeyFile.name }}</p>
+                    <p v-if="answerKeyPdfPageCount > 0"><strong>Pages:</strong> {{ answerKeyPdfPageCount }}</p>
+                    <iframe v-if="answerKeyPdfPreviewUrl" :src="answerKeyPdfPreviewUrl" width="100%" height="300px"
+                        class="pdf-preview" />
+                </div>
             </div>
 
             <div v-if="uploadedFile" class="uploaded-file">
@@ -157,6 +206,16 @@ export default {
             textToConvert: '',
             convertedLatex: null,
             isSaving: false,
+            hasSeparateAnswerKey: false,
+            questionsFile: null,
+            answerKeyFile: null,
+            questionsPdfPreviewUrl: '',
+            answerKeyPdfPreviewUrl: '',
+            questionsPdfPageCount: 0,
+            answerKeyPdfPageCount: 0,
+            processingAnswerKey: false,
+            answerKeyProgress: 0,
+            answerKeyMessage: '',
 
         };
     },
@@ -264,25 +323,39 @@ export default {
         },
 
         // File handling methods
-        async handleFileUpload(event) {
-            this.uploadedFile = event.target.files[0];
-            this.pdfPreviewUrl = URL.createObjectURL(this.uploadedFile);
-            await this.checkPdfPageCount();
+        handleQuestionFileUpload(event) {
+            this.questionsFile = event.target.files[0];
+            this.questionsPdfPreviewUrl = URL.createObjectURL(this.questionsFile);
+            this.checkQuestionsPdfPageCount();
         },
-        async handleFileDrop(event) {
-            this.uploadedFile = event.dataTransfer.files[0];
-            this.pdfPreviewUrl = URL.createObjectURL(this.uploadedFile);
-            await this.checkPdfPageCount();
+
+        handleAnswerFileUpload(event) {
+            this.answerKeyFile = event.target.files[0];
+            this.answerKeyPdfPreviewUrl = URL.createObjectURL(this.answerKeyFile);
+            this.checkAnswerKeyPdfPageCount();
         },
-        async checkPdfPageCount() {
-            if (!this.uploadedFile || !this.uploadedFile.type.includes('pdf')) {
-                this.pdfPageCount = 0;
+
+        handleQuestionFileDrop(event) {
+            this.questionsFile = event.dataTransfer.files[0];
+            this.questionsPdfPreviewUrl = URL.createObjectURL(this.questionsFile);
+            this.checkQuestionsPdfPageCount();
+        },
+
+        handleAnswerFileDrop(event) {
+            this.answerKeyFile = event.dataTransfer.files[0];
+            this.answerKeyPdfPreviewUrl = URL.createObjectURL(this.answerKeyFile);
+            this.checkAnswerKeyPdfPageCount();
+        },
+
+        async checkQuestionsPdfPageCount() {
+            if (!this.questionsFile || !this.questionsFile.type.includes('pdf')) {
+                this.questionsPdfPageCount = 0;
                 return;
             }
 
             try {
                 const formData = new FormData();
-                formData.append("pdf", this.uploadedFile);
+                formData.append("pdf", this.questionsFile);
 
                 const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
                     method: "POST",
@@ -290,13 +363,34 @@ export default {
                 });
 
                 const data = await response.json();
-                this.pdfPageCount = data.pageCount || 0;
-
-                // Calculate number of batches
-                this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
+                this.questionsPdfPageCount = data.pageCount || 0;
+                this.totalBatches = Math.ceil(this.questionsPdfPageCount / this.batchSize);
             } catch (error) {
-                console.error('❌ Failed to get PDF page count:', error);
-                this.pdfPageCount = 0;
+                console.error('❌ Failed to get questions PDF page count:', error);
+                this.questionsPdfPageCount = 0;
+            }
+        },
+
+        async checkAnswerKeyPdfPageCount() {
+            if (!this.answerKeyFile || !this.answerKeyFile.type.includes('pdf')) {
+                this.answerKeyPdfPageCount = 0;
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append("pdf", this.answerKeyFile);
+
+                const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                const data = await response.json();
+                this.answerKeyPdfPageCount = data.pageCount || 0;
+            } catch (error) {
+                console.error('❌ Failed to get answer key PDF page count:', error);
+                this.answerKeyPdfPageCount = 0;
             }
         },
 
@@ -370,8 +464,11 @@ export default {
         // Paper loading and saving methods
         async loadRecentPaper(paperName) {
             try {
-                const res = await fetch(`http://localhost:5008/api/paper/questions/${paperName}`);
+                const encodedName = encodeURIComponent(paperName); // handles # and spaces etc.
+
+                const res = await fetch(`http://localhost:5008/api/paper/questions/${encodedName}`);
                 const data = await res.json();
+                console.log(data)
                 this.questionCount = data.questions.length;
                 this.paperName = paperName;
 
@@ -435,8 +532,19 @@ export default {
 
         // Main submission handler
         async handleSubmit() {
-            if (!this.uploadedFile || !this.form.subject || !this.form.banding || !this.form.level) {
-                alert("Please complete all fields and upload a file.");
+            // Validate inputs
+            if (this.hasSeparateAnswerKey) {
+                if (!this.questionsFile || !this.answerKeyFile) {
+                    alert("Please upload both question and answer key files.");
+                    return;
+                }
+            } else if (!this.uploadedFile) {
+                alert("Please upload a file.");
+                return;
+            }
+
+            if (!this.form.subject || !this.form.banding || !this.form.level) {
+                alert("Please complete all fields.");
                 return;
             }
             if (this.uploadType === "topical" && !this.form.topic_label) {
@@ -445,11 +553,13 @@ export default {
             }
 
             try {
-                // Step 0: Check if paper exists
-                const baseName = this.uploadedFile.name.replace(/\.pdf$/i, '').replace(/\s+/g, "_");
+                // Determine which file to process for questions
+                const fileToProcess = this.hasSeparateAnswerKey ? this.questionsFile : this.uploadedFile;
+                const baseName = fileToProcess.name.replace(/\.pdf$/i, '').replace(/\s+/g, "_");
                 const paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
                 this.paperName = paperName;
 
+                // Check if paper exists
                 this.progressMessage = "🔎 Checking for existing paper...";
                 this.progressPercent = 10;
 
@@ -462,28 +572,36 @@ export default {
                     return;
                 }
 
-                // Start batch processing
+                // Process questions with batch processing (use existing code)
                 this.allProcessedQuestions = [];
-                this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
+                this.totalBatches = Math.ceil((this.hasSeparateAnswerKey ? this.questionsPdfPageCount : this.pdfPageCount) / this.batchSize);
                 this.batchProcessing = this.totalBatches > 1;
 
+                // Process questions in batches
                 for (let i = 0; i < this.totalBatches; i++) {
                     this.currentBatch = i + 1;
                     const startPage = i * this.batchSize + 1;
-                    const endPage = Math.min((i + 1) * this.batchSize, this.pdfPageCount);
+                    const endPage = Math.min((i + 1) * this.batchSize,
+                        this.hasSeparateAnswerKey ? this.questionsPdfPageCount : this.pdfPageCount);
 
-                    this.progressMessage = `📤 Processing batch ${this.currentBatch}/${this.totalBatches}...`;
+                    this.progressMessage = `📤 Processing questions batch ${this.currentBatch}/${this.totalBatches}...`;
                     this.progressPercent = 20 + (i / this.totalBatches) * 40;
 
-                    const batchQuestions = await this.processBatch(startPage, endPage);
+                    // Use the same processBatch method but pass the correct file
+                    const batchQuestions = await this.processBatch(
+                        startPage,
+                        endPage,
+                        this.hasSeparateAnswerKey ? this.questionsFile : this.uploadedFile
+                    );
+
                     this.allProcessedQuestions = [...this.allProcessedQuestions, ...batchQuestions];
                 }
 
                 // Renumber questions if batched
-                this.progressMessage = "📝 Generating markdown preview...";
-                this.progressPercent = 90;
-
                 if (this.batchProcessing) {
+                    this.progressMessage = "🔢 Organizing questions...";
+                    this.progressPercent = 70;
+
                     this.allProcessedQuestions.sort((a, b) => {
                         if (a.page_number !== b.page_number) {
                             return a.page_number - b.page_number;
@@ -505,8 +623,20 @@ export default {
                     });
                 }
 
-                // Generate markdown
+                // If separate answer key, process it now
+                if (this.hasSeparateAnswerKey && this.answerKeyFile) {
+                    this.progressMessage = "📝 Processing answer key...";
+                    this.progressPercent = 80;
+
+                    await this.processAnswerKey();
+                }
+
+                // Generate markdown with updated questions (now includes answers if processed)
+                this.progressMessage = "📄 Generating markdown preview...";
+                this.progressPercent = 90;
+
                 this.markdownContent = this.allProcessedQuestions.map((q) => {
+                    // Same markdown generation as before
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
@@ -538,77 +668,146 @@ export default {
             }
         }
         ,
-        async processBatch(startPage, endPage) {
-            // 1️⃣ Split PDF to get only pages for this batch
-            const splitFormData = new FormData();
-            splitFormData.append("pdf", this.uploadedFile);
-            splitFormData.append("startPage", startPage);
-            splitFormData.append("endPage", endPage);
+        async processBatch(startPage, endPage, file) {
+            try {
+                // 1️⃣ Split PDF to get only pages for this batch
+                const splitFormData = new FormData();
+                splitFormData.append("pdf", file); // Changed from this.uploadedFile to file parameter
+                splitFormData.append("startPage", startPage);
+                splitFormData.append("endPage", endPage);
 
-            const splitRes = await fetch("http://localhost:5008/api/mathpix/split_batch", {
-                method: "POST",
-                body: splitFormData,
-            });
-            const splitData = await splitRes.json();
+                const splitRes = await fetch("http://localhost:5008/api/mathpix/split_batch", {
+                    method: "POST",
+                    body: splitFormData,
+                });
+                const splitData = await splitRes.json();
 
-            if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
+                if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
 
-            // 2️⃣ Fetch the actual split file as a blob (because path is local to server)
-            const batchFileRes = await fetch(`http://localhost:5008/${splitData.batch_path}`);
-            const batchBlob = await batchFileRes.blob();
+                // 2️⃣ Fetch the actual split file as a blob (because path is local to server)
+                const batchFileRes = await fetch(`http://localhost:5008/${splitData.batch_path}`);
+                const batchBlob = await batchFileRes.blob();
 
-            // 3️⃣ Send the split batch to Mathpix
-            const uploadFormData = new FormData();
-            uploadFormData.append("pdf", batchBlob, `batch_${startPage}_to_${endPage}.pdf`);
+                // 3️⃣ Send the split batch to Mathpix
+                const uploadFormData = new FormData();
+                uploadFormData.append("pdf", batchBlob, `batch_${startPage}_to_${endPage}.pdf`);
 
-            const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
-                method: "POST",
-                body: uploadFormData,
-            });
-            const { pdf_id } = await uploadRes.json();
-            if (!pdf_id) throw new Error("Failed to upload batch to Mathpix");
+                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                    method: "POST",
+                    body: uploadFormData,
+                });
+                const { pdf_id } = await uploadRes.json();
+                if (!pdf_id) throw new Error("Failed to upload batch to Mathpix");
 
-            // 4️⃣ Extract questions from Mathpix
-            const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    pdf_id,
-                    paper_name: this.paperName,
-                    subject: this.form.subject,
-                    banding: this.form.banding,
-                    level: this.form.level,
-                    paper_type: this.uploadType,
-                    topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                    startPage,
-                    endPage,
-                }),
-            });
+                // 4️⃣ Extract questions from Mathpix
+                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        pdf_id,
+                        paper_name: this.paperName,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                        startPage,
+                        endPage,
+                    }),
+                });
 
-            const extractData = await extractRes.json();
-            const questions = extractData.questions || [];
-            if (!questions.length) throw new Error("No questions extracted");
+                const extractData = await extractRes.json();
+                const questions = extractData.questions || [];
+                if (!questions.length) throw new Error("No questions extracted");
 
-            // 5️⃣ Upload extracted images to S3 and store in DB
-            const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    paper_name: this.paperName,
-                    subject: this.form.subject,
-                    banding: this.form.banding,
-                    level: this.form.level,
-                    paper_type: this.uploadType,
-                    questions,
-                    topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                }),
-            });
+                // 5️⃣ Upload extracted images to S3 and store in DB
+                const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        paper_name: this.paperName,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        questions,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                    }),
+                });
 
-            const finalData = await uploadImagesRes.json();
-            return finalData.questions || [];
+                const finalData = await uploadImagesRes.json();
+                return finalData.questions || [];
+            } catch (error) {
+                console.error(`❌ Error processing batch ${startPage}-${endPage}:`, error);
+                return [];
+            }
         }
 
         ,
+        async processAnswerKey() {
+            try {
+                this.processingAnswerKey = true;
+                this.answerKeyMessage = "Processing answer key...";
+                this.answerKeyProgress = 10;
+
+                // Upload answer key to Mathpix
+                const formData = new FormData();
+                formData.append("pdf", this.answerKeyFile);
+
+                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                    method: "POST",
+                    body: formData,
+                });
+                const { pdf_id } = await uploadRes.json();
+                if (!pdf_id) throw new Error("Failed to get PDF ID for answer key");
+
+                this.answerKeyMessage = "Extracting answers...";
+                this.answerKeyProgress = 40;
+
+                // Extract answers from answer key
+                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_answers_from_mmd", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        pdf_id,
+                        paper_name: this.paperName,
+                    }),
+                });
+
+                const answersData = await extractRes.json();
+
+                if (!answersData.answers || answersData.answers.length === 0) {
+                    throw new Error("No answers were extracted from the answer key");
+                }
+
+                this.answerKeyMessage = "Matching answers to questions...";
+                this.answerKeyProgress = 70;
+
+                // Match answers to questions
+                const matchRes = await fetch("http://localhost:5008/api/paper/match_answers_to_questions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        paper_name: this.paperName,
+                        answers: answersData.answers,
+                    }),
+                });
+
+                const matchResult = await matchRes.json();
+
+                // Update processed questions with answers
+                this.allProcessedQuestions = matchResult.questions;
+
+                this.answerKeyMessage = "Answers processed successfully!";
+                this.answerKeyProgress = 100;
+
+            } catch (error) {
+                console.error("❌ processAnswerKey error:", error);
+                alert("❌ Failed to process answer key: " + error.message);
+            } finally {
+                this.processingAnswerKey = false;
+            }
+        },
     }
 };
 </script>
