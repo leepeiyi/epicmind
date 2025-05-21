@@ -338,9 +338,6 @@ export default {
 
 <style scoped>
 .quiz-view-page {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 2rem;
     font-family: Arial, sans-serif;
 }
 
