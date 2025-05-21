@@ -747,10 +747,9 @@ export default {
         async processAnswerKey() {
             try {
                 this.processingAnswerKey = true;
-                this.answerKeyMessage = "Processing answer key...";
+                this.answerKeyMessage = "📤 Uploading answer key to Mathpix...";
                 this.answerKeyProgress = 10;
 
-                // Upload answer key to Mathpix
                 const formData = new FormData();
                 formData.append("pdf", this.answerKeyFile);
 
@@ -758,13 +757,13 @@ export default {
                     method: "POST",
                     body: formData,
                 });
+
                 const { pdf_id } = await uploadRes.json();
                 if (!pdf_id) throw new Error("Failed to get PDF ID for answer key");
 
-                this.answerKeyMessage = "Extracting answers...";
+                this.answerKeyMessage = "🤖 Extracting answers using Gemini...";
                 this.answerKeyProgress = 40;
 
-                // Extract answers from answer key
                 const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_answers_from_mmd", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -776,15 +775,22 @@ export default {
 
                 const answersData = await extractRes.json();
 
-                if (!answersData.answers || answersData.answers.length === 0) {
-                    throw new Error("No answers were extracted from the answer key");
+                if (extractRes.status !== 200) {
+                    throw new Error(answersData.error || "Failed to extract answers");
                 }
 
-                this.answerKeyMessage = "Matching answers to questions...";
+                if (!answersData.answers || answersData.answers.length === 0) {
+                    console.warn("⚠️ No answers extracted. Proceeding with empty fallback.");
+                    alert("⚠️ No answers were extracted. The file might be in an unrecognised format.");
+                    this.answerKeyMessage = "No answers matched.";
+                    this.answerKeyProgress = 100;
+                    return;
+                }
+
+                this.answerKeyMessage = "🔗 Matching answers to questions...";
                 this.answerKeyProgress = 70;
 
-                // Match answers to questions
-                const matchRes = await fetch("http://localhost:5008/api/paper/match_answers_to_questions", {
+                const matchRes = await fetch("http://localhost:5008/api/paper/update_answer_keys_direct", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -795,19 +801,25 @@ export default {
 
                 const matchResult = await matchRes.json();
 
-                // Update processed questions with answers
-                this.allProcessedQuestions = matchResult.questions;
+                if (matchRes.status !== 200) {
+                    throw new Error(matchResult.error || "Failed to match answers to questions");
+                }
 
-                this.answerKeyMessage = "Answers processed successfully!";
+                this.allProcessedQuestions = matchResult.questions || [];
+
+                this.answerKeyMessage = "✅ Answers matched successfully!";
                 this.answerKeyProgress = 100;
 
             } catch (error) {
                 console.error("❌ processAnswerKey error:", error);
-                alert("❌ Failed to process answer key: " + error.message);
+                alert("❌ Failed to process answer key: " + (error.message || "Unknown error"));
+                this.answerKeyMessage = "❌ Error processing answer key.";
+                this.answerKeyProgress = 0;
             } finally {
                 this.processingAnswerKey = false;
             }
-        },
+        }
+        ,
     }
 };
 </script>
