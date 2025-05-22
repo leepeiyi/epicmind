@@ -5,6 +5,10 @@ const path = require("path");
 
 const app = express();
 
+require("dotenv").config({ 
+  path: process.env.NODE_ENV === 'development' ? '.env.local' : '.env' 
+});
+
 // CORS configuration for production
 // Update the CORS configuration in your server.js
 
