@@ -41,6 +41,7 @@
 import studentImage from '../assets/student-illustration.png';
 import logoImage from '../assets/epic-mind-logo.png';
 import axios from 'axios';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
   name: 'LoginPage',
@@ -56,7 +57,7 @@ export default {
   methods: {
     async handleLogin() {
       try {
-        const response = await axios.post('http://localhost:5008/api/user/login', {
+        const response = await axios.post(`${API_BASE_URL}/api/user/login`, {
           email: this.email,
           password: this.password,
         });

@@ -33,6 +33,7 @@
 
 <script>
 import axios from 'axios';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     name: "CreateAccount",
@@ -56,7 +57,7 @@ export default {
       }
 
       try {
-        const response = await axios.post('http://localhost:5008/api/user/register', {
+        const response = await axios.post(`${API_BASE_URL}/api/user/register`, {
           name: this.form.name,
           email: this.form.email,
           password: this.form.password,

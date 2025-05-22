@@ -16,6 +16,7 @@
   
   <script>
   import axios from 'axios';
+  import API_BASE_URL from '@/config/api.js'
   export default {
     data() {
       return {
@@ -27,7 +28,7 @@
     methods: {
       async submitPassword() {
         try {
-          await axios.post('http://localhost:5008/api/user/reset-password', {
+          await axios.post(`${API_BASE_URL}/api/user/reset-password`, {
             token: this.token,
             newPassword: this.password
           });

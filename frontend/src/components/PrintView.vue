@@ -30,6 +30,7 @@
 
 <script>
 import { marked } from 'marked';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     data() {
@@ -93,7 +94,7 @@ export default {
         const folderId = query.folderId;
         console.log('Folder ID:', folderId);
         if (folderId) {
-            fetch(`http://localhost:5008/api/quiz/folders/getQuestionsByFolderId?folderId=${folderId}`)
+            fetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${folderId}`)
                 .then(res => res.json())
                 .then(data => {
                     this.questions = data;

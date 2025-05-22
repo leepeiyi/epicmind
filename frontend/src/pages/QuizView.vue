@@ -126,6 +126,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import { marked } from 'marked';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     name: 'QuizView',
@@ -245,7 +246,7 @@ export default {
                 // Fetch quiz details
 
                 // Fetch quiz questions
-                const questionsResponse = await fetch(`http://localhost:5008/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
+                const questionsResponse = await fetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
                 console.log(questionsResponse);
 
                 if (!questionsResponse.ok) {

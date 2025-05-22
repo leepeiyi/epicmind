@@ -279,6 +279,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     name: 'QuizFolder',
@@ -431,7 +432,7 @@ export default {
             this.error = null;
 
             try {
-                const response = await fetch('http://localhost:5008/api/quiz/folders/all', {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/folders/all`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -484,7 +485,7 @@ export default {
 
             try {
                 // Fetch ALL students (both linked and not linked to this teacher)
-                const response = await fetch(`http://localhost:5008/api/quiz/students/all`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/students/all`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -509,7 +510,7 @@ export default {
 
         async fetchLinkedStudentIds() {
             try {
-                const response = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -576,7 +577,7 @@ export default {
             try {
                 // Add new student links
                 if (this.studentLinksToAdd.length > 0) {
-                    const addResponse = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students`, {
+                    const addResponse = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -597,7 +598,7 @@ export default {
                 for (const studentId of this.studentLinksToRemove) {
                     console.log('Removing student:', studentId);
                     console.log('Teacher ID:', this.userId);
-                    const removeResponse = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students/${studentId}`, {
+                    const removeResponse = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
                         method: 'DELETE',
                         headers: {
                             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -672,7 +673,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`http://localhost:5008/api/folders/${quizId}`, {
+                const response = await fetch(`${API_BASE_URL}/api/folders/${quizId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -702,7 +703,7 @@ export default {
             this.studentsError = null;
 
             try {
-                const response = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -751,7 +752,7 @@ export default {
         },
 
         async linkExistingStudent() {
-            const response = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students`, {
+            const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -772,7 +773,7 @@ export default {
 
         async createNewStudentAccount() {
             // First create the student account
-            const createResponse = await fetch('http://localhost:5008/api/user/register', {
+            const createResponse = await fetch(`${API_BASE_URL}/api/user/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -805,7 +806,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students/${studentId}`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -843,7 +844,7 @@ export default {
             this.assignmentsError = null;
             
             try {
-                const response = await fetch(`http://localhost:5008/api/quiz/student/${studentId}/assigned-quizzes`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/student/${studentId}/assigned-quizzes`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -900,7 +901,7 @@ export default {
 
             try {
                 // Fetch current assignments for this quiz
-                const response = await fetch(`http://localhost:5008/api/quiz/${quizId}/assignments`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/${quizId}/assignments`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -932,7 +933,7 @@ export default {
             this.assignError = null;
 
             try {
-                const response = await fetch(`http://localhost:5008/api/quiz/teacher/${this.userId}/students`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -998,7 +999,7 @@ export default {
 
             try {
                 // Save the assignments
-                const response = await fetch(`http://localhost:5008/api/quiz/${this.activeQuizId}/assignments`, {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/${this.activeQuizId}/assignments`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

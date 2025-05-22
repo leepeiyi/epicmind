@@ -173,6 +173,7 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import { marked } from 'marked';
 import * as pdfjsLib from 'pdfjs-dist'; // Need to add this dependency
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     name: 'InsertPaper',
@@ -226,7 +227,7 @@ export default {
     },
     async mounted() {
         try {
-            const res = await fetch('http://localhost:5008/api/paper/recent');
+            const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
             const data = await res.json();
             this.recentPapers = data.recent || [];
 
@@ -357,7 +358,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.questionsFile);
 
-                const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -395,7 +396,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.uploadedFile);
 
-                const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -421,7 +422,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.answerKeyFile);
 
-                const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -443,7 +444,7 @@ export default {
                 formData.append("startPage", startPage);
                 formData.append("endPage", endPage);
 
-                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
                     method: "POST",
                     body: formData,
                 });
@@ -454,7 +455,7 @@ export default {
                 this.progressPercent = 40 + (this.currentBatch / this.totalBatches) * 30;
 
                 // Extract questions from Mathpix Markdown with page range
-                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -478,7 +479,7 @@ export default {
                 this.progressPercent = 70 + (this.currentBatch / this.totalBatches) * 20;
 
                 // Upload images to S3
-                const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                const uploadImagesRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -506,7 +507,7 @@ export default {
             try {
                 const encodedName = encodeURIComponent(paperName); // handles # and spaces etc.
 
-                const res = await fetch(`http://localhost:5008/api/paper/questions/${encodedName}`);
+                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
                 console.log(data)
                 this.questionCount = data.questions.length;
@@ -546,7 +547,7 @@ export default {
         async saveEditedMarkdown() {
             this.isSaving = true;
             try {
-                const response = await fetch('http://localhost:5008/api/paper/update-question-details', {
+                const response = await fetch(`${API_BASE_URL}/api/paper/update-question-details`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -603,7 +604,7 @@ export default {
                 this.progressMessage = "🔎 Checking for existing paper...";
                 this.progressPercent = 10;
 
-                const existsRes = await fetch(`http://localhost:5008/api/paper/exists/${encodeURIComponent(paperName)}`);
+                const existsRes = await fetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(paperName)}`);
                 const { exists } = await existsRes.json();
                 if (exists) {
                     alert(`⚠️ Paper "${paperName}" already exists in the database.`);
@@ -649,7 +650,7 @@ export default {
                         q.question_number = index + 1;
                     });
 
-                    await fetch("http://localhost:5008/api/paper/update-question-numbers", {
+                    await fetch(`${API_BASE_URL}/api/paper/update-question-numbers`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -715,7 +716,7 @@ export default {
                 splitFormData.append("startPage", startPage);
                 splitFormData.append("endPage", endPage);
 
-                const splitRes = await fetch("http://localhost:5008/api/mathpix/split_batch", {
+                const splitRes = await fetch(`${API_BASE_URL}/api/mathpix/split_batch`, {
                     method: "POST",
                     body: splitFormData,
                 });
@@ -724,14 +725,14 @@ export default {
                 if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
 
                 // 2️⃣ Fetch the actual split file as a blob
-                const batchFileRes = await fetch(`http://localhost:5008/${splitData.batch_path}`);
+                const batchFileRes = await fetch(`${API_BASE_URL}/${splitData.batch_path}`);
                 const batchBlob = await batchFileRes.blob();
 
                 // 3️⃣ Send the split batch to Mathpix
                 const uploadFormData = new FormData();
                 uploadFormData.append("pdf", batchBlob, `batch_${startPage}_to_${endPage}.pdf`);
 
-                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
                     method: "POST",
                     body: uploadFormData,
                 });
@@ -742,7 +743,7 @@ export default {
                 this.progressPercent = 40 + (this.currentBatch / this.totalBatches) * 30;
 
                 // 4️⃣ Extract questions from Mathpix
-                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
+                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -766,7 +767,7 @@ export default {
                 this.progressPercent = 70 + (this.currentBatch / this.totalBatches) * 20;
 
                 // 5️⃣ Upload images to S3 and store in DB
-                const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
+                const uploadImagesRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -798,7 +799,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.answerKeyFile);
 
-                const uploadRes = await fetch("http://localhost:5008/api/mathpix/upload_pdf_to_mathpix", {
+                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
                     method: "POST",
                     body: formData,
                 });
@@ -809,7 +810,7 @@ export default {
                 this.answerKeyMessage = "🤖 Extracting answers using Gemini...";
                 this.answerKeyProgress = 40;
 
-                const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_answers_from_mmd", {
+                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_mmd`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -835,7 +836,7 @@ export default {
                 this.answerKeyMessage = "🔗 Matching answers to questions...";
                 this.answerKeyProgress = 70;
 
-                const matchRes = await fetch("http://localhost:5008/api/paper/update_answer_keys_direct", {
+                const matchRes = await fetch(`${API_BASE_URL}/api/paper/update_answer_keys_direct`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({

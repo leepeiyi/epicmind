@@ -56,6 +56,7 @@
   </template>
   
   <script>
+  import API_BASE_URL from '@/config/api.js'
   export default {
     name: 'AssignQuizModal',
     props: {
@@ -118,7 +119,7 @@
           const teacherId = user.id;
           
           // Fetch students (assuming endpoint exists to get students for a teacher)
-          const response = await fetch(`http://localhost:5008/api/teacher/${teacherId}/students`, {
+          const response = await fetch(`${API_BASE_URL}/api/teacher/${teacherId}/students`, {
             headers: {
               'Authorization': `Bearer ${sessionStorage.getItem('token')}`
             }
@@ -141,7 +142,7 @@
       async fetchAssignments() {
         try {
           // Fetch current assignments for this quiz
-          const response = await fetch(`http://localhost:5008/api/quiz/${this.quizId}/assignments`, {
+          const response = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
             headers: {
               'Authorization': `Bearer ${sessionStorage.getItem('token')}`
             }
@@ -218,7 +219,7 @@
           const teacherId = user.id;
           
           // Save the assignments
-          const response = await fetch(`http://localhost:5008/api/quiz/${this.quizId}/assignments`, {
+          const response = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

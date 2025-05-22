@@ -17,6 +17,7 @@
 
 <script>
 import axios from 'axios';
+import API_BASE_URL from '@/config/api.js'
 export default {
     data() {
         return {
@@ -27,7 +28,7 @@ export default {
     methods: {
         async submitEmail() {
             try {
-                await axios.post('http://localhost:5008/api/user/forgot-password', { email: this.email });
+                await axios.post(`${API_BASE_URL}/api/user/forgot-password`, { email: this.email });
                 this.message = 'Check your email for a reset link.';
             } catch (err) {
                 if (err.response?.status === 404) {

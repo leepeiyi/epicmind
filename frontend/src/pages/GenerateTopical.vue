@@ -170,6 +170,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import { mathTopicsData } from '../components/topicData';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     name: 'GenerateQuiz',
@@ -263,7 +264,7 @@ export default {
 
             try {
                 // In a real implementation, you would fetch subtopics from the backend
-                const response = await fetch(`http://localhost:5008/api/topics/subtopics?subject=${this.form.subject}&level=${this.form.level}&topic=${this.form.topic}`);
+                const response = await fetch(`${API_BASE_URL}/api/topics/subtopics?subject=${this.form.subject}&level=${this.form.level}&topic=${this.form.topic}`);
                 const data = await response.json();
                 this.subTopics = data.subtopics || [];
             } catch (error) {
@@ -300,7 +301,7 @@ export default {
                 }, 1000);
 
                 // Call the backend API to generate the quiz
-                const response = await fetch('http://localhost:5008/api/quiz/generate', {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/generate`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -382,7 +383,7 @@ export default {
                 this.loadingMessage = 'Saving quiz...';
                 this.progressPercent = 50;
 
-                const response = await fetch('http://localhost:5008/api/quiz/save', {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/save`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

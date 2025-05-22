@@ -73,6 +73,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import API_BASE_URL from '@/config/api.js'
 
 export default {
     components: { Navbar },
@@ -190,7 +191,7 @@ export default {
 
         async loadPapers() {
             try {
-                const res = await fetch('http://localhost:5008/api/paper/recent');
+                const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
                 const { recent } = await res.json();
                 this.unvettedPapers = recent.filter(p => !p.vetted);
                 this.vettedPapers = recent.filter(p => p.vetted);
@@ -202,7 +203,7 @@ export default {
         async loadPaper(paperName) {
             this.selectedPaper = paperName;
             try {
-                const res = await fetch(`http://localhost:5008/api/paper/questions/${paperName}`);
+                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${paperName}`);
                 const { questions } = await res.json();
 
                 // Debug the first question to see its format
@@ -236,7 +237,7 @@ export default {
 
         async saveUpdates() {
             try {
-                const res = await fetch('http://localhost:5008/api/paper/update-question-metadata', {
+                const res = await fetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
