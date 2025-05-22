@@ -13,7 +13,25 @@ const pool = new Pool({
   },
 });
 
-const escapeLatex = (text) => text?.replace(/\\/g, "\\\\") || "";
+// Fixed escapeLatex function that handles both strings and arrays
+const escapeLatex = (text) => {
+  // Handle null/undefined
+  if (!text) return text;
+  
+  // Handle arrays - convert to string first
+  if (Array.isArray(text)) {
+    // Join array elements with a delimiter (e.g., comma and space)
+    text = text.join(', ');
+  }
+  
+  // Handle non-string types
+  if (typeof text !== 'string') {
+    text = String(text);
+  }
+  
+  // Now safely apply string replacements
+  return text.replace(/\\/g, "\\\\") || "";
+};
 
 const insertJSONPayload = async (parsedJSON) => {
   const client = await pool.connect();

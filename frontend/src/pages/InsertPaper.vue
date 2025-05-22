@@ -370,6 +370,46 @@ export default {
                 this.questionsPdfPageCount = 0;
             }
         },
+        // 1. Handle single file upload (normal case)
+        async handleFileUpload(event) {
+            this.uploadedFile = event.target.files[0];
+            this.pdfPreviewUrl = URL.createObjectURL(this.uploadedFile);
+            await this.checkPdfPageCount();
+        },
+
+        // 2. Handle single file drop (normal case) 
+        async handleFileDrop(event) {
+            this.uploadedFile = event.dataTransfer.files[0];
+            this.pdfPreviewUrl = URL.createObjectURL(this.uploadedFile);
+            await this.checkPdfPageCount();
+        },
+
+        // 3. Check PDF page count for normal uploads
+        async checkPdfPageCount() {
+            if (!this.uploadedFile || !this.uploadedFile.type.includes('pdf')) {
+                this.pdfPageCount = 0;
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append("pdf", this.uploadedFile);
+
+                const response = await fetch("http://localhost:5008/api/mathpix/get_pdf_page_count", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                const data = await response.json();
+                this.pdfPageCount = data.pageCount || 0;
+
+                // Calculate number of batches
+                this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
+            } catch (error) {
+                console.error('❌ Failed to get PDF page count:', error);
+                this.pdfPageCount = 0;
+            }
+        },
 
         async checkAnswerKeyPdfPageCount() {
             if (!this.answerKeyFile || !this.answerKeyFile.type.includes('pdf')) {
@@ -588,11 +628,7 @@ export default {
                     this.progressPercent = 20 + (i / this.totalBatches) * 40;
 
                     // Use the same processBatch method but pass the correct file
-                    const batchQuestions = await this.processBatch(
-                        startPage,
-                        endPage,
-                        this.hasSeparateAnswerKey ? this.questionsFile : this.uploadedFile
-                    );
+                    const batchQuestions = await this.processBatch(startPage, endPage, fileToProcess);
 
                     this.allProcessedQuestions = [...this.allProcessedQuestions, ...batchQuestions];
                 }
@@ -668,11 +704,14 @@ export default {
             }
         }
         ,
-        async processBatch(startPage, endPage, file) {
+        async processBatch(startPage, endPage, file = null) {
             try {
+                // Use the passed file or fall back to uploadedFile
+                const fileToUse = file || this.uploadedFile;
+
                 // 1️⃣ Split PDF to get only pages for this batch
                 const splitFormData = new FormData();
-                splitFormData.append("pdf", file); // Changed from this.uploadedFile to file parameter
+                splitFormData.append("pdf", fileToUse);
                 splitFormData.append("startPage", startPage);
                 splitFormData.append("endPage", endPage);
 
@@ -684,7 +723,7 @@ export default {
 
                 if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
 
-                // 2️⃣ Fetch the actual split file as a blob (because path is local to server)
+                // 2️⃣ Fetch the actual split file as a blob
                 const batchFileRes = await fetch(`http://localhost:5008/${splitData.batch_path}`);
                 const batchBlob = await batchFileRes.blob();
 
@@ -698,6 +737,9 @@ export default {
                 });
                 const { pdf_id } = await uploadRes.json();
                 if (!pdf_id) throw new Error("Failed to upload batch to Mathpix");
+
+                this.progressMessage = `🔍 Extracting questions from pages ${startPage}-${endPage}...`;
+                this.progressPercent = 40 + (this.currentBatch / this.totalBatches) * 30;
 
                 // 4️⃣ Extract questions from Mathpix
                 const extractRes = await fetch("http://localhost:5008/api/mathpix/extract_questions_from_mmd", {
@@ -718,9 +760,12 @@ export default {
 
                 const extractData = await extractRes.json();
                 const questions = extractData.questions || [];
-                if (!questions.length) throw new Error("No questions extracted");
+                if (!questions.length) return [];
 
-                // 5️⃣ Upload extracted images to S3 and store in DB
+                this.progressMessage = `📦 Uploading diagrams from pages ${startPage}-${endPage}...`;
+                this.progressPercent = 70 + (this.currentBatch / this.totalBatches) * 20;
+
+                // 5️⃣ Upload images to S3 and store in DB
                 const uploadImagesRes = await fetch("http://localhost:5008/api/mathpix/upload_extracted_images_to_s3", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
