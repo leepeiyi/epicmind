@@ -173,7 +173,7 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import { marked } from 'marked';
 import * as pdfjsLib from 'pdfjs-dist'; // Need to add this dependency
-import API_BASE_URL from '@/config/api.js'
+import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'InsertPaper',

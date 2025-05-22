@@ -17,7 +17,7 @@
 
 <script>
 import axios from 'axios';
-import API_BASE_URL from '@/config/api.js'
+import API_BASE_URL from '../config/api.js';
 export default {
     data() {
         return {

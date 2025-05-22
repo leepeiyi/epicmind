@@ -126,7 +126,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import { marked } from 'marked';
-import API_BASE_URL from '@/config/api.js'
+import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'QuizView',

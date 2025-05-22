@@ -73,7 +73,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
-import API_BASE_URL from '@/config/api.js'
+import API_BASE_URL from '../config/api.js';
 
 export default {
     components: { Navbar },

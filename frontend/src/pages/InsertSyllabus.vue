@@ -39,6 +39,7 @@
   import Navbar from '../components/Navbar.vue';
   import PaperDetails from '../components/PaperDetails.vue';
   
+  
   export default {
     name: 'InsertSyllabus',
     components: { Navbar, PaperDetails },
