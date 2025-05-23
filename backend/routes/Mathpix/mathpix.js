@@ -42,6 +42,7 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 // === Step 1: Upload PDF to Mathpix and get pdf_id ===
 
 const PDFParser = require("pdf-parse");
+const { json } = require("stream/consumers");
 
 // Add this endpoint to mathpix.js
 router.post("/get_pdf_page_count", upload.single("pdf"), async (req, res) => {
@@ -353,6 +354,138 @@ router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
   }
 });
 
+async function parseGeminiJsonResponse(rawResponse) {
+  const strategies = [
+    // Strategy 1: Clean response and parse directly
+    {
+      name: "Direct parsing after cleanup",
+      parse: (raw) => {
+        const cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+        return JSON.parse(jsonMatch[0]);
+      }
+    },
+    
+    // Strategy 2: Fix common LaTeX escaping issues
+    {
+      name: "LaTeX backslash normalization", 
+      parse: (raw) => {
+        let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+        
+        let jsonString = jsonMatch[0];
+        
+        // Fix over-escaped LaTeX commands
+        jsonString = jsonString
+          .replace(/\\\\\\\\([a-zA-Z_{}])/g, '\\\\$1')  // \\\\log -> \\log
+          .replace(/\\\\\\\\([()])/g, '\\\\$1')         // \\\\( -> \\(
+          .replace(/\\\\\\\\([{}])/g, '\\\\$1')         // \\\\{ -> \\{
+          .replace(/\\\\\\\\text/g, '\\\\text')         // \\\\text -> \\text
+          .replace(/\\\\\\\\frac/g, '\\\\frac')         // \\\\frac -> \\frac
+          .replace(/\\\\\\\\sqrt/g, '\\\\sqrt')         // \\\\sqrt -> \\sqrt
+          .replace(/\\\\\\\\log/g, '\\\\log')           // \\\\log -> \\log
+          .replace(/\\\\\\\\sin/g, '\\\\sin')           // \\\\sin -> \\sin
+          .replace(/\\\\\\\\cos/g, '\\\\cos');          // \\\\cos -> \\cos
+          
+        return JSON.parse(jsonString);
+      }
+    },
+    
+    // Strategy 3: Aggressive backslash reduction
+    {
+      name: "Aggressive backslash reduction",
+      parse: (raw) => {
+        let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+        
+        let jsonString = jsonMatch[0];
+        
+        // More aggressive cleaning - reduce all multiple backslashes
+        jsonString = jsonString
+          .replace(/\\{4,}/g, '\\\\')    // Any 4+ backslashes -> 2 backslashes
+          .replace(/\\{3}/g, '\\\\')     // Triple backslashes -> double
+          .replace(/\\\\\\([a-zA-Z])/g, '\\\\$1');  // Clean up LaTeX commands
+          
+        return JSON.parse(jsonString);
+      }  
+    },
+    
+    // Strategy 4: Character-by-character escape fixing
+    {
+      name: "Character-level escape fixing",
+      parse: (raw) => {
+        let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+        
+        let jsonString = jsonMatch[0];
+        
+        // Fix specific problematic patterns seen in the error
+        jsonString = jsonString
+          .replace(/\\\\log_\{([^}]+)\}/g, '\\\\log_{$1}')       // Fix log subscripts  
+          .replace(/\\\\log_([0-9]+)/g, '\\\\log_$1')            // Fix simple log bases
+          .replace(/\\\\sqrt\{([^}]*)\}/g, '\\\\sqrt{$1}')       // Fix sqrt
+          .replace(/\\\\frac\{([^}]*)\}\{([^}]*)\}/g, '\\\\frac{$1}{$2}')  // Fix fractions
+          .replace(/\\\\\(/g, '\\\\(')                           // Fix LaTeX delimiters
+          .replace(/\\\\\)/g, '\\\\)');
+          
+        return JSON.parse(jsonString);
+      }
+    },
+    
+    // Strategy 5: Last resort - manual JSON reconstruction
+    {
+      name: "Manual JSON reconstruction",
+      parse: (raw) => {
+        // Extract just the question data using regex, then rebuild JSON manually
+        const questions = [];
+        const questionMatches = raw.matchAll(/\{\s*"question_number"\s*:\s*"([^"]+)"[\s\S]*?\}/g);
+        
+        for (const match of questionMatches) {
+          try {
+            // Try to parse individual question objects with fixes
+            let questionJson = match[0].replace(/\\\\\\\\([a-zA-Z])/g, '\\\\$1');
+            const question = JSON.parse(questionJson);
+            questions.push(question);
+          } catch (e) {
+            console.warn("Failed to parse individual question:", e.message);
+          }
+        }
+        
+        if (questions.length === 0) {
+          throw new Error("No valid questions could be reconstructed");
+        }
+        
+        return questions;
+      }
+    }
+  ];
+
+  // Try each strategy in order
+  for (const strategy of strategies) {
+    try {
+      console.log(`🔧 Trying parsing strategy: ${strategy.name}`);
+      const result = strategy.parse(rawResponse);
+      
+      if (Array.isArray(result) && result.length > 0) {
+        console.log(`✅ Success with strategy: ${strategy.name}`);
+        return result;
+      } else {
+        console.log(`⚠️ Strategy ${strategy.name} returned empty/invalid result`);
+      }
+    } catch (error) {
+      console.log(`❌ Strategy ${strategy.name} failed:`, error.message);
+      continue;
+    }
+  }
+
+  // If all strategies fail
+  throw new Error("All JSON parsing strategies failed. Gemini response may be fundamentally malformed.");
+}
+
 router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
     const {
@@ -362,13 +495,20 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
       level,
       paper_name,
       paper_type,
-      topic_label, // Changed from topic
-      startPage, // Add these params
-      endPage, // Add these params
+      topic_label,
+      startPage,
+      endPage,
     } = req.body;
 
+    // Validation
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!paper_type || paper_type === "undefined") {
+      return res.status(400).json({ 
+        error: "Invalid paper_type. Must be 'exam' or 'topical'" 
+      });
     }
 
     await pollMathpixStatus(pdf_id);
@@ -389,88 +529,85 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
     ]);
 
     const markdownContent = mmdRes.data;
+    const pageRangeNote = startPage && endPage 
+      ? `- Focus only on pages ${startPage} to ${endPage}.` 
+      : "";
 
-    // Build the page range note if applicable
-    const pageRangeNote =
-      startPage && endPage
-        ? `- Focus only on pages ${startPage} to ${endPage}.`
-        : "";
+    // ✅ IMPROVED PROMPT - Critical LaTeX escaping instructions
+    const prompt = `You are extracting questions from an exam worksheet in Markdown format.
 
-    const prompt = `You will be given a full exam worksheet in Markdown format. It includes questions, math expressions (in LaTeX), and a final answer key.
+CRITICAL JSON & LaTeX FORMATTING RULES:
+1. For LaTeX expressions: Use SINGLE backslashes only
+   - Correct: "\\log_2 x", "\\frac{1}{2}", "\\sqrt{x}"
+   - WRONG: "\\\\log_2 x", "\\\\\\\\frac{1}{2}"
+2. Return VALID JSON without markdown code blocks
+3. No json markers in your response
+4. Escape quotes in strings with \"
+5. Keep LaTeX delimiters as-is: \\( ... \\) and $ ... $
 
 Instructions:
-- Extract each question's number and full text.
-- Keep all LaTeX expressions exactly as-is, including delimiters like \\( ... \\) and $$ ... $$.
-- Extract answer options (if present).
-- Extract image URLs for each question (from ![Diagram](...)).
-- Match the correct answer for each question using the final answer section.
+- Extract each question's number and full text
+- Extract answer options (if present)  
+- Extract image URLs from ![Diagram](...) 
+- Match correct answers from answer section
 ${pageRangeNote}
 
-IMPORTANT:
-- Do not remove or alter any math symbols or formatting.
-- Do not modify LaTeX. Do not strip backslashes or parentheses.
-- Preserve all Markdown formatting exactly as shown.
-- Make sure all backslashes are double-escaped for JSON (e.g., \\ instead of \).
-
-
-Return the result as a JSON array. Do not include explanations.
-- If question_number is 1a, 1b, 1c — group under 1
-                - Format each sub-answer as (a), (b), etc.
-                - Return a JSON array like: 
-                  { "question_number": "1", "question_text": "(a) ..., (b) ..." },
-Each item should follow this format:
-{
-  
+EXAMPLE OUTPUT FORMAT (no code blocks):
+[{
   "question_number": "1",
-  "question_text": "...",
-  "answer_options": [
-    { "option": "A", "text": "..." },
-    { "option": "B", "text": "..." }
-  ],
-  "answer_key": { "question_number": "1", "correct_answer": "B" },
-  "image_path": ["..."],
+  "question_text": "Solve \\(\\log_2 x = 3\\)",
+  "answer_options": [{"option": "A", "text": "x = 8"}],
+  "answer_key": {"question_number": "1", "correct_answer": "8"},
+  "image_path": [],
   "subject": "${subject}",
   "banding": "${banding}",
   "level": "${level}",
   "paper_type": "${paper_type}",
   "topic_label": "${topic_label || ""}"
-}`;
+}]
+
+Return the JSON array directly:`;
 
     const result = await model.generateContent([
       { text: `${prompt}\n\n${markdownContent}` },
     ]);
+
+    const raw = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    console.log("📝 Gemini raw response length:", raw.length);
+    console.log("📝 First 300 chars:", raw.substring(0, 300));
+
+    // ✅ COMPREHENSIVE JSON PARSING with multiple strategies
+    let parsed;
     
+    try {
+      parsed = await parseGeminiJsonResponse(raw);
+      console.log(`✅ Successfully parsed ${parsed.length} questions`);
+    } catch (parseError) {
+      console.error("❌ All JSON parsing strategies failed:", parseError.message);
+      return res.status(500).json({
+        error: "Failed to parse Gemini response as valid JSON",
+        details: parseError.message,
+        suggestions: [
+          "Gemini may not be following LaTeX escaping rules",
+          "Try processing a smaller page range",
+          "Check if PDF contains unusual mathematical notation"
+        ],
+        rawPreview: raw.substring(0, 500)
+      });
+    }
 
-    const raw =
-      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    console.log("📝 Gemini raw response:\n", raw);
-    const jsonMatch = raw.match(/\[\s*{[\s\S]+?}\s*\]/);
-
-    const parsed = JSON.parse(jsonMatch[0]);
-
-    // Extract correct image URLs in order from lines.mmd.json
+    // Continue with image processing...
     const pages = linesRes.data.pages || [];
     const orderedImageUrls = [];
+    
     for (const page of pages) {
-      // If startPage and endPage are defined, filter pages by range
-      if (
-        startPage &&
-        endPage &&
-        (page.page_num < startPage || page.page_num > endPage)
-      ) {
-        continue; // Skip pages outside the requested range
+      if (startPage && endPage && (page.page_num < startPage || page.page_num > endPage)) {
+        continue;
       }
 
       for (const line of page.lines || []) {
-        if (
-          line.text &&
-          line.text.includes("https://cdn.mathpix.com/cropped")
-        ) {
-          const matches = [
-            ...line.text.matchAll(
-              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
-            ),
-          ];
+        if (line.text && line.text.includes("https://cdn.mathpix.com/cropped")) {
+          const matches = [...line.text.matchAll(/https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g)];
           for (const match of matches) {
             orderedImageUrls.push(match[0]);
           }
@@ -478,7 +615,7 @@ Each item should follow this format:
       }
     }
 
-    // Replace Gemini image paths with correct ones by order
+    // Replace image paths with correct ones
     let imageIndex = 0;
     const updatedQuestions = parsed.map((q) => {
       const image_path = [];
@@ -491,7 +628,6 @@ Each item should follow this format:
         }
       }
 
-      // Add page information if available
       if (startPage && endPage) {
         q.page_range = `${startPage}-${endPage}`;
       }
@@ -500,11 +636,13 @@ Each item should follow this format:
     });
 
     res.json({ questions: updatedQuestions });
+
   } catch (err) {
     console.error("❌ Extract from MMD + Gemini error:", err);
-    res
-      .status(500)
-      .json({ error: "Extraction from MMD failed: " + err.message });
+    res.status(500).json({ 
+      error: "Extraction from MMD failed: " + err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
