@@ -52,8 +52,9 @@ const routes = [
     path: "/tutor-vetting",
     name: "TutorVetting",
     component: TutorVetting,
-    meta: { requiresAuth: true, requiresRole: "teacher" },
+    meta: { requiresAuth: true, requiresRole: ["teacher", "admin"] },
   },
+
   {
     path: "/quiz-folder",
     name: "QuizFolder",
