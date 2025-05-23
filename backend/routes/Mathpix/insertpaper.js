@@ -36,6 +36,30 @@ router.get("/recent", async (req, res) => {
   }
 });
 
+router.get("/all-papers", async (req, res) => {
+  try {
+    const client = await pool.connect();
+
+    const result = await client.query(`
+      SELECT 
+        paper_name,
+        MAX(created_at) AS last_uploaded,
+        MAX(topic_label) AS topic_label,
+        MAX(paper_type) AS paper_type
+      FROM question
+      GROUP BY paper_name
+      ORDER BY last_uploaded DESC;
+    `);
+
+    client.release();
+    res.json({ papers: result.rows });
+  } catch (err) {
+    console.error("❌ Failed to fetch all papers:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 // GET questions by paper_name
 router.get("/questions/:paper_name", async (req, res) => {
   const { paper_name } = req.params;
@@ -203,5 +227,26 @@ router.post("/update-question-numbers", async (req, res) => {
     client.release();
   }
 });
+
+//logs 
+router.get("/logs/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT * FROM logs WHERE paper_name = $1 ORDER BY timestamp DESC`,
+      [paper_name]
+    );
+    res.json({ logs: result.rows });
+  } catch (err) {
+    console.error("❌ Failed to fetch logs:", err.message);
+    res.status(500).json({ error: "Failed to fetch logs" });
+  } finally {
+    client.release();
+  }
+});
+
+
+
 
 module.exports = router;

@@ -9,6 +9,7 @@ import TutorVetting from "../pages/TutorVetting.vue";
 import QuizFolder from "../pages/QuizFolder.vue";
 import QuizView from "../pages//QuizView.vue";
 import PrintView from "../components/PrintView.vue";  
+import PaperLogs from "../pages/PaperLogs.vue";
 
 const routes = [
   { 
@@ -71,6 +72,12 @@ const routes = [
     component: PrintView,
     meta: { requiresAuth: true }
   },
+  {
+    path : '/paper-logs',
+    name : 'PaperLogs',
+    component : PaperLogs,
+    meta : { requiresAuth: true }
+  }
 ];
 
 const router = createRouter({
