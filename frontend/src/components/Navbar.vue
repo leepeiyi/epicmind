@@ -7,16 +7,11 @@
 
     <!-- Right: Nav Items -->
     <div class="nav-right">
-      <router-link
-        v-for="item in filteredNavItems"
-        :key="item.label"
-        :to="item.route"
-        class="nav-item"
-      >
+      <router-link v-for="item in filteredNavItems" :key="item.label" :to="item.route" class="nav-item">
         <component :is="item.icon" class="icon" />
         <span class="label">{{ item.label }}</span>
       </router-link>
-      
+
       <!-- User info and logout button -->
       <div class="user-section">
         <span class="username" v-if="user">{{ user.name }}</span>
@@ -53,25 +48,34 @@ export default {
         { icon: 'Star', label: 'Favourites', route: '/favourites' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' },
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' },
+        { icon: 'FolderOpen', label: 'Paper Logs', route: '/paper-logs', requiresRole: 'admin' }, // 👈 added
       ],
+
     };
   },
   computed: {
     filteredNavItems() {
-      // Filter nav items based on user role
       return this.navItems.filter(item => {
-        // If the item requires a specific role and user doesn't have it, hide it
-        if (item.requiresRole && this.user && item.requiresRole !== this.user.role) {
+        // ✅ Admins can see all items regardless of required role
+        if (this.user?.role === 'admin') {
+          return true;
+        }
+
+        // ✅ Regular role-based filtering for others
+        if (item.requiresRole && this.user?.role !== item.requiresRole) {
           return false;
         }
+
         return true;
       });
     }
+
   },
   mounted() {
     // Get user info from session storage when component mounts
     this.getUserFromSession();
-    
+    console.log('Current user:', this.user); 
+
     // Add event listener to update user when session storage changes
     window.addEventListener('storage', this.getUserFromSession);
   },
@@ -92,10 +96,10 @@ export default {
       // Clear session storage
       sessionStorage.removeItem('token');
       sessionStorage.removeItem('user');
-      
+
       // Dispatch a custom event to notify other components
       window.dispatchEvent(new Event('userLoggedOut'));
-      
+
       // Redirect to login page
       this.$router.push('/');
     }
@@ -110,7 +114,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 2rem;
-  background-color: #66CC99; /* black background */
+  background-color: #66CC99;
+  /* black background */
   color: black;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
@@ -137,7 +142,8 @@ export default {
 }
 
 .nav-item:hover {
-  color: #F1FF3F; /* Neon Yellow on hover */
+  color: #F1FF3F;
+  /* Neon Yellow on hover */
 }
 
 .icon {

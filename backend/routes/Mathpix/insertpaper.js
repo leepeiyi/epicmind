@@ -204,4 +204,25 @@ router.post("/update-question-numbers", async (req, res) => {
   }
 });
 
+//logs 
+router.get("/logs/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT * FROM logs WHERE paper_name = $1 ORDER BY timestamp DESC`,
+      [paper_name]
+    );
+    res.json({ logs: result.rows });
+  } catch (err) {
+    console.error("❌ Failed to fetch logs:", err.message);
+    res.status(500).json({ error: "Failed to fetch logs" });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+
 module.exports = router;

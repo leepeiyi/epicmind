@@ -364,35 +364,35 @@ async function parseGeminiJsonResponse(rawResponse) {
         const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
         if (!jsonMatch) throw new Error("No JSON array found");
         return JSON.parse(jsonMatch[0]);
-      }
+      },
     },
-    
+
     // Strategy 2: Fix common LaTeX escaping issues
     {
-      name: "LaTeX backslash normalization", 
+      name: "LaTeX backslash normalization",
       parse: (raw) => {
         let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
         const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
         if (!jsonMatch) throw new Error("No JSON array found");
-        
+
         let jsonString = jsonMatch[0];
-        
+
         // Fix over-escaped LaTeX commands
         jsonString = jsonString
-          .replace(/\\\\\\\\([a-zA-Z_{}])/g, '\\\\$1')  // \\\\log -> \\log
-          .replace(/\\\\\\\\([()])/g, '\\\\$1')         // \\\\( -> \\(
-          .replace(/\\\\\\\\([{}])/g, '\\\\$1')         // \\\\{ -> \\{
-          .replace(/\\\\\\\\text/g, '\\\\text')         // \\\\text -> \\text
-          .replace(/\\\\\\\\frac/g, '\\\\frac')         // \\\\frac -> \\frac
-          .replace(/\\\\\\\\sqrt/g, '\\\\sqrt')         // \\\\sqrt -> \\sqrt
-          .replace(/\\\\\\\\log/g, '\\\\log')           // \\\\log -> \\log
-          .replace(/\\\\\\\\sin/g, '\\\\sin')           // \\\\sin -> \\sin
-          .replace(/\\\\\\\\cos/g, '\\\\cos');          // \\\\cos -> \\cos
-          
+          .replace(/\\\\\\\\([a-zA-Z_{}])/g, "\\\\$1") // \\\\log -> \\log
+          .replace(/\\\\\\\\([()])/g, "\\\\$1") // \\\\( -> \\(
+          .replace(/\\\\\\\\([{}])/g, "\\\\$1") // \\\\{ -> \\{
+          .replace(/\\\\\\\\text/g, "\\\\text") // \\\\text -> \\text
+          .replace(/\\\\\\\\frac/g, "\\\\frac") // \\\\frac -> \\frac
+          .replace(/\\\\\\\\sqrt/g, "\\\\sqrt") // \\\\sqrt -> \\sqrt
+          .replace(/\\\\\\\\log/g, "\\\\log") // \\\\log -> \\log
+          .replace(/\\\\\\\\sin/g, "\\\\sin") // \\\\sin -> \\sin
+          .replace(/\\\\\\\\cos/g, "\\\\cos"); // \\\\cos -> \\cos
+
         return JSON.parse(jsonString);
-      }
+      },
     },
-    
+
     // Strategy 3: Aggressive backslash reduction
     {
       name: "Aggressive backslash reduction",
@@ -400,19 +400,19 @@ async function parseGeminiJsonResponse(rawResponse) {
         let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
         const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
         if (!jsonMatch) throw new Error("No JSON array found");
-        
+
         let jsonString = jsonMatch[0];
-        
+
         // More aggressive cleaning - reduce all multiple backslashes
         jsonString = jsonString
-          .replace(/\\{4,}/g, '\\\\')    // Any 4+ backslashes -> 2 backslashes
-          .replace(/\\{3}/g, '\\\\')     // Triple backslashes -> double
-          .replace(/\\\\\\([a-zA-Z])/g, '\\\\$1');  // Clean up LaTeX commands
-          
+          .replace(/\\{4,}/g, "\\\\") // Any 4+ backslashes -> 2 backslashes
+          .replace(/\\{3}/g, "\\\\") // Triple backslashes -> double
+          .replace(/\\\\\\([a-zA-Z])/g, "\\\\$1"); // Clean up LaTeX commands
+
         return JSON.parse(jsonString);
-      }  
+      },
     },
-    
+
     // Strategy 4: Character-by-character escape fixing
     {
       name: "Character-level escape fixing",
@@ -420,48 +420,53 @@ async function parseGeminiJsonResponse(rawResponse) {
         let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
         const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
         if (!jsonMatch) throw new Error("No JSON array found");
-        
+
         let jsonString = jsonMatch[0];
-        
+
         // Fix specific problematic patterns seen in the error
         jsonString = jsonString
-          .replace(/\\\\log_\{([^}]+)\}/g, '\\\\log_{$1}')       // Fix log subscripts  
-          .replace(/\\\\log_([0-9]+)/g, '\\\\log_$1')            // Fix simple log bases
-          .replace(/\\\\sqrt\{([^}]*)\}/g, '\\\\sqrt{$1}')       // Fix sqrt
-          .replace(/\\\\frac\{([^}]*)\}\{([^}]*)\}/g, '\\\\frac{$1}{$2}')  // Fix fractions
-          .replace(/\\\\\(/g, '\\\\(')                           // Fix LaTeX delimiters
-          .replace(/\\\\\)/g, '\\\\)');
-          
+          .replace(/\\\\log_\{([^}]+)\}/g, "\\\\log_{$1}") // Fix log subscripts
+          .replace(/\\\\log_([0-9]+)/g, "\\\\log_$1") // Fix simple log bases
+          .replace(/\\\\sqrt\{([^}]*)\}/g, "\\\\sqrt{$1}") // Fix sqrt
+          .replace(/\\\\frac\{([^}]*)\}\{([^}]*)\}/g, "\\\\frac{$1}{$2}") // Fix fractions
+          .replace(/\\\\\(/g, "\\\\(") // Fix LaTeX delimiters
+          .replace(/\\\\\)/g, "\\\\)");
+
         return JSON.parse(jsonString);
-      }
+      },
     },
-    
+
     // Strategy 5: Last resort - manual JSON reconstruction
     {
       name: "Manual JSON reconstruction",
       parse: (raw) => {
         // Extract just the question data using regex, then rebuild JSON manually
         const questions = [];
-        const questionMatches = raw.matchAll(/\{\s*"question_number"\s*:\s*"([^"]+)"[\s\S]*?\}/g);
-        
+        const questionMatches = raw.matchAll(
+          /\{\s*"question_number"\s*:\s*"([^"]+)"[\s\S]*?\}/g
+        );
+
         for (const match of questionMatches) {
           try {
             // Try to parse individual question objects with fixes
-            let questionJson = match[0].replace(/\\\\\\\\([a-zA-Z])/g, '\\\\$1');
+            let questionJson = match[0].replace(
+              /\\\\\\\\([a-zA-Z])/g,
+              "\\\\$1"
+            );
             const question = JSON.parse(questionJson);
             questions.push(question);
           } catch (e) {
             console.warn("Failed to parse individual question:", e.message);
           }
         }
-        
+
         if (questions.length === 0) {
           throw new Error("No valid questions could be reconstructed");
         }
-        
+
         return questions;
-      }
-    }
+      },
+    },
   ];
 
   // Try each strategy in order
@@ -469,12 +474,14 @@ async function parseGeminiJsonResponse(rawResponse) {
     try {
       console.log(`🔧 Trying parsing strategy: ${strategy.name}`);
       const result = strategy.parse(rawResponse);
-      
+
       if (Array.isArray(result) && result.length > 0) {
         console.log(`✅ Success with strategy: ${strategy.name}`);
         return result;
       } else {
-        console.log(`⚠️ Strategy ${strategy.name} returned empty/invalid result`);
+        console.log(
+          `⚠️ Strategy ${strategy.name} returned empty/invalid result`
+        );
       }
     } catch (error) {
       console.log(`❌ Strategy ${strategy.name} failed:`, error.message);
@@ -483,7 +490,9 @@ async function parseGeminiJsonResponse(rawResponse) {
   }
 
   // If all strategies fail
-  throw new Error("All JSON parsing strategies failed. Gemini response may be fundamentally malformed.");
+  throw new Error(
+    "All JSON parsing strategies failed. Gemini response may be fundamentally malformed."
+  );
 }
 
 router.post("/extract_questions_from_mmd", async (req, res) => {
@@ -506,8 +515,8 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
     }
 
     if (!paper_type || paper_type === "undefined") {
-      return res.status(400).json({ 
-        error: "Invalid paper_type. Must be 'exam' or 'topical'" 
+      return res.status(400).json({
+        error: "Invalid paper_type. Must be 'exam' or 'topical'",
       });
     }
 
@@ -529,9 +538,10 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
     ]);
 
     const markdownContent = mmdRes.data;
-    const pageRangeNote = startPage && endPage 
-      ? `- Focus only on pages ${startPage} to ${endPage}.` 
-      : "";
+    const pageRangeNote =
+      startPage && endPage
+        ? `- Focus only on pages ${startPage} to ${endPage}.`
+        : "";
 
     // ✅ IMPROVED PROMPT - Critical LaTeX escaping instructions
     const prompt = `You are extracting questions from an exam worksheet in Markdown format.
@@ -572,42 +582,74 @@ Return the JSON array directly:`;
       { text: `${prompt}\n\n${markdownContent}` },
     ]);
 
-    const raw = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     console.log("📝 Gemini raw response length:", raw.length);
     console.log("📝 First 300 chars:", raw.substring(0, 300));
 
     // ✅ COMPREHENSIVE JSON PARSING with multiple strategies
     let parsed;
-    
+
     try {
       parsed = await parseGeminiJsonResponse(raw);
       console.log(`✅ Successfully parsed ${parsed.length} questions`);
     } catch (parseError) {
-      console.error("❌ All JSON parsing strategies failed:", parseError.message);
+      console.error(
+        "❌ All JSON parsing strategies failed:",
+        parseError.message
+      );
+
+      // Log to database
+      try {
+        const logClient = await pool.connect();
+        await logClient.query(
+          `INSERT INTO logs (paper_name, log_type, message)
+     VALUES ($1, 'error', $2)`,
+          [
+            paper_name || "UNKNOWN",
+            `Gemini JSON parse failure: ${parseError.message}`,
+          ]
+        );
+        logClient.release();
+      } catch (logErr) {
+        console.error("❌ Failed to write to logs table:", logErr.message);
+      }
+
       return res.status(500).json({
         error: "Failed to parse Gemini response as valid JSON",
         details: parseError.message,
         suggestions: [
           "Gemini may not be following LaTeX escaping rules",
           "Try processing a smaller page range",
-          "Check if PDF contains unusual mathematical notation"
+          "Check if PDF contains unusual mathematical notation",
         ],
-        rawPreview: raw.substring(0, 500)
+        rawPreview: raw.substring(0, 500),
       });
     }
 
     // Continue with image processing...
     const pages = linesRes.data.pages || [];
     const orderedImageUrls = [];
-    
+
     for (const page of pages) {
-      if (startPage && endPage && (page.page_num < startPage || page.page_num > endPage)) {
+      if (
+        startPage &&
+        endPage &&
+        (page.page_num < startPage || page.page_num > endPage)
+      ) {
         continue;
       }
 
       for (const line of page.lines || []) {
-        if (line.text && line.text.includes("https://cdn.mathpix.com/cropped")) {
-          const matches = [...line.text.matchAll(/https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g)];
+        if (
+          line.text &&
+          line.text.includes("https://cdn.mathpix.com/cropped")
+        ) {
+          const matches = [
+            ...line.text.matchAll(
+              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
+            ),
+          ];
           for (const match of matches) {
             orderedImageUrls.push(match[0]);
           }
@@ -636,13 +678,22 @@ Return the JSON array directly:`;
     });
 
     res.json({ questions: updatedQuestions });
-
   } catch (err) {
     console.error("❌ Extract from MMD + Gemini error:", err);
-    res.status(500).json({ 
-      error: "Extraction from MMD failed: " + err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    try {
+      const logClient = await pool.connect();
+      await logClient.query(
+        `INSERT INTO logs (paper_name, log_type, message)
+         VALUES ($1, 'error', $2)`,
+        [paper_name || "UNKNOWN", `Route error: ${err.message}`]
+      );
+      logClient.release();
+    } catch (logErr) {
+      console.error(
+        "❌ Failed to write top-level error to logs:",
+        logErr.message
+      );
+    }
   }
 });
 
