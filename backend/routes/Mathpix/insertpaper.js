@@ -36,6 +36,30 @@ router.get("/recent", async (req, res) => {
   }
 });
 
+router.get("/all-papers", async (req, res) => {
+  try {
+    const client = await pool.connect();
+
+    const result = await client.query(`
+      SELECT 
+        paper_name,
+        MAX(created_at) AS last_uploaded,
+        MAX(topic_label) AS topic_label,
+        MAX(paper_type) AS paper_type
+      FROM question
+      GROUP BY paper_name
+      ORDER BY last_uploaded DESC;
+    `);
+
+    client.release();
+    res.json({ papers: result.rows });
+  } catch (err) {
+    console.error("❌ Failed to fetch all papers:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 // GET questions by paper_name
 router.get("/questions/:paper_name", async (req, res) => {
   const { paper_name } = req.params;
