@@ -552,7 +552,7 @@ Instructions:
 - Match correct answers from answer section
 ${pageRangeNote}
 
-EXAMPLE OUTPUT FORMAT (no code blocks):
+EXAMPLE OUTPUT FORMAT (no code blocks): do not give question numbers like "b", if you are not sure about the question number of that question, either analyse the next or previous question to find out. for example if next question is 17, you should deduce that this question is 16.
 [{
   "question_number": "1",
   "question_text": "Solve \\(\\log_2 x = 3\\)",
