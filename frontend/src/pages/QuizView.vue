@@ -12,9 +12,110 @@
             <button @click="goBack" class="back-btn">Back to Quizzes</button>
         </div>
 
+        <!-- Initial Mode Selection Screen -->
+        <div v-else-if="!modeSelected" class="mode-selection-screen">
+            <div class="mode-selection-container">
+                <button @click="goBack" class="back-btn">← Back to Quizzes</button>
+                
+                <div class="quiz-intro">
+                    <h1 class="quiz-title">{{ quiz.folder_name }}</h1>
+                    <div class="quiz-tags">
+                        <span class="quiz-tag">{{ quiz.subject }}</span>
+                        <span class="quiz-tag">{{ quiz.level }}</span>
+                        <span class="quiz-tag">{{ quiz.question_count }} questions</span>
+                    </div>
+                    
+                    <p class="quiz-description">Choose how you'd like to practice:</p>
+                    
+                    <div class="mode-options">
+                        <div class="mode-card" @click="selectMode('learn')">
+                            <div class="mode-icon">📚</div>
+                            <h3>Learn Mode</h3>
+                            <p>Practice with immediate feedback</p>
+                            <ul class="mode-features">
+                                <li>✅ See correct answers immediately</li>
+                                <li>✅ Learn from mistakes</li>
+                                <li>✅ No time pressure</li>
+                                <li>✅ Jump between questions</li>
+                            </ul>
+                            <button class="mode-select-btn learn-btn">Start Learning</button>
+                        </div>
+                        
+                        <div class="mode-card" @click="selectMode('test')">
+                            <div class="mode-icon">⏱️</div>
+                            <h3>Test Mode</h3>
+                            <p>Simulate exam conditions</p>
+                            <ul class="mode-features">
+                                <li>🎯 Timed experience</li>
+                                <li>🎯 No immediate feedback</li>
+                                <li>🎯 Results at the end</li>
+                                <li>🎯 {{ Math.floor(remainingTime / 60) }} minutes total</li>
+                            </ul>
+                            <button class="mode-select-btn test-btn">Start Test</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Mode Start Screen -->
+        <div v-else-if="mode === 'test' && !timerStarted" class="test-start-screen">
+            <div class="test-start-container">
+                <button @click="goBack" class="back-btn">← Back to Quizzes</button>
+
+                <div class="test-info">
+                    <h1 class="quiz-title">{{ quiz.folder_name }}</h1>
+                    <div class="quiz-tags">
+                        <span class="quiz-tag">{{ quiz.subject }}</span>
+                        <span class="quiz-tag">{{ quiz.level }}</span>
+                        <span class="quiz-tag">{{ quiz.question_count }} questions</span>
+                    </div>
+
+                    <div class="test-details">
+                        <div class="test-detail-item">
+                            <div class="detail-icon">⏱️</div>
+                            <div class="detail-content">
+                                <h3>Time Limit</h3>
+                                <p>{{ Math.floor(remainingTime / 60) }} minutes total</p>
+                                <small>{{ quiz.time_per_question_minutes || 1 }} minute(s) per question</small>
+                            </div>
+                        </div>
+
+                        <div class="test-detail-item">
+                            <div class="detail-icon">📝</div>
+                            <div class="detail-content">
+                                <h3>Questions</h3>
+                                <p>{{ questions.length }} questions</p>
+                                <small>Answer all questions before time runs out</small>
+                            </div>
+                        </div>
+
+                        <div class="test-detail-item">
+                            <div class="detail-icon">🎯</div>
+                            <div class="detail-content">
+                                <h3>Test Mode</h3>
+                                <p>No hints or immediate feedback</p>
+                                <small>Results shown at the end</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="start-button-container">
+                        <button @click="startTest" class="start-test-btn">
+                            🚀 Start Test Now
+                        </button>
+                        <button @click="backToModeSelection" class="switch-mode-btn">
+                            ← Back to Mode Selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Quiz Interface -->
         <div v-else class="quiz-container">
             <div class="quiz-header">
-                <button @click="goBack" class="back-btn">← Back to Quizzes</button>
+                <button @click="backToModeSelection" class="back-btn">← Back to Mode Selection</button>
                 <div class="quiz-meta">
                     <h1 class="quiz-title">{{ quiz.folder_name }}</h1>
                     <div class="quiz-tags">
@@ -23,7 +124,23 @@
                         <span class="quiz-tag">{{ quiz.question_count }} questions</span>
                     </div>
                 </div>
-                <button @click="editQuiz" class="edit-btn">Edit Quiz</button>
+                <div class="current-mode-badge" :class="mode">
+                    {{ mode === 'learn' ? '📚 Learn Mode' : '⏱️ Test Mode' }}
+                </div>
+            </div>
+
+            <!-- Timer Bar (only show in test mode) -->
+            <div v-if="mode === 'test' && timerStarted" class="timer-container">
+                <div class="timer-bar">
+                    <div class="timer-fill" :style="{ width: `${timerPercentage}%` }"
+                        :class="{ 'timer-warning': remainingTime < 300 }"></div>
+                </div>
+                <div class="timer-text">
+                    <span class="time-remaining" :class="{ 'time-warning': remainingTime < 300 }">
+                        ⏱️ {{ formattedTime }}
+                    </span>
+                    <span class="timer-label">remaining</span>
+                </div>
             </div>
 
             <div class="quiz-controls">
@@ -33,12 +150,6 @@
                         <div class="progress-fill" :style="{ width: `${progressPercentage}%` }"></div>
                     </div>
                 </div>
-
-                <div class="quiz-mode">
-                    <button :class="{ active: mode === 'learn' }" @click="mode = 'learn'">Learn Mode</button>
-                    <button :class="{ active: mode === 'test' }" @click="mode = 'test'">Test Mode</button>
-                </div>
-
             </div>
 
             <div class="question-container">
@@ -74,10 +185,10 @@
                 <div class="question-actions">
                     <button v-if="!showAnswer" @click="checkAnswer" class="check-btn"
                         :disabled="mode === 'test' && !canCheckAnswer">
-                        Check Answer
+                        {{ mode === 'test' ? 'Submit Answer' : 'Check Answer' }}
                     </button>
 
-                    <div v-if="showAnswer" class="answer-feedback">
+                    <div v-if="showAnswer && mode === 'learn'" class="answer-feedback">
                         <div :class="['feedback-message', isCorrect ? 'correct' : 'incorrect']">
                             <span v-if="isCorrect">✓ Correct!</span>
                             <span v-else>✗ Incorrect</span>
@@ -90,6 +201,13 @@
 
                         <button @click="nextQuestion" class="next-btn">
                             {{ isLastQuestion ? 'Finish Quiz' : 'Next Question' }}
+                        </button>
+                    </div>
+
+                    <!-- Test mode: just move to next question without showing answer -->
+                    <div v-if="showAnswer && mode === 'test'" class="test-mode-next">
+                        <button @click="nextQuestion" class="next-btn">
+                            {{ isLastQuestion ? 'Finish Test' : 'Next Question' }}
                         </button>
                     </div>
                 </div>
@@ -106,18 +224,23 @@
         </div>
 
         <div v-if="showResults" class="results-container">
-            <h2>Quiz Results</h2>
+            <h2>{{ mode === 'test' ? 'Test Results' : 'Quiz Results' }}</h2>
             <div class="results-summary">
                 <div class="score-circle">
                     <span class="score-percentage">{{ scorePercentage }}%</span>
                 </div>
                 <div class="score-details">
                     <p>You answered {{ correctAnswers }} out of {{ questions.length }} questions correctly.</p>
+                    <p v-if="mode === 'test' && timeExpired" class="time-expired">⏰ Time expired during test</p>
+                    <p v-if="mode === 'test'" class="test-completion-info">
+                        📊 Test completed in {{ formatTimeTaken }}
+                    </p>
                 </div>
             </div>
 
             <div class="results-actions">
-                <button @click="restartQuiz" class="restart-btn">Restart Quiz</button>
+                <button @click="restartQuiz" class="restart-btn">{{ mode === 'test' ? 'Retake Test' : 'Restart Quiz' }}</button>
+                <button @click="backToModeSelection" class="back-btn">Try Different Mode</button>
                 <button @click="goBack" class="back-btn">Back to Quizzes</button>
             </div>
         </div>
@@ -139,41 +262,47 @@ export default {
                 folder_name: '',
                 subject: '',
                 level: '',
-                question_count: 0
+                question_count: 0,
+                time_per_question_minutes: 1
             },
             questions: [],
             loading: true,
             error: null,
+            modeSelected: false, // New: tracks if user has selected a mode
             currentQuestionIndex: 0,
             selectedOption: '',
             userAnswer: '',
             showAnswer: false,
-            mode: 'learn', // 'learn' or 'test'
+            mode: '', // Start empty until user selects
             answeredQuestions: [],
             correctAnswers: 0,
             showResults: false,
-            //timer 
+            // Timer related
             timerStarted: false,
             remainingTime: 0,
+            totalTime: 0,
             timerInterval: null,
-
-
+            timeExpired: false
         };
     },
     watch: {
         formattedQuestionText() {
             this.$nextTick(() => {
-                window.MathJax?.typesetPromise?.();
+                this.processMathJax();
             });
         },
         formattedAnswer() {
             this.$nextTick(() => {
-                window.MathJax?.typesetPromise?.();
+                this.processMathJax();
+            });
+        },
+        currentQuestionIndex() {
+            // Process MathJax when question changes (important for test mode)
+            this.$nextTick(() => {
+                this.processMathJax();
             });
         }
-    }
-
-    ,
+    },
     computed: {
         currentQuestion() {
             return this.questions[this.currentQuestionIndex] || {
@@ -243,13 +372,26 @@ export default {
             const sec = this.remainingTime % 60;
             return `${min}:${sec < 10 ? '0' : ''}${sec}`;
         },
-
-
+        timerPercentage() {
+            if (this.totalTime === 0) return 100;
+            return (this.remainingTime / this.totalTime) * 100;
+        },
+        formatTimeTaken() {
+            const timeTaken = this.totalTime - this.remainingTime;
+            const minutes = Math.floor(timeTaken / 60);
+            const seconds = timeTaken % 60;
+            return `${minutes}m ${seconds}s`;
+        }
     },
 
     created() {
         this.quizId = this.$route.params.id;
         this.fetchQuizData();
+    },
+    beforeUnmount() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+        }
     },
     methods: {
         async fetchQuizData() {
@@ -257,7 +399,7 @@ export default {
             this.error = null;
 
             try {
-                // 🔹 Fetch quiz metadata (includes time_per_question_minutes)
+                // Fetch quiz metadata (includes time_per_question_minutes)
                 const metaResponse = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}`);
                 if (!metaResponse.ok) {
                     throw new Error(`Quiz metadata fetch failed: ${metaResponse.status}`);
@@ -265,7 +407,7 @@ export default {
                 const metaData = await metaResponse.json();
                 this.quiz = metaData;
 
-                // 🔹 Fetch quiz questions
+                // Fetch quiz questions
                 const questionsResponse = await fetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
                 if (!questionsResponse.ok) {
                     throw new Error(`Question fetch failed: ${questionsResponse.status}`);
@@ -274,15 +416,18 @@ export default {
                 const questionsData = await questionsResponse.json();
                 this.questions = questionsData || [];
 
-                // 🔹 Calculate timer (in seconds)
+                // Calculate timer (in seconds)
                 const timePerQuestion = metaData.time_per_question_minutes || 1;
-                this.remainingTime = Math.round(timePerQuestion * this.questions.length * 60);
+                this.totalTime = Math.round(timePerQuestion * this.questions.length * 60);
+                this.remainingTime = this.totalTime;
 
-                // 🔹 Reset quiz state
+                // Reset quiz state but don't show questions yet
                 this.currentQuestionIndex = 0;
                 this.answeredQuestions = [];
                 this.correctAnswers = 0;
                 this.showResults = false;
+                this.timeExpired = false;
+                this.modeSelected = false; // Show mode selection first
 
             } catch (error) {
                 console.error('❌ Failed to fetch quiz data:', error);
@@ -290,8 +435,69 @@ export default {
             } finally {
                 this.loading = false;
             }
-        }
-        ,
+        },
+
+        selectMode(selectedMode) {
+            this.mode = selectedMode;
+            this.modeSelected = true;
+            
+            // If learn mode, start immediately. If test mode, show test start screen
+            if (selectedMode === 'learn') {
+                this.$nextTick(() => {
+                    this.processMathJax();
+                });
+            }
+        },
+
+        backToModeSelection() {
+            // Clear timer if running
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+            
+            // Reset quiz state
+            this.modeSelected = false;
+            this.mode = '';
+            this.timerStarted = false;
+            this.currentQuestionIndex = 0;
+            this.selectedOption = '';
+            this.userAnswer = '';
+            this.showAnswer = false;
+            this.answeredQuestions = [];
+            this.correctAnswers = 0;
+            this.showResults = false;
+            this.timeExpired = false;
+            this.remainingTime = this.totalTime;
+        },
+
+        startTest() {
+            this.timerStarted = true;
+            this.startTimer();
+            // Process MathJax for the first question when test starts
+            this.$nextTick(() => {
+                this.processMathJax();
+            });
+        },
+
+        startTimer() {
+            this.timerInterval = setInterval(() => {
+                if (this.remainingTime > 0) {
+                    this.remainingTime--;
+                } else {
+                    this.timeExpired = true;
+                    this.finishQuiz(false); // ⏰ timer expired
+                }
+            }, 1000);
+        },
+
+        processMathJax() {
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise().catch((err) => {
+                    console.warn('MathJax processing error:', err);
+                });
+            }
+        },
 
         selectOption(option) {
             if (this.showAnswer && this.mode === 'learn') return;
@@ -309,13 +515,18 @@ export default {
                 }
             }
 
-            this.$nextTick(() => {
-                if (window.MathJax?.typesetPromise) {
-                    window.MathJax.typesetPromise();
-                }
-            });
-        }
-        ,
+            // In test mode, automatically move to next question after a brief delay
+            if (this.mode === 'test') {
+                setTimeout(() => {
+                    this.nextQuestion();
+                }, 500);
+            } else {
+                // In learn mode, process MathJax for the answer
+                this.$nextTick(() => {
+                    this.processMathJax();
+                });
+            }
+        },
 
         nextQuestion() {
             this.showAnswer = false;
@@ -323,9 +534,46 @@ export default {
             this.userAnswer = '';
 
             if (this.isLastQuestion) {
-                this.showResults = true;
+                this.finishQuiz();
             } else {
                 this.currentQuestionIndex++;
+                // Process MathJax for the new question
+                this.$nextTick(() => {
+                    this.processMathJax();
+                });
+            }
+        },
+
+        async finishQuiz(completed = true) {
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+            this.showResults = true;
+            this.timerStarted = false;
+
+            // ✅ Send completion update if in test mode
+            if (this.mode === 'test') {
+                const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+                const payload = {
+                    student_id: user.id,
+                    quiz_id: this.quizId,
+                    completed,
+                    completion_date: new Date().toISOString(),
+                    score: this.scorePercentage
+                };
+
+                try {
+                    await fetch(`${API_BASE_URL}/api/quiz-assignment/complete`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (err) {
+                    console.error('❌ Failed to record quiz completion:', err);
+                }
             }
         },
 
@@ -340,9 +588,21 @@ export default {
             this.showAnswer = false;
             this.selectedOption = '';
             this.userAnswer = '';
+
+            // Process MathJax for the new question
+            this.$nextTick(() => {
+                this.processMathJax();
+            });
         },
 
         restartQuiz() {
+            // Clear timer
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+
+            // Reset all state
             this.currentQuestionIndex = 0;
             this.selectedOption = '';
             this.userAnswer = '';
@@ -350,31 +610,27 @@ export default {
             this.answeredQuestions = [];
             this.correctAnswers = 0;
             this.showResults = false;
-        },
+            this.timerStarted = false;
+            this.timeExpired = false;
+            this.remainingTime = this.totalTime;
 
+            // Process MathJax for the first question
+            this.$nextTick(() => {
+                this.processMathJax();
+            });
+        },
 
         goBack() {
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+            }
             this.$router.push('/quiz-folder');
         },
-        enterTestMode() {
-  this.mode = 'test';
-  this.timerStarted = false;
-},
 
-startTestTimer() {
-  this.timerStarted = true;
-  this.timerInterval = setInterval(() => {
-    if (this.remainingTime > 0) {
-      this.remainingTime--;
-    } else {
-      clearInterval(this.timerInterval);
-      this.timerStarted = false;
-      this.showResults = true;
-    }
-  }, 1000);
-},
-
-
+        editQuiz() {
+            // Implementation for edit quiz functionality
+            console.log('Edit quiz clicked');
+        }
     }
 };
 </script>
@@ -382,8 +638,322 @@ startTestTimer() {
 <style scoped>
 .quiz-view-page {
     font-family: Arial, sans-serif;
+    min-height: 100vh;
 }
 
+/* Mode Selection Screen */
+.mode-selection-screen {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.mode-selection-container {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    padding: 3rem;
+    max-width: 900px;
+    width: 100%;
+    position: relative;
+}
+
+.mode-selection-container .back-btn {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: white;
+    color: #555;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.mode-selection-container .back-btn:hover {
+    background-color: #f5f5f5;
+}
+
+.quiz-intro {
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.quiz-description {
+    font-size: 1.1rem;
+    color: #666;
+    margin: 2rem 0;
+}
+
+.mode-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.mode-card {
+    border: 2px solid #e9ecef;
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+.mode-card:hover {
+    border-color: #66CC99;
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(102, 204, 153, 0.15);
+}
+
+.mode-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.mode-card h3 {
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 1.3rem;
+}
+
+.mode-card p {
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+.mode-features {
+    list-style: none;
+    padding: 0;
+    margin: 1.5rem 0;
+    text-align: left;
+}
+
+.mode-features li {
+    padding: 0.3rem 0;
+    font-size: 0.9rem;
+    color: #555;
+}
+
+.mode-select-btn {
+    width: 100%;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.learn-btn {
+    background-color: #66CC99;
+    color: white;
+}
+
+.learn-btn:hover {
+    background-color: #4CAF50;
+}
+
+.test-btn {
+    background-color: #0055B8;
+    color: white;
+}
+
+.test-btn:hover {
+    background-color: #003d82;
+}
+
+/* Current Mode Badge */
+.current-mode-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.current-mode-badge.learn {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+}
+
+.current-mode-badge.test {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}
+
+/* Test Start Screen */
+.test-start-screen {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.test-start-container {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    padding: 3rem;
+    max-width: 600px;
+    width: 100%;
+    text-align: center;
+    position: relative;
+}
+
+.test-start-container .back-btn {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: white;
+    color: #555;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.test-info {
+    margin-top: 2rem;
+}
+
+.test-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin: 3rem 0;
+}
+
+.test-detail-item {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border-left: 4px solid #66CC99;
+}
+
+.detail-icon {
+    font-size: 2rem;
+    margin-right: 1rem;
+    min-width: 60px;
+}
+
+.detail-content h3 {
+    margin: 0 0 0.5rem 0;
+    color: #333;
+    font-size: 1.1rem;
+}
+
+.detail-content p {
+    margin: 0 0 0.2rem 0;
+    font-weight: 600;
+    color: #0055B8;
+}
+
+.detail-content small {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.start-button-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.start-test-btn {
+    background: linear-gradient(135deg, #66CC99 0%, #4CAF50 100%);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    min-width: 200px;
+}
+
+.start-test-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 204, 153, 0.3);
+}
+
+.switch-mode-btn {
+    background: white;
+    color: #66CC99;
+    border: 2px solid #66CC99;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+/* Timer Container */
+.timer-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    margin-bottom: 2rem;
+    border-left: 4px solid #66CC99;
+}
+
+.timer-bar {
+    height: 8px;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.timer-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50 0%, #66CC99 50%, #FFA726 100%);
+    transition: width 1s linear;
+}
+
+.timer-fill.timer-warning {
+    background: linear-gradient(90deg, #FF5252 0%, #FF7043 100%);
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.timer-text {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.time-remaining {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.time-remaining.time-warning {
+    color: #FF5252;
+    animation: pulse 1s infinite;
+}
+
+.timer-label {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Existing styles */
 .loading-container,
 .error-container {
     display: flex;
@@ -472,26 +1042,6 @@ startTestTimer() {
     height: 100%;
     background-color: #66CC99;
     transition: width 0.3s ease;
-}
-
-.quiz-mode {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.quiz-mode button {
-    padding: 0.5rem 1rem;
-    background-color: white;
-    color: #333;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-.quiz-mode button.active {
-    background-color: #66CC99;
-    color: white;
-    border-color: #66CC99;
 }
 
 .question-container {
@@ -611,6 +1161,12 @@ startTestTimer() {
     width: 100%;
 }
 
+.test-mode-next {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
 .feedback-message {
     font-size: 1.2rem;
     font-weight: bold;
@@ -699,11 +1255,24 @@ startTestTimer() {
     color: #333;
 }
 
+.time-expired {
+    color: #FF5252;
+    font-weight: 600;
+    margin-top: 0.5rem;
+}
+
+.test-completion-info {
+    color: #66CC99;
+    font-weight: 500;
+    margin-top: 0.5rem;
+}
+
 .results-actions {
     display: flex;
     justify-content: center;
     gap: 1rem;
     margin-top: 2rem;
+    flex-wrap: wrap;
 }
 
 .restart-btn {
@@ -717,6 +1286,11 @@ startTestTimer() {
 }
 
 @media (max-width: 768px) {
+    .mode-options {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
     .quiz-header {
         flex-direction: column;
         gap: 1rem;
@@ -730,6 +1304,39 @@ startTestTimer() {
     .quiz-progress {
         width: 100%;
         margin-right: 0;
+    }
+
+    .test-start-container,
+    .mode-selection-container {
+        margin: 1rem;
+        padding: 2rem;
+    }
+
+    .test-details {
+        gap: 1rem;
+    }
+
+    .test-detail-item {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .detail-icon {
+        margin: 0 0 1rem 0;
+    }
+
+    .start-button-container {
+        margin-top: 2rem;
+    }
+    
+    .results-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .results-actions button {
+        width: 100%;
+        max-width: 300px;
     }
 }
 </style>
