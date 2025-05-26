@@ -38,6 +38,7 @@
                     <button :class="{ active: mode === 'learn' }" @click="mode = 'learn'">Learn Mode</button>
                     <button :class="{ active: mode === 'test' }" @click="mode = 'test'">Test Mode</button>
                 </div>
+
             </div>
 
             <div class="question-container">
@@ -150,7 +151,13 @@ export default {
             mode: 'learn', // 'learn' or 'test'
             answeredQuestions: [],
             correctAnswers: 0,
-            showResults: false
+            showResults: false,
+            //timer 
+            timerStarted: false,
+            remainingTime: 0,
+            timerInterval: null,
+
+
         };
     },
     watch: {
@@ -230,7 +237,14 @@ export default {
         },
         canCheckAnswer() {
             return this.hasOptions ? this.selectedOption !== '' : this.userAnswer.trim() !== '';
-        }
+        },
+        formattedTime() {
+            const min = Math.floor(this.remainingTime / 60);
+            const sec = this.remainingTime % 60;
+            return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+        },
+
+
     },
 
     created() {
@@ -243,20 +257,28 @@ export default {
             this.error = null;
 
             try {
-                // Fetch quiz details
+                // 🔹 Fetch quiz metadata (includes time_per_question_minutes)
+                const metaResponse = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}`);
+                if (!metaResponse.ok) {
+                    throw new Error(`Quiz metadata fetch failed: ${metaResponse.status}`);
+                }
+                const metaData = await metaResponse.json();
+                this.quiz = metaData;
 
-                // Fetch quiz questions
+                // 🔹 Fetch quiz questions
                 const questionsResponse = await fetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
-                console.log(questionsResponse);
-
                 if (!questionsResponse.ok) {
-                    throw new Error(`Server responded with status: ${questionsResponse.status}`);
+                    throw new Error(`Question fetch failed: ${questionsResponse.status}`);
                 }
 
                 const questionsData = await questionsResponse.json();
                 this.questions = questionsData || [];
 
-                // Reset quiz state
+                // 🔹 Calculate timer (in seconds)
+                const timePerQuestion = metaData.time_per_question_minutes || 1;
+                this.remainingTime = Math.round(timePerQuestion * this.questions.length * 60);
+
+                // 🔹 Reset quiz state
                 this.currentQuestionIndex = 0;
                 this.answeredQuestions = [];
                 this.correctAnswers = 0;
@@ -268,7 +290,8 @@ export default {
             } finally {
                 this.loading = false;
             }
-        },
+        }
+        ,
 
         selectOption(option) {
             if (this.showAnswer && this.mode === 'learn') return;
@@ -332,7 +355,26 @@ export default {
 
         goBack() {
             this.$router.push('/quiz-folder');
-        }
+        },
+        enterTestMode() {
+  this.mode = 'test';
+  this.timerStarted = false;
+},
+
+startTestTimer() {
+  this.timerStarted = true;
+  this.timerInterval = setInterval(() => {
+    if (this.remainingTime > 0) {
+      this.remainingTime--;
+    } else {
+      clearInterval(this.timerInterval);
+      this.timerStarted = false;
+      this.showResults = true;
+    }
+  }, 1000);
+},
+
+
     }
 };
 </script>

@@ -357,7 +357,7 @@ router.get('/:quizId', async (req, res) => {
         
         // Get all questions associated with this quiz using pool
         const questionsResult = await pool.query(
-            'SELECT * FROM questions WHERE id = ANY($1) ORDER BY array_position($1, id)',
+            'SELECT * FROM question WHERE id = ANY($1) ORDER BY array_position($1, id)',
             [quiz.question_ids]
         );
         

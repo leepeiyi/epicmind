@@ -93,6 +93,7 @@
                         <div v-if="activeDropdown === quiz.id" class="dropdown-menu">
                             <!-- Show different options based on user role -->
                             <button v-if="userRole === 'teacher'" @click="assignQuiz(quiz.id)">Assign</button>
+                            <button v-if="userRole === 'teacher'" @click="setQuiz(quiz.id)">Edit</button>
                             <button v-else-if="userRole === 'student'" @click="viewQuiz(quiz.id)">View</button>
                             <button @click="deleteQuiz(quiz.id)" class="delete-btn">Delete</button>
                         </div>
@@ -174,21 +175,21 @@
                     <h3>Quizzes Assigned to {{ currentStudentName }}</h3>
                     <button class="close-btn" @click="closeAssignmentsModal">×</button>
                 </div>
-                
+
                 <div class="modal-body">
                     <div v-if="loadingAssignments" class="loading-indicator">
                         <p>Loading assignments...</p>
                     </div>
-                    
+
                     <div v-else-if="assignmentsError" class="error-message">
                         <p>{{ assignmentsError }}</p>
                         <button @click="fetchStudentAssignments(currentStudentId)" class="retry-btn">Try Again</button>
                     </div>
-                    
+
                     <div v-else-if="studentAssignments.length === 0" class="empty-state">
                         <p>No quizzes have been assigned to this student yet.</p>
                     </div>
-                    
+
                     <div v-else class="assignments-list">
                         <div v-for="assignment in studentAssignments" :key="assignment.id" class="assignment-item">
                             <div class="assignment-details">
@@ -201,10 +202,13 @@
                                     <span class="questions-count">{{ assignment.question_count }} questions</span>
                                 </div>
                                 <div class="assignment-meta">
-                                    <span class="assigned-date">Assigned: {{ formatDate(assignment.assigned_at) }}</span>
+                                    <span class="assigned-date">Assigned: {{ formatDate(assignment.assigned_at)
+                                        }}</span>
                                     <span v-if="assignment.completed" class="completion-info">
-                                        <span class="completion-date">Completed: {{ formatDate(assignment.completion_date) }}</span>
-                                        <span v-if="assignment.score !== null" class="quiz-score">Score: {{ assignment.score }}%</span>
+                                        <span class="completion-date">Completed: {{
+                                            formatDate(assignment.completion_date) }}</span>
+                                        <span v-if="assignment.score !== null" class="quiz-score">Score: {{
+                                            assignment.score }}%</span>
                                     </span>
                                 </div>
                             </div>
@@ -219,7 +223,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="modal-footer">
                     <button class="close-btn" @click="closeAssignmentsModal">Close</button>
                 </div>
@@ -274,6 +278,34 @@
                 </div>
             </div>
         </div>
+        <!-- Timer Modal -->
+        <div v-if="showTimerModal" class="modal-overlay">
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h3>⏱ Set Quiz Timer</h3>
+                    <button class="close-btn" @click="closeTimerModal">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <label>
+                        Time Per Question (minutes):
+                        <input type="number" v-model.number="timerValue" min="0.5" step="0.5" />
+                    </label>
+                    <p v-if="timerQuestionCount">
+                        Total Duration: {{ timerValue * timerQuestionCount }} minutes ({{ timerQuestionCount }}
+                        questions)
+                    </p>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="cancel-btn" @click="closeTimerModal">Cancel</button>
+                    <button class="save-btn" @click="saveTimerSetting" :disabled="savingTimer">
+                        {{ savingTimer ? 'Saving...' : 'Save Timer' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 </template>
 
@@ -323,7 +355,7 @@ export default {
             assignLoading: false,
             assignError: null,
             savingAssignments: false,
-            
+
             // Available students data
             availableStudents: [],
             availableStudentSearch: '',
@@ -333,7 +365,7 @@ export default {
             studentLinksToAdd: [],        // IDs of students to link
             studentLinksToRemove: [],     // IDs of students to unlink
             savingStudentLinks: false,
-            
+
             // Student assignments modal data
             showAssignmentsModal: false,
             currentStudentId: null,
@@ -341,6 +373,14 @@ export default {
             studentAssignments: [],
             loadingAssignments: false,
             assignmentsError: null,
+
+            //set timing for quizzes
+            showTimerModal: false,
+            timerValue: 1,
+            timerQuestionCount: 0,
+            timerQuizId: null,
+            savingTimer: false,
+
         };
     },
     computed: {
@@ -477,7 +517,7 @@ export default {
                 return `${years} ${years === 1 ? 'year' : 'years'} ago`;
             }
         },
-        
+
         // AVAILABLE STUDENTS METHODS
         async fetchAvailableStudents() {
             this.loadingAvailableStudents = true;
@@ -830,30 +870,30 @@ export default {
             // Find the student to get their name
             const student = this.students.find(s => s.id === studentId);
             if (!student) return;
-            
+
             this.currentStudentId = studentId;
             this.currentStudentName = student.name;
             this.showAssignmentsModal = true;
-            
+
             // Fetch the student's assignments
             this.fetchStudentAssignments(studentId);
         },
-        
+
         async fetchStudentAssignments(studentId) {
             this.loadingAssignments = true;
             this.assignmentsError = null;
-            
+
             try {
                 const response = await fetch(`${API_BASE_URL}/api/quiz/student/${studentId}/assigned-quizzes`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error('Failed to fetch student assignments');
                 }
-                
+
                 const data = await response.json();
                 this.studentAssignments = data.assignments || [];
             } catch (err) {
@@ -863,7 +903,7 @@ export default {
                 this.loadingAssignments = false;
             }
         },
-        
+
         closeAssignmentsModal() {
             this.showAssignmentsModal = false;
             this.currentStudentId = null;
@@ -894,6 +934,62 @@ export default {
             // Fetch current assignments for this quiz
             this.fetchAssignments(quizId);
         },
+        async setQuiz(quizId) {
+            this.activeDropdown = null;
+            this.timerQuizId = quizId;
+            this.showTimerModal = true;
+            this.timerValue = 1; // default
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/${quizId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    }
+                });
+                const data = await response.json();
+                this.timerValue = data.time_per_question_minutes || 1;
+                this.timerQuestionCount = data.question_count || 0;
+            } catch (err) {
+                console.error("❌ Failed to fetch quiz details:", err);
+                alert("Failed to load quiz info.");
+            }
+        },
+
+        closeTimerModal() {
+            this.showTimerModal = false;
+            this.timerValue = 1;
+            this.timerQuizId = null;
+        },
+
+        async saveTimerSetting() {
+            if (!this.timerQuizId) return;
+
+            this.savingTimer = true;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/${this.timerQuizId}/set-timer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({
+                        time_per_question_minutes: this.timerValue
+                    })
+                });
+
+                if (!response.ok) throw new Error("Failed to save timer");
+
+                alert("✅ Timer saved successfully!");
+                this.closeTimerModal();
+                this.fetchQuizFolders(); // refresh list
+            } catch (err) {
+                console.error("❌ Timer save error:", err);
+                alert("Failed to save timer. Please try again.");
+            } finally {
+                this.savingTimer = false;
+            }
+        }
+        ,
 
         async fetchAssignments(quizId) {
             this.assignLoading = true;
@@ -1620,7 +1716,8 @@ export default {
     color: #888;
 }
 
-.assigned-date, .completion-date {
+.assigned-date,
+.completion-date {
     margin-right: 1rem;
 }
 
