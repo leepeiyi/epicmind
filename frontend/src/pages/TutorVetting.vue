@@ -191,14 +191,21 @@ export default {
 
         async loadPapers() {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
-                const { recent } = await res.json();
-                this.unvettedPapers = recent.filter(p => !p.vetted);
-                this.vettedPapers = recent.filter(p => p.vetted);
+                const res = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
+                const data = await res.json();
+
+                console.log("📦 All papers fetched:", data);
+
+                const papers = data.papers || []; // fix: access the 'papers' key
+
+                this.unvettedPapers = papers.filter(p => !p.vetted);
+                this.vettedPapers = papers.filter(p => p.vetted);
             } catch (error) {
                 console.error('❌ Failed to load papers:', error);
             }
         },
+
+
 
         async loadPaper(paperName) {
             this.selectedPaper = paperName;
