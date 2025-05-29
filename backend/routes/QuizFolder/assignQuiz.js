@@ -657,4 +657,106 @@ router.get(
   }
 );
 
+// settings for quiz timing
+router.post("/:id/set-timer", async (req, res) => {
+  const { id } = req.params;
+  const { time_per_question_minutes } = req.body;
+
+  if (!time_per_question_minutes || isNaN(time_per_question_minutes)) {
+    return res.status(400).json({ error: "Invalid or missing time." });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE quiz_folders SET time_per_question_minutes = $1 WHERE id = $2`,
+      [time_per_question_minutes, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Quiz not found" });
+    }
+
+    res.json({ message: "⏱ Timer updated successfully" });
+  } catch (err) {
+    console.error("❌ Failed to update timer:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// 3. COMPLETE QUIZ ASSIGNMENT
+// POST /api/quiz/assignment/complete
+router.post('/assignment/complete', async (req, res) => {
+  try {
+      const {
+          quiz_id,
+          completed,
+          completion_date,
+          score,
+          time_taken_seconds,
+          questions_answered,
+          correct_answers,
+          time_expired
+      } = req.body;
+
+      // Get current user (student) ID from authentication
+      const student_id = req.user?.id;
+      
+      if (!student_id) {
+          return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      if (!quiz_id || completed === undefined || !completion_date || !score) {
+          return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // Check if assignment exists
+      const existingAssignment = await db.query(`
+          SELECT id FROM quiz_assignments 
+          WHERE quiz_id = ? AND student_id = ?
+      `, [quiz_id, student_id]);
+
+      if (existingAssignment.length === 0) {
+          return res.status(404).json({ error: 'Assignment not found' });
+      }
+
+      const assignmentId = existingAssignment[0].id;
+
+      // Update the assignment with completion data
+      await db.query(`
+          UPDATE quiz_assignments 
+          SET 
+              completed = ?,
+              completion_date = ?,
+              score = ?,
+              updated_at = NOW()
+          WHERE id = ?
+      `, [completed, completion_date, score, assignmentId]);
+
+      // Optional: Store additional test statistics in a separate table
+      await db.query(`
+          INSERT INTO quiz_test_statistics 
+          (assignment_id, time_taken_seconds, questions_answered, correct_answers, time_expired, created_at)
+          VALUES (?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+              time_taken_seconds = VALUES(time_taken_seconds),
+              questions_answered = VALUES(questions_answered),
+              correct_answers = VALUES(correct_answers),
+              time_expired = VALUES(time_expired),
+              updated_at = NOW()
+      `, [assignmentId, time_taken_seconds, questions_answered, correct_answers, time_expired]);
+
+      res.json({ 
+          success: true, 
+          message: 'Quiz assignment completed successfully',
+          assignment_id: assignmentId,
+          score: score
+      });
+
+  } catch (error) {
+      console.error('❌ Complete assignment error:', error);
+      res.status(500).json({ error: 'Failed to complete assignment' });
+  }
+});
+
+
 module.exports = router;
