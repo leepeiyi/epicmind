@@ -137,7 +137,8 @@
                     <div class="preview-content">
                         <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item">
                             <h3>Question {{ index + 1 }}</h3>
-                            <div class="question-text" v-html="question.text"></div>
+                            <div class="question-text" v-html="sanitizeLatex(question.text)"></div>
+
 
                             <div v-if="question.image_url" class="question-image">
                                 <img :src="question.image_url" alt="Question diagram" />
@@ -145,7 +146,9 @@
 
                             <div v-if="question.options && question.options.length" class="options-list">
                                 <div v-for="option in question.options" :key="option.id" class="option-item">
-                                    <strong>{{ option.option }}.</strong> {{ option.text }}
+                                    <strong>{{ option.option }}.</strong> <span
+                                        v-html="sanitizeLatex(option.text)"></span>
+
                                 </div>
                             </div>
 
@@ -191,7 +194,10 @@ export default {
                 includePastYears: true,
                 includeTopical: true,
                 yearFrom: new Date().getFullYear() - 5,
-                yearTo: new Date().getFullYear()
+                yearTo: new Date().getFullYear(),
+                teacherId: null,
+                teacherEmail: '',
+                userRole: null
             },
             loading: false,
             loadingMessage: '',
@@ -211,6 +217,31 @@ export default {
         }
     },
     methods: {
+        getUserFromSession() {
+            const userStr = sessionStorage.getItem('user');
+            if (userStr) {
+                try {
+                    const user = JSON.parse(userStr);
+                    this.form.userRole = user.role;
+                    this.form.teacherId = user.id;
+                    this.form.teacherEmail = user.email;
+                } catch (e) {
+                    console.error('Failed to parse user from session storage:', e);
+                    this.form.userRole = null;
+                    this.form.teacherId = null;
+                }
+            } else {
+                this.form.userRole = null;
+                this.form.teacherId = null;
+            }
+        }
+        ,
+
+        sanitizeLatex(raw) {
+            if (!raw) return '';
+            return raw.replace(/\\\\/g, '\\');
+        }
+        ,
         updateTopics() {
             // Reset topic and sub-topic when subject or level changes
             this.form.topic = '';
@@ -378,6 +409,13 @@ export default {
                 this.form.quizName = `${this.form.subject} ${this.form.level} - ${this.form.topic} Quiz`;
             }
 
+
+            console.log("Teacher ID:", this.form.teacherId);
+            if (!this.form.teacherId) {
+                alert("Session expired. Please log in again.");
+                return;
+            }
+
             try {
                 this.loading = true;
                 this.loadingMessage = 'Saving quiz...';
@@ -394,6 +432,7 @@ export default {
                         banding: this.form.banding,
                         level: this.form.level,
                         topic: this.form.topic,
+                        teacher_id: this.form.teacherId,
                         questions: this.generatedQuiz
                     })
                 });
@@ -407,7 +446,7 @@ export default {
                         alert(`Quiz "${this.form.quizName}" saved successfully!`);
                         this.loading = false;
 
-                        // Optionally redirect to the quiz folder or quiz view
+                        // Optional redirect
                         // this.$router.push(`/quiz-folder/${result.quizId}`);
                     }, 500);
                 } else {
@@ -418,62 +457,6 @@ export default {
                 this.loading = false;
                 alert('Failed to save quiz: ' + error.message);
             }
-        },
-        getMockQuestions() {
-            // Mock data for demonstration
-            return [
-                {
-                    id: 1,
-                    text: 'Solve the equation: $3x + 5 = 14$',
-                    options: [],
-                    topic: this.form.topic,
-                    difficulty: 'Easy',
-                    source: 'Generated'
-                },
-                {
-                    id: 2,
-                    text: 'If $f(x) = 2x^2 - 3x + 1$, find $f(2)$.',
-                    options: [
-                        { id: 'a', label: 'A', text: '5' },
-                        { id: 'b', label: 'B', text: '3' },
-                        { id: 'c', label: 'C', text: '7' },
-                        { id: 'd', label: 'D', text: '9' }
-                    ],
-                    topic: this.form.topic,
-                    difficulty: 'Medium',
-                    source: 'Past Year 2023'
-                },
-                {
-                    id: 3,
-                    text: 'Find the gradient of the line passing through the points (2, 5) and (4, 9).',
-                    options: [],
-                    topic: this.form.topic,
-                    difficulty: 'Medium',
-                    source: 'Generated'
-                },
-                {
-                    id: 4,
-                    text: 'Simplify the expression: $\\frac{x^2 - 4}{x - 2}$ for $x \\neq 2$',
-                    options: [],
-                    topic: this.form.topic,
-                    difficulty: 'Hard',
-                    source: 'Past Year 2022'
-                },
-                {
-                    id: 5,
-                    text: 'The diagram shows a triangle ABC. If angle A = 45°, angle B = 60°, what is angle C?',
-                    image_url: 'https://via.placeholder.com/300x200?text=Triangle+Diagram',
-                    options: [
-                        { id: 'a', label: 'A', text: '75°' },
-                        { id: 'b', label: 'B', text: '65°' },
-                        { id: 'c', label: 'C', text: '85°' },
-                        { id: 'd', label: 'D', text: '55°' }
-                    ],
-                    topic: this.form.topic,
-                    difficulty: 'Medium',
-                    source: 'Topical Exercise'
-                }
-            ];
         }
     },
     watch: {
@@ -482,11 +465,12 @@ export default {
         }
     },
     mounted() {
-        // Initialize MathJax if it exists
         if (window.MathJax) {
             window.MathJax.typesetPromise?.();
         }
-    },
+        this.getUserFromSession(); // 👈 Ensure user session is loaded
+    }
+    ,
     updated() {
         // Refresh MathJax rendering when content updates
         this.$nextTick(() => {

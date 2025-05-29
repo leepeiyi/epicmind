@@ -685,7 +685,7 @@ router.post("/:id/set-timer", async (req, res) => {
 
 // 3. COMPLETE QUIZ ASSIGNMENT
 // POST /api/quiz/assignment/complete
-app.post('/assignment/complete', async (req, res) => {
+router.post('/assignment/complete', async (req, res) => {
   try {
       const {
           quiz_id,
