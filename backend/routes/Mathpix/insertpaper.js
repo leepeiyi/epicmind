@@ -77,6 +77,219 @@ router.get("/questions/:paper_name", async (req, res) => {
   }
 });
 
+router.post("/setup-vetting-columns", async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    console.log("🔧 Setting up vetting columns...");
+    
+    // Begin transaction
+    await client.query("BEGIN");
+    
+    const operations = [];
+    
+    // Check and add difficulty_level column
+    try {
+      const difficultyCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'question' 
+        AND column_name = 'difficulty_level'
+      `);
+      
+      if (difficultyCheck.rows.length === 0) {
+        await client.query(`
+          ALTER TABLE question 
+          ADD COLUMN difficulty_level TEXT DEFAULT 'Medium'
+        `);
+        operations.push("✅ Added difficulty_level column");
+        console.log("✅ Added difficulty_level column");
+      } else {
+        operations.push("⚠️ difficulty_level column already exists");
+        console.log("⚠️ difficulty_level column already exists");
+      }
+    } catch (err) {
+      console.error("❌ Error adding difficulty_level column:", err.message);
+      operations.push(`❌ Error adding difficulty_level: ${err.message}`);
+    }
+    
+    // Check and add sub_topic column  
+    try {
+      const subTopicCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'question' 
+        AND column_name = 'sub_topic'
+      `);
+      
+      if (subTopicCheck.rows.length === 0) {
+        await client.query(`
+          ALTER TABLE question 
+          ADD COLUMN sub_topic TEXT
+        `);
+        operations.push("✅ Added sub_topic column");
+        console.log("✅ Added sub_topic column");
+      } else {
+        operations.push("⚠️ sub_topic column already exists");
+        console.log("⚠️ sub_topic column already exists");
+      }
+    } catch (err) {
+      console.error("❌ Error adding sub_topic column:", err.message);
+      operations.push(`❌ Error adding sub_topic: ${err.message}`);
+    }
+    
+    // Check and add vetted column
+    try {
+      const vettedCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'question' 
+        AND column_name = 'vetted'
+      `);
+      
+      if (vettedCheck.rows.length === 0) {
+        await client.query(`
+          ALTER TABLE question 
+          ADD COLUMN vetted BOOLEAN DEFAULT FALSE
+        `);
+        operations.push("✅ Added vetted column");
+        console.log("✅ Added vetted column");
+      } else {
+        operations.push("⚠️ vetted column already exists");
+        console.log("⚠️ vetted column already exists");
+      }
+    } catch (err) {
+      console.error("❌ Error adding vetted column:", err.message);
+      operations.push(`❌ Error adding vetted: ${err.message}`);
+    }
+    
+    // Update existing records to have default difficulty
+    try {
+      const updateResult = await client.query(`
+        UPDATE question 
+        SET difficulty_level = 'Medium' 
+        WHERE difficulty_level IS NULL
+      `);
+      operations.push(`✅ Updated ${updateResult.rowCount} questions with default difficulty`);
+      console.log(`✅ Updated ${updateResult.rowCount} questions with default difficulty`);
+    } catch (err) {
+      console.error("❌ Error updating default difficulty:", err.message);
+      operations.push(`❌ Error updating defaults: ${err.message}`);
+    }
+    
+    // Commit transaction
+    await client.query("COMMIT");
+    
+    console.log("🎉 Database setup completed successfully!");
+    
+    res.json({
+      success: true,
+      message: "Database setup completed successfully!",
+      operations: operations
+    });
+    
+  } catch (err) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("❌ Database setup failed:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Database setup failed: " + err.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// UPDATE question metadata (difficulty and sub_topics) for tutor vetting
+router.post("/update-question-metadata", async (req, res) => {
+  const { paper_name, questions } = req.body;
+  
+  if (!paper_name || !questions || !Array.isArray(questions)) {
+    return res.status(400).json({ 
+      success: false,
+      error: "Missing required fields: paper_name and questions array" 
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Begin transaction
+    await client.query("BEGIN");
+
+    let updated_count = 0;
+
+    for (const question_update of questions) {
+      const { question_number, difficulty, sub_topics } = question_update;
+      
+      if (!question_number) {
+        console.warn("⚠️ Skipping question update - missing question_number");
+        continue;
+      }
+
+      // Set default difficulty if not provided
+      const final_difficulty = difficulty || 'Medium';
+      
+      // Convert sub_topics to JSON string for storage
+      const sub_topics_json = sub_topics && Array.isArray(sub_topics) 
+        ? JSON.stringify(sub_topics) 
+        : null;
+
+      // Update the question with difficulty and sub_topics
+      const updateResult = await client.query(
+        `UPDATE question 
+         SET difficulty_level = $1, 
+             sub_topic = $2
+         WHERE paper_name = $3 AND question_number = $4`,
+        [final_difficulty, sub_topics_json, paper_name, question_number]
+      );
+
+      if (updateResult.rowCount > 0) {
+        updated_count++;
+        console.log(`✅ Updated Q${question_number}: difficulty=${final_difficulty}, sub_topics=${JSON.stringify(sub_topics)}`);
+      } else {
+        console.warn(`⚠️ No question found for paper=${paper_name}, question_number=${question_number}`);
+      }
+    }
+
+    // Mark paper as vetted after updating questions (if you have a vetted column)
+    try {
+      await client.query(
+        `UPDATE question 
+         SET vetted = true 
+         WHERE paper_name = $1`,
+        [paper_name]
+      );
+    } catch (vettedError) {
+      console.warn("⚠️ Could not mark paper as vetted (vetted column might not exist):", vettedError.message);
+    }
+
+    // Commit transaction
+    await client.query("COMMIT");
+
+    console.log(`✅ Updated ${updated_count} questions for paper: ${paper_name}`);
+
+    res.json({
+      success: true,
+      message: `Successfully updated ${updated_count} questions and marked paper as vetted`,
+      updated_count: updated_count,
+      paper_name: paper_name
+    });
+
+  } catch (err) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("❌ Error updating question metadata:", err.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to update question metadata: ${err.message}`
+    });
+  } finally {
+    client.release();
+  }
+});
+
 router.post("/update-question-details", async (req, res) => {
   const { paper_name, content } = req.body;
   if (!paper_name || !content) {
