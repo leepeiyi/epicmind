@@ -55,26 +55,17 @@ export default {
   },
   computed: {
     filteredNavItems() {
-      console.log('🔍 Filtering nav items for user:', this.user);
-
       return this.navItems.filter(item => {
-        console.log(`\n📋 Checking item: ${item.label}`);
-        console.log(`   - requiresRole: ${item.requiresRole}`);
-        console.log(`   - user role: ${this.user?.role}`);
-
         // ✅ Admins can see all items regardless of required role
         if (this.user?.role === 'admin') {
-          console.log(`   ✅ Admin access - showing ${item.label}`);
           return true;
         }
 
         // ✅ Regular role-based filtering for others
         if (item.requiresRole && this.user?.role !== item.requiresRole) {
-          console.log(`   ❌ Role mismatch - hiding ${item.label} (requires: ${item.requiresRole}, user has: ${this.user?.role})`);
           return false;
         }
 
-        console.log(`   ✅ Access granted - showing ${item.label}`);
         return true;
       });
     }
@@ -83,7 +74,7 @@ export default {
   mounted() {
     // Get user info from session storage when component mounts
     this.getUserFromSession();
-    console.log('Current user:', this.user);
+    console.log('Current user:', this.user); 
 
     // Add event listener to update user when session storage changes
     window.addEventListener('storage', this.getUserFromSession);
