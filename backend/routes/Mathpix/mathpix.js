@@ -1049,4 +1049,40 @@ router.get("/markdown/:pdf_id", async (req, res) => {
   }
 });
 
+router.post("/image_to_s3", upload.single("image"), async (req, res) => {
+  try {
+    const file = req.file;
+    const { paper_name, question_number } = req.body;
+
+    if (!file || !paper_name) {
+      return res.status(400).json({ error: "Missing required image or paper_name" });
+    }
+
+    const extension = path.extname(file.originalname) || ".png";
+    const cleanName = file.originalname.replace(/\s+/g, "_");
+
+    const keyParts = [paper_name];
+    if (question_number) keyParts.push(`Q${question_number}`);
+    keyParts.push(`${uuidv4()}_${cleanName}`);
+
+    const s3Key = keyParts.join("/");
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: s3Key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      })
+    );
+
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(s3Key)}`;
+
+    res.json({ imageUrl });
+  } catch (err) {
+    console.error("❌ Failed to upload image to S3:", err);
+    res.status(500).json({ error: "Upload to S3 failed", detail: err.message });
+  }
+});
+
 module.exports = router;
