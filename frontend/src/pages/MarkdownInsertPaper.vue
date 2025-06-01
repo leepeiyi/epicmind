@@ -115,7 +115,27 @@ Example format expected:
                         <button @click="clearPreview" class="clear-preview-btn">🔄 Edit Markdown</button>
                     </div>
                 </div>
-                <LatexConverter />
+                <!-- Final Output Section (shows after processing and saving) -->
+                <div v-if="outputMarkdown && saveSuccess" class="output-wrapper">
+                    <!-- ✅ Show LaTeX and Image Uploader only AFTER save -->
+                    <LatexConverter />
+
+                    <div class="image-uploader-wrapper" style="margin-top: 20px;">
+                        <h3>🖼️ Upload Diagrams or Figures</h3>
+                        <label>
+                            📌 Select Question Number:
+                            <select v-model="selectedQuestionNumber">
+                                <option disabled value="">-- Choose --</option>
+                                <option v-for="q in extractedQuestions" :key="q.question_number"
+                                    :value="q.question_number">
+                                    Q{{ q.question_number }}
+                                </option>
+                            </select>
+                        </label>
+                        <ImageUploader :paper-name="paperName" :question-number="selectedQuestionNumber" />
+                    </div>
+                </div>
+
                 <div class="preview-content">
 
                     <div class="editor">
@@ -152,11 +172,12 @@ Example format expected:
                     <h3>Final Output (Editable)</h3>
                     <textarea v-model="outputMarkdown" class="markdown-editor" />
                 </div>
+
                 <div class="preview">
                     <h3>Preview</h3>
                     <div :key="compiledMarkdown" v-html="compiledMarkdown"></div>
                 </div>
-            </div>
+            </div> <!-- end of output-wrapper -->
 
             <!-- Save Section -->
             <div v-if="outputMarkdown" class="save-section">
@@ -170,12 +191,13 @@ Example format expected:
 import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
+import ImageUploader from '../components/ImageUploader.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'InsertMarkdown',
-    components: { Navbar, PaperDetails, LatexConverter },
+    components: { Navbar, PaperDetails, LatexConverter, ImageUploader },
     data() {
         return {
             uploadType: '',
@@ -201,6 +223,8 @@ export default {
             processedImages: 0,
             separateAnswerKey: false,
             answerKeyInput: '',
+            selectedQuestionNumber: '',
+            saveSuccess: false,
 
 
         };
@@ -412,6 +436,18 @@ export default {
             this.extractedQuestions = [];
             this.totalImages = 0;
         },
+        handleInsertMarkdown(markdownImage) {
+            if (!this.previewMarkdown) return;
+            const marker = `### Q${this.selectedQuestionNumber}`;
+            const parts = this.previewMarkdown.split(marker);
+            if (parts.length < 2) {
+                alert(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                return;
+            }
+            // Insert the image right after the marker
+            parts[1] = `\n\n${markdownImage}\n` + parts[1];
+            this.previewMarkdown = parts.join(marker);
+        },
 
         async handleMarkdownSubmit() {
             // Validation
@@ -506,6 +542,8 @@ export default {
 
                 // Clear preview and show final result
                 this.clearPreview();
+                this.saveSuccess = true;
+
 
                 // Clear progress after a moment
                 setTimeout(() => {
@@ -720,6 +758,20 @@ export default {
     align-items: center;
     flex-wrap: wrap;
 }
+
+.preview img,
+.output-wrapper .preview img {
+    max-width: 100%;
+    max-height: 200px;
+    /* adjust as needed */
+    object-fit: contain;
+    display: block;
+    margin: 1rem auto;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
 
 .stat-badge {
     background-color: rgba(255, 255, 255, 0.2);

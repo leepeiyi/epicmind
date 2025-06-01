@@ -15,12 +15,8 @@
             <!-- Search and Filter Section -->
             <div class="search-filter-section">
                 <div class="search-bar">
-                    <input 
-                        v-model="searchQuery" 
-                        type="text" 
-                        placeholder="Search papers by name, subject, or topic..." 
-                        class="search-input"
-                    />
+                    <input v-model="searchQuery" type="text" placeholder="Search papers by name, subject, or topic..."
+                        class="search-input" />
                 </div>
                 <div class="filter-controls">
                     <select v-model="filterSubject" class="filter-select">
@@ -48,18 +44,15 @@
             <div v-if="filteredPapers.length" class="all-papers">
                 <h3>📚 All Papers ({{ filteredPapers.length }})</h3>
                 <div class="papers-grid">
-                    <div 
-                        v-for="paper in paginatedPapers" 
-                        :key="paper.paper_name" 
-                        class="paper-card"
-                        @click="loadPaper(paper.paper_name)"
-                    >
+                    <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card"
+                        @click="loadPaper(paper.paper_name)">
                         <div class="paper-card-header">
                             <span class="paper-name">{{ paper.paper_name }}</span>
                             <span v-if="paper.topic_label" class="paper-topic">{{ paper.topic_label }}</span>
                         </div>
                         <div class="paper-details">
-                            <span class="paper-meta">{{ paper.subject }} • {{ paper.banding }} • {{ paper.level }}</span>
+                            <span class="paper-meta">{{ paper.subject }} • {{ paper.banding }} • {{ paper.level
+                                }}</span>
                             <span v-if="paper.year" class="paper-year">{{ paper.year }}</span>
                         </div>
                         <div class="paper-stats">
@@ -71,21 +64,15 @@
 
                 <!-- Pagination -->
                 <div v-if="totalPages > 1" class="pagination">
-                    <button 
-                        @click="currentPage = Math.max(1, currentPage - 1)" 
-                        :disabled="currentPage === 1"
-                        class="pagination-btn"
-                    >
+                    <button @click="currentPage = Math.max(1, currentPage - 1)" :disabled="currentPage === 1"
+                        class="pagination-btn">
                         ← Previous
                     </button>
                     <span class="pagination-info">
                         Page {{ currentPage }} of {{ totalPages }}
                     </span>
-                    <button 
-                        @click="currentPage = Math.min(totalPages, currentPage + 1)" 
-                        :disabled="currentPage === totalPages"
-                        class="pagination-btn"
-                    >
+                    <button @click="currentPage = Math.min(totalPages, currentPage + 1)"
+                        :disabled="currentPage === totalPages" class="pagination-btn">
                         Next →
                     </button>
                 </div>
@@ -102,9 +89,27 @@
                 <p>No papers found matching your criteria.</p>
             </div>
             <br>
-            
+
             <!-- LaTeX Converter -->
             <LatexConverter v-if="markdownContent" />
+            <!-- Image Uploader -->
+            <div v-if="markdownContent" class="image-uploader-wrapper" style="margin: 2rem 0;">
+                <h3>🖼️ Upload Diagrams or Figures</h3>
+                <label>
+                    📌 Select Question Number:
+                    <select v-model="selectedQuestionNumber" class="filter-select" style="margin-left: 0.5rem;">
+                        <option disabled value="">-- Choose --</option>
+                        <option v-for="q in markdownContent.match(/### Q(\d+)/g) || []" :key="q"
+                            :value="q.replace('### Q', '')">
+                            {{ q.replace('### ', '') }}
+                        </option>
+                    </select>
+                </label>
+                <ImageUploader :paper-name="currentPaperName" :question-number="selectedQuestionNumber"
+                    @insert-markdown="handleInsertMarkdown" />
+
+            </div>
+
 
             <!-- Markdown Editor and Preview Section -->
             <div v-if="markdownContent" class="output-wrapper">
@@ -133,14 +138,16 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import LatexConverter from '../components/LatexConverter.vue';
+import ImageUploader from '../components/ImageUploader.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'AllPapersView',
-    components: { 
+    components: {
         Navbar,
-        LatexConverter
+        LatexConverter,
+        ImageUploader
     },
     data() {
         return {
@@ -154,7 +161,9 @@ export default {
             filterBanding: '',
             filterLevel: '',
             currentPage: 1,
-            itemsPerPage: 12
+            itemsPerPage: 12,
+            selectedQuestionNumber: '',
+
         };
     },
     computed: {
@@ -172,15 +181,15 @@ export default {
         },
         filteredPapers() {
             return this.allPapers.filter(paper => {
-                const matchesSearch = !this.searchQuery || 
+                const matchesSearch = !this.searchQuery ||
                     paper.paper_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                     (paper.subject && paper.subject.toLowerCase().includes(this.searchQuery.toLowerCase())) ||
                     (paper.topic_label && paper.topic_label.toLowerCase().includes(this.searchQuery.toLowerCase()));
-                
+
                 const matchesSubject = !this.filterSubject || paper.subject === this.filterSubject;
                 const matchesBanding = !this.filterBanding || paper.banding === this.filterBanding;
                 const matchesLevel = !this.filterLevel || paper.level === this.filterLevel;
-                
+
                 return matchesSearch && matchesSubject && matchesBanding && matchesLevel;
             });
         },
@@ -268,7 +277,7 @@ export default {
                 const encodedName = encodeURIComponent(paperName);
                 const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
-                
+
                 this.currentPaperName = paperName;
                 this.markdownContent = data.questions.map((q) => {
                     const options = (q.answer_options || [])
@@ -314,6 +323,21 @@ export default {
             this.markdownContent = '';
             this.currentPaperName = '';
         },
+        handleInsertMarkdown(markdownImage) {
+            if (!this.markdownContent || !this.selectedQuestionNumber) return;
+
+            const marker = `### Q${this.selectedQuestionNumber}`;
+            const parts = this.markdownContent.split(marker);
+            if (parts.length < 2) {
+                alert(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                return;
+            }
+
+            // Insert the image markdown right after the header
+            parts[1] = `\n\n${markdownImage}\n` + parts[1];
+            this.markdownContent = parts.join(marker);
+        }
+        ,
 
         async saveEditedMarkdown() {
             this.isSaving = true;

@@ -98,4 +98,5 @@ const insertJSONPayload = async (parsedJSON) => {
   }
 };
 
+
 module.exports = insertJSONPayload;

@@ -5,6 +5,9 @@ const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const insertJSONPayload = require("../Mathpix/insertPostgresql");
 const axios = require("axios");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
 require("dotenv").config();
 
 const s3 = new S3Client({
@@ -17,6 +20,45 @@ const s3 = new S3Client({
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Configure multer for image uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Check if file is an image
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
+
+// Helper function to get file extension from mimetype
+function getFileExtension(mimetype) {
+  const extensions = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'image/bmp': '.bmp',
+    'image/tiff': '.tiff'
+  };
+  return extensions[mimetype] || '.jpg';
+}
+
+// Helper function to sanitize filename
+function sanitizeFilename(filename) {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace special chars with underscore
+    .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+    .toLowerCase();
+}
 
 // Helper function to download and upload image to S3
 async function downloadAndUploadImage(
@@ -224,8 +266,208 @@ async function parseGeminiJsonResponse(rawResponse) {
   );
 }
 
-// ROUTE 1: Preview route - extract questions without processing images or saving to DB
-// ROUTE 1: Preview route - extract questions without processing images or saving to DB
+async function matchAnswersWithGemini(questions, answerKeyMarkdown) {
+  const prompt = `
+  You are given a list of math questions and a separate answer key in text.
+  
+  Match each question to its correct answer based on question number.
+  
+  If the answer key includes sub-parts (like 1a, 1b), combine them under the main number:
+  (e.g., "1a: 5", "1b: 7" => "correct_answer": "(a) 5, (b) 7")
+  
+  Return the updated array of questions like this:
+  [
+    {
+      "question_number": "1",
+      "question_text": "...",
+      "answer_options": [...],
+      "answer_key": { "question_number": "1", "correct_answer": "B" },
+      ...
+    }
+  ]
+  
+  QUESTIONS:
+  ${JSON.stringify(questions)}
+  
+  ANSWER KEY:
+  ${answerKeyMarkdown}
+  
+  Return only the valid JSON array. Do not include markdown, code blocks, or explanations.`;
+
+  try {
+    const result = await model.generateContent([{ text: prompt }]);
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    const cleaned = raw.replace(/^```json\s*|```$/gm, "").trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error("❌ Failed to parse Gemini answer match:", err.message);
+    return questions; // fallback
+  }
+}
+
+// ===== IMAGE UPLOAD ROUTES =====
+
+// Route to upload single image
+router.post("/upload/image", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+
+    console.log(`📸 Uploading image: ${req.file.originalname}`);
+
+    // Get folder from request or use default
+    const folder = req.body.folder || "manual-uploads";
+    
+    // Generate unique filename
+    const fileExtension = getFileExtension(req.file.mimetype);
+    const sanitizedOriginalName = sanitizeFilename(
+      path.parse(req.file.originalname).name
+    );
+    const uniqueId = uuidv4().substring(0, 8);
+    const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
+    const key = `${folder}/${fileName}`;
+
+    // Upload to S3
+    const uploadCommand = new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ContentDisposition: 'inline', // Allow direct viewing in browser
+      CacheControl: 'max-age=31536000', // 1 year cache
+    });
+
+    await s3.send(uploadCommand);
+
+    // Generate S3 URL
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(key)}`;
+
+    console.log(`✅ Image uploaded successfully: ${imageUrl}`);
+
+    res.json({
+      success: true,
+      message: "Image uploaded successfully",
+      imageUrl: imageUrl,
+      fileName: fileName,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      s3Key: key
+    });
+
+  } catch (error) {
+    console.error("❌ Image upload error:", error);
+    
+    if (error.message === 'Only image files are allowed') {
+      return res.status(400).json({ error: "Only image files are allowed" });
+    }
+    
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: "File too large. Maximum size is 10MB." });
+    }
+    
+    res.status(500).json({ 
+      error: "Failed to upload image", 
+      details: error.message 
+    });
+  }
+});
+
+// Route to upload multiple images
+router.post("/upload/images", upload.array("images", 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No image files provided" });
+    }
+
+    console.log(`📸 Uploading ${req.files.length} images`);
+
+    const folder = req.body.folder || "manual-uploads";
+    const uploadResults = [];
+    const errors = [];
+
+    // Upload each file
+    for (const file of req.files) {
+      try {
+        // Generate unique filename
+        const fileExtension = getFileExtension(file.mimetype);
+        const sanitizedOriginalName = sanitizeFilename(
+          path.parse(file.originalname).name
+        );
+        const uniqueId = uuidv4().substring(0, 8);
+        const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
+        const key = `${folder}/${fileName}`;
+
+        // Upload to S3
+        const uploadCommand = new PutObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          ContentDisposition: 'inline',
+          CacheControl: 'max-age=31536000',
+        });
+
+        await s3.send(uploadCommand);
+
+        // Generate S3 URL
+        const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(key)}`;
+
+        uploadResults.push({
+          success: true,
+          imageUrl: imageUrl,
+          fileName: fileName,
+          originalName: file.originalname,
+          size: file.size,
+          mimetype: file.mimetype,
+          s3Key: key
+        });
+
+        console.log(`✅ Uploaded: ${fileName}`);
+
+      } catch (uploadError) {
+        console.error(`❌ Failed to upload ${file.originalname}:`, uploadError);
+        errors.push({
+          fileName: file.originalname,
+          error: uploadError.message
+        });
+      }
+    }
+
+    res.json({
+      success: uploadResults.length > 0,
+      message: `Uploaded ${uploadResults.length} of ${req.files.length} images`,
+      results: uploadResults,
+      errors: errors,
+      totalUploaded: uploadResults.length,
+      totalFailed: errors.length
+    });
+
+  } catch (error) {
+    console.error("❌ Batch image upload error:", error);
+    res.status(500).json({ 
+      error: "Failed to upload images", 
+      details: error.message 
+    });
+  }
+});
+
+// Route to get upload info/stats
+router.get("/upload/info", (req, res) => {
+  res.json({
+    maxFileSize: "10MB",
+    allowedTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp"],
+    maxFiles: 10,
+    bucket: process.env.S3_BUCKET_NAME,
+    region: process.env.S3_REGION
+  });
+});
+
+// ===== EXISTING MARKDOWN PROCESSING ROUTES =====
+
 // ROUTE 1: Preview route - extract questions and optionally match answers
 router.post("/preview", async (req, res) => {
   try {
@@ -335,46 +577,6 @@ router.post("/preview", async (req, res) => {
     });
   }
 });
-async function matchAnswersWithGemini(questions, answerKeyMarkdown) {
-  const prompt = `
-  You are given a list of math questions and a separate answer key in text.
-  
-  Match each question to its correct answer based on question number.
-  
-  If the answer key includes sub-parts (like 1a, 1b), combine them under the main number:
-  (e.g., "1a: 5", "1b: 7" => "correct_answer": "(a) 5, (b) 7")
-  
-  Return the updated array of questions like this:
-  [
-    {
-      "question_number": "1",
-      "question_text": "...",
-      "answer_options": [...],
-      "answer_key": { "question_number": "1", "correct_answer": "B" },
-      ...
-    }
-  ]
-  
-  QUESTIONS:
-  ${JSON.stringify(questions)}
-  
-  ANSWER KEY:
-  ${answerKeyMarkdown}
-  
-  Return only the valid JSON array. Do not include markdown, code blocks, or explanations.`;
-
-  try {
-    const result = await model.generateContent([{ text: prompt }]);
-    const raw =
-      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    const cleaned = raw.replace(/^```json\s*|```$/gm, "").trim();
-    return JSON.parse(cleaned);
-  } catch (err) {
-    console.error("❌ Failed to parse Gemini answer match:", err.message);
-    return questions; // fallback
-  }
-}
 
 // ROUTE 2: Process route - for when user wants to save after preview
 router.post("/process", async (req, res) => {
