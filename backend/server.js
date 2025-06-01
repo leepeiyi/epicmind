@@ -86,6 +86,9 @@ app.use("/api/quiz", quizRoutes);
 const quizAssignmentRoutes = require("./routes/QuizFolder/assignQuiz");
 app.use("/api/quiz", quizAssignmentRoutes);
 
+const markdownRoutes = require("./routes/Mathpix/markdown");
+app.use("/api/markdown", markdownRoutes);
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
