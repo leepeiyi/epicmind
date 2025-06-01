@@ -26,6 +26,10 @@
               <FileText class="dropdown-icon" />
               <span>From Mathpix</span>
             </router-link>
+            <router-link to="/all-papers-edit" class="dropdown-item" @click="showDropdown = false">
+              <FolderOpen class="dropdown-icon" />
+              <span>View All Papers</span>
+            </router-link>
           </div>
         </div>
         

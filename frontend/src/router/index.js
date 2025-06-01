@@ -10,6 +10,7 @@ import QuizFolder from "../pages/QuizFolder.vue";
 import QuizView from "../pages//QuizView.vue";
 import PrintView from "../components/PrintView.vue";
 import PaperLogs from "../pages/PaperLogs.vue";
+import AllPapersEdit from "../pages/AllPapersEdit.vue";
 
 const routes = [
   {
@@ -83,6 +84,12 @@ const routes = [
     name: "MarkdownInsertPaper",
     component: () => import("../pages/MarkdownInsertPaper.vue"),
     meta: { requiresAuth: true },
+  },
+  {
+    path: "/all-papers-edit",
+    name: "AllPapersEdit",
+    component: AllPapersEdit,
+    meta: { requiresAuth: true, requiresRole: "teacher" },
   },
 ];
 
