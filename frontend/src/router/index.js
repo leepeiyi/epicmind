@@ -52,9 +52,8 @@ const routes = [
     path: "/tutor-vetting",
     name: "TutorVetting",
     component: TutorVetting,
-    meta: { requiresAuth: true, requiresRole: ["teacher", "admin"] },
+    meta: { requiresAuth: true, requiresRole: "teacher" },
   },
-
   {
     path: "/quiz-folder",
     name: "QuizFolder",
@@ -79,6 +78,12 @@ const routes = [
     component: PaperLogs,
     meta: { requiresAuth: true },
   },
+  {
+    path: "/markdown-insertpaper",
+    name: "MarkdownInsertPaper",
+    component: () => import("../pages/MarkdownInsertPaper.vue"),
+    meta: { requiresAuth: true },
+  },
 ];
 
 const router = createRouter({
@@ -89,8 +94,9 @@ const router = createRouter({
 // Navigation guard
 router.beforeEach((to, from, next) => {
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
-  const requiredRole = to.meta.requiresRole;
+  const requiresRole = to.matched.some((record) => record.meta.requiresRole);
 
+  // Get token and user from session storage
   const token = sessionStorage.getItem("token");
   const userStr = sessionStorage.getItem("user");
   let user = null;
@@ -103,24 +109,24 @@ router.beforeEach((to, from, next) => {
     }
   }
 
-  // 🔐 Redirect to login if not authenticated
+  // Handle authentication
   if (requiresAuth && !token) {
+    // Redirect to login if authentication is required but user is not logged in
     return next({ path: "/" });
   }
 
-  // 🛡 If a role is required and user isn't the right role, block unless admin
-  if (requiredRole && user && user.role !== requiredRole) {
-    if (user.role !== "admin") {
-      return next({ path: "/insert-paper" });
-    }
-    // If admin, proceed
+  // Handle role-based access
+  if (requiresRole && (!user || user.role !== to.meta.requiresRole)) {
+    // If page requires specific role that user doesn't have, redirect to safe page
+    return next({ path: "/insert-paper" });
   }
 
-  // 🚫 Block access to login/register if already logged in
+  // Redirect to dashboard if user is already logged in and tries to access login/register
   if (!requiresAuth && token && (to.path === "/" || to.path === "/register")) {
     return next({ path: "/insert-paper" });
   }
 
+  // Otherwise, proceed normally
   next();
 });
 
