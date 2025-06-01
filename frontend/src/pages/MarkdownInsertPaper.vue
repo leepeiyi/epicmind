@@ -36,6 +36,16 @@
             <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
                 v-model:level="form.level" v-model:topic_label="form.topic_label" v-model:year="form.year"
                 :uploadType="uploadType" />
+            <!-- Paper Name input (shown once a type is selected) -->
+            <div v-if="uploadType" class="form-group" style="margin-bottom: 1rem;">
+                <label for="paperName" style="font-weight: bold; display: block; margin-bottom: 0.5rem;">
+                    📝 Name Your Paper
+                </label>
+                <input id="paperName" v-model="paperName" type="text" placeholder="e.g., 2024_Sec3_Algebra_Quiz"
+                    class="markdown-input-textarea" style="min-height: auto; height: auto;" />
+            </div>
+
+
 
             <!-- Markdown Input Area -->
             <div v-if="uploadType" class="markdown-input-section">
@@ -107,7 +117,7 @@ Example format expected:
                 </div>
                 <LatexConverter />
                 <div class="preview-content">
-                   
+
                     <div class="editor">
                         <h4>Extracted Questions (Editable)</h4>
                         <textarea v-model="previewMarkdown" class="markdown-editor" />
@@ -165,7 +175,7 @@ import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'InsertMarkdown',
-    components: { Navbar, PaperDetails, LatexConverter},
+    components: { Navbar, PaperDetails, LatexConverter },
     data() {
         return {
             uploadType: '',
@@ -191,7 +201,7 @@ export default {
             processedImages: 0,
             separateAnswerKey: false,
             answerKeyInput: '',
-            
+
 
         };
     },
@@ -414,9 +424,17 @@ export default {
                 this.isSaving = true;
 
                 // Generate paper name
-                const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-                const baseName = `markdown_paper_${timestamp}`;
-                this.paperName = `${baseName}_${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+                // Require user input
+                if (!this.paperName.trim()) {
+                    alert("❗ Please enter a paper name.");
+                    return;
+                }
+
+                // Use input + metadata to build final name
+                const baseName = this.paperName.trim().replace(/\s+/g, "_");
+                const suffix = `${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+                this.paperName = `${baseName}_${suffix}`;
+
 
                 // Step 1: Check if paper exists
                 this.progressMessage = "🔎 Checking for existing paper...";
