@@ -7,10 +7,34 @@
 
     <!-- Right: Nav Items -->
     <div class="nav-right">
-      <router-link v-for="item in filteredNavItems" :key="item.label" :to="item.route" class="nav-item">
-        <component :is="item.icon" class="icon" />
-        <span class="label">{{ item.label }}</span>
-      </router-link>
+      <div v-for="item in filteredNavItems" :key="item.label" class="nav-item-wrapper">
+        <!-- Special handling for Insert Paper with dropdown -->
+        <div v-if="item.label === 'Insert Paper'" class="nav-item-dropdown" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
+          <div class="dropdown-trigger">
+            <component :is="item.icon" class="icon" />
+            <span class="label">{{ item.label }}</span>
+            <ChevronDown class="dropdown-arrow" />
+          </div>
+          
+          <!-- Dropdown Menu -->
+          <div v-show="showDropdown" class="dropdown-menu">
+            <router-link to="/insert-paper" class="dropdown-item" @click="showDropdown = false">
+              <Upload class="dropdown-icon" />
+              <span>Upload Files</span>
+            </router-link>
+            <router-link to="/markdown-insertpaper" class="dropdown-item" @click="showDropdown = false">
+              <FileText class="dropdown-icon" />
+              <span>From Mathpix</span>
+            </router-link>
+          </div>
+        </div>
+        
+        <!-- Regular nav items -->
+        <router-link v-else :to="item.route" class="nav-item">
+          <component :is="item.icon" class="icon" />
+          <span class="label">{{ item.label }}</span>
+        </router-link>
+      </div>
 
       <!-- User info and logout button -->
       <div class="user-section">
@@ -25,7 +49,7 @@
 </template>
 
 <script>
-import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut } from 'lucide-vue-next';
+import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut, ChevronDown, Upload } from 'lucide-vue-next';
 
 export default {
   name: 'Navbar',
@@ -37,10 +61,13 @@ export default {
     HelpCircle,
     FilePlus,
     LogOut,
+    ChevronDown,
+    Upload,
   },
   data() {
     return {
       user: null,
+      showDropdown: false,
       navItems: [
         { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper' },
         { icon: 'BookOpen', label: 'Mathstery', route: '/mathstery' },
@@ -48,9 +75,8 @@ export default {
         { icon: 'Star', label: 'Favourites', route: '/favourites' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' },
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' },
-        { icon: 'FolderOpen', label: 'Paper Logs', route: '/paper-logs', requiresRole: 'admin' }, // 👈 added
+        { icon: 'FolderOpen', label: 'Paper Logs', route: '/paper-logs', requiresRole: 'admin' },
       ],
-
     };
   },
   computed: {
@@ -78,7 +104,6 @@ export default {
         return true;
       });
     }
-
   },
   mounted() {
     // Get user info from session storage when component mounts
@@ -124,7 +149,6 @@ export default {
   justify-content: space-between;
   padding: 0.75rem 2rem;
   background-color: #66CC99;
-  /* black background */
   color: black;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
@@ -137,6 +161,10 @@ export default {
   display: flex;
   gap: 1.5rem;
   align-items: center;
+}
+
+.nav-item-wrapper {
+  position: relative;
 }
 
 .nav-item {
@@ -152,7 +180,81 @@ export default {
 
 .nav-item:hover {
   color: #F1FF3F;
-  /* Neon Yellow on hover */
+}
+
+.nav-item-dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s;
+  color: inherit;
+  padding: 0.5rem;
+}
+
+.dropdown-trigger:hover {
+  color: #F1FF3F;
+}
+
+.dropdown-arrow {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s;
+}
+
+.nav-item-dropdown:hover .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 180px;
+  padding: 0.5rem 0;
+  margin-top: 0.25rem;
+}
+
+/* Add a small bridge to prevent hover issues */
+.dropdown-menu::before {
+  content: '';
+  position: absolute;
+  top: -0.25rem;
+  left: 0;
+  right: 0;
+  height: 0.25rem;
+  background: transparent;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: #333;
+  text-decoration: none;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.dropdown-item:hover {
+  background-color: #f5f5f5;
+  color: #66CC99;
+}
+
+.dropdown-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .icon {
