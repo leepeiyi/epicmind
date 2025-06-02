@@ -33,6 +33,57 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // Generate a quiz using Gemini AI
+function normalizeQuestion(row) {
+  const isPreformatted = !!row.text && !row.question_text;
+
+  if (isPreformatted) {
+    return {
+      id: row.id,
+      text: row.text,
+      options: row.options || [],
+      difficulty: row.difficulty || "Medium",
+      topic: row.topic,
+      subtopic: row.subtopic || "",
+      source: row.source || "Topical Exercise",
+      answer: row.answer || "",
+      has_image: !!row.image_url,
+      image_path: row.image_url ? [row.image_url] : [],
+    };
+  } else {
+    let options = [];
+    try {
+      options =
+        typeof row.answer_options === "string"
+          ? JSON.parse(row.answer_options)
+          : row.answer_options || [];
+    } catch (e) {}
+
+    let answerKey = {};
+    try {
+      answerKey =
+        typeof row.answer_key === "string"
+          ? JSON.parse(row.answer_key)
+          : row.answer_key || {};
+    } catch (e) {}
+
+    return {
+      id: row.id,
+      text: row.question_text,
+      options,
+      difficulty: row.difficulty_level || "Medium",
+      topic: row.topic_label,
+      subtopic: row.sub_topic || "",
+      source:
+        row.paper_type === "past_year"
+          ? "Past Year"
+          : row.paper_type || "Topical Exercise",
+      answer: answerKey.correct_answer || "",
+      has_image: Array.isArray(row.image_paths) && row.image_paths.length > 0,
+      image_path: row.image_paths,
+    };
+  }
+}
+
 router.post("/generate", async (req, res) => {
   try {
     const {
@@ -47,9 +98,9 @@ router.post("/generate", async (req, res) => {
       includeTopical,
       yearFrom,
       yearTo,
+      includeQuestions = [], // ✅ now using full question objects
     } = req.body;
 
-    // Validate required inputs
     if (!subject || !banding || !level || !topic || !questionCount) {
       return res.status(400).json({
         success: false,
@@ -57,115 +108,75 @@ router.post("/generate", async (req, res) => {
       });
     }
 
-    // Step 1: Retrieve candidate questions based on filters
+    // Step 1: Query additional candidates
     let query = `
-            SELECT 
-                q.id, 
-                q.question_text, 
-                q.question_number,
-                q.answer_options, 
-                q.answer_key, 
-                q.topic_label, 
-                q.sub_topic,
-                q.difficulty_level,
-                q.paper_type,
-                q.image_paths
-            FROM 
-                question q
-            WHERE 
-                q.subject = $1 
-                AND q.banding = $2 
-                AND q.level = $3 
-                AND q.topic_label LIKE $4
-        `;
+      SELECT 
+        q.id, 
+        q.question_text, 
+        q.question_number,
+        q.answer_options, 
+        q.answer_key, 
+        q.topic_label, 
+        q.sub_topic,
+        q.difficulty_level,
+        q.paper_type,
+        q.image_paths
+      FROM question q
+      WHERE q.subject = $1 
+        AND q.banding = $2 
+        AND q.level = $3 
+        AND q.topic_label LIKE $4
+    `;
 
-    const queryParams = [
-      subject,
-      banding,
-      level,
-      `%${topic}%`, // Using LIKE for partial matching
-    ];
-
+    const queryParams = [subject, banding, level, `%${topic}%`];
     let paramIndex = 5;
 
-    // Add optional filters
     if (subTopic) {
       query += ` AND q.sub_topic = $${paramIndex}`;
       queryParams.push(subTopic);
       paramIndex++;
     }
 
-    // Only filter by difficulty if explicitly selected
     if (difficultyLevel) {
       query += ` AND q.difficulty_level = $${paramIndex}`;
       queryParams.push(difficultyLevel);
       paramIndex++;
     }
 
-    // Get more candidates than needed for Gemini to choose from
-    const maxCandidates = Math.min(questionCount * 3, 50); // Get 3x or up to 50 questions
+    const maxCandidates = Math.min(questionCount * 3, 50);
     query += ` LIMIT $${paramIndex}`;
     queryParams.push(maxCandidates);
 
-    // Execute query to get candidate questions using pool
     const result = await pool.query(query, queryParams);
+    let candidateQuestions = result.rows;
+    console.log("includedQuestions:", includeQuestions);
 
-    if (result.rows.length === 0) {
+    // ✅ Merge includeQuestions (full objects)
+    if (includeQuestions.length > 0) {
+      const existingIds = new Set(candidateQuestions.map((q) => q.id));
+      includeQuestions.forEach((q) => {
+        if (!existingIds.has(q.id)) {
+          candidateQuestions.unshift(q);
+        }
+      });
+    }
+
+    if (candidateQuestions.length === 0) {
       return res.status(404).json({
         success: false,
         error: "No questions found matching the criteria",
       });
     }
 
-    // Transform the results for Gemini processing
-    const candidateQuestions = result.rows.map((row) => {
-      // Process answer options if they exist
-      let options = [];
-      if (row.answer_options) {
-        if (typeof row.answer_options === "string") {
-          try {
-            options = JSON.parse(row.answer_options);
-          } catch (e) {
-            console.error("Error parsing answer options:", e);
-          }
-        } else {
-          options = row.answer_options;
-        }
-      }
+    // ✅ Format all candidates
+    candidateQuestions = candidateQuestions.map(normalizeQuestion);
 
-      // Process answer key
-      let answerKey = {};
-      if (row.answer_key) {
-        if (typeof row.answer_key === "string") {
-          try {
-            answerKey = JSON.parse(row.answer_key);
-          } catch (e) {
-            console.error("Error parsing answer key:", e);
-          }
-        } else {
-          answerKey = row.answer_key;
-        }
-      }
+    console.log(`Formatted ${candidateQuestions.length} candidate questions`);
+    console.log("Sample formatted question:", candidateQuestions[0]);
+    const requiredQuestionIds = new Set(includeQuestions.map(q => q.id));
 
-      // Format the question for Gemini
-      return {
-        id: row.id,
-        text: row.question_text,
-        options: options,
-        difficulty: row.difficulty_level || "Medium",
-        topic: row.topic_label,
-        subtopic: row.subtopic || "",
-        source:
-          row.source_type === "past_year"
-            ? `Past Year ${row.source_year}`
-            : "Topical Exercise",
-        answer: answerKey.correct_answer || "",
-        has_image: Array.isArray(row.image_path) && row.image_path.length > 0,
-        image_path: row.image_path,
-      };
-    });
 
-    // Step 2: Use Gemini to select and arrange the questions
+    // Step 2: Use Gemini to select the final question set
     const promptContext = `
 You are an expert educational quiz generator specializing in ${subject} for secondary school students. 
 I need you to create a balanced, effective quiz from a pool of candidate questions.
@@ -190,27 +201,23 @@ CANDIDATE QUESTION POOL:
 ${JSON.stringify(candidateQuestions, null, 2)}
 
 YOUR TASK:
-1. Select exactly ${questionCount} questions that best meet the requirements.
-2. If no difficulty was specified, ensure a balanced distribution across difficulty levels.
-3. Choose questions that cover different aspects of the topic for comprehensive assessment.
-4. Prioritize questions with clear wording and pedagogical value.
-5. Include a mix of question formats (multiple choice, short answer) if available.
-6. Include some questions with diagrams/images if available.
+1. You **must** include the following question IDs in the quiz: [${[...requiredQuestionIds].join(", ")}]
+2. Then, select the remaining questions (if needed) to reach exactly ${questionCount} total.
+3. If no difficulty was specified, ensure a balanced distribution across difficulty levels.
+4. Choose questions that cover different aspects of the topic for comprehensive assessment.
+5. Prioritize questions with clear wording and pedagogical value.
+6. Include a mix of question formats (multiple choice, short answer) if available.
+7. Include some questions with diagrams/images if available.
+
 
 RESPONSE FORMAT:
-Respond only with a JSON array of the selected question IDs in your recommended order. Example:
-[42, 17, 95, 23, 8, 61, 72, 39, 12, 56]
+Respond only with a JSON array of the selected question IDs in your recommended order.
 `;
 
-    // Call Gemini API
     const geminiResponse = await model.generateContent(promptContext);
     const responseText = geminiResponse.response.text();
-
-    // Extract the JSON array of IDs from the response
     const selectedIdsMatch = responseText.match(/\[.*\]/s);
-    if (!selectedIdsMatch) {
-      throw new Error("Failed to parse Gemini response");
-    }
+    if (!selectedIdsMatch) throw new Error("Failed to parse Gemini response");
 
     let selectedIds;
     try {
@@ -220,50 +227,49 @@ Respond only with a JSON array of the selected question IDs in your recommended 
       throw new Error("Invalid response format from Gemini");
     }
 
-    // Limit to the requested count in case Gemini returned more
     selectedIds = selectedIds.slice(0, questionCount);
 
-    // Step 3: Retrieve the full details of the selected questions
+    // Step 3: Assemble final list
     const selectedQuestions = [];
     for (const id of selectedIds) {
-      const question = candidateQuestions.find((q) => q.id === id);
-      if (question) {
+      const q = candidateQuestions.find((q) => q.id === id);
+      if (q) {
         selectedQuestions.push({
-          id: question.id,
-          text: question.text,
-          options: question.options,
-          image_url: Array.isArray(question.image_path)
-            ? question.image_path[0]
-            : question.image_path,
-          topic: question.topic,
-          difficulty: question.difficulty,
-          source: question.source,
-          answer: question.answer,
+          id: q.id,
+          text: q.text,
+          options: q.options,
+          image_url: Array.isArray(q.image_path)
+            ? q.image_path[0]
+            : q.image_path,
+          topic: q.topic,
+          difficulty: q.difficulty,
+          source: q.source,
+          answer: q.answer,
         });
       }
     }
+    console.log("Selected questions:", selectedQuestions);
 
-    // If we didn't get enough questions, fill with the remaining candidates
+    // Fill if Gemini returns fewer than requested
     if (selectedQuestions.length < questionCount) {
-      const remainingCount = questionCount - selectedQuestions.length;
-      const selectedIds = new Set(selectedQuestions.map((q) => q.id));
+      const needed = questionCount - selectedQuestions.length;
+      const selectedSet = new Set(selectedQuestions.map((q) => q.id));
+      const extras = candidateQuestions
+        .filter((q) => !selectedSet.has(q.id))
+        .slice(0, needed);
 
-      const remainingCandidates = candidateQuestions
-        .filter((q) => !selectedIds.has(q.id))
-        .slice(0, remainingCount);
-
-      for (const question of remainingCandidates) {
+      for (const q of extras) {
         selectedQuestions.push({
-          id: question.id,
-          text: question.text,
-          options: question.options,
-          image_url: Array.isArray(question.image_path)
-            ? question.image_path[0]
-            : question.image_path,
-          topic: question.topic,
-          difficulty: question.difficulty,
-          source: question.source,
-          answer: question.answer,
+          id: q.id,
+          text: q.text,
+          options: q.options,
+          image_url: Array.isArray(q.image_path)
+            ? q.image_path[0]
+            : q.image_path,
+          topic: q.topic,
+          difficulty: q.difficulty,
+          source: q.source,
+          answer: q.answer,
         });
       }
     }

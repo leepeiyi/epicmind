@@ -204,7 +204,9 @@ export default {
             progressPercent: 0,
             topics: [],
             subTopics: [],
-            generatedQuiz: []
+            generatedQuiz: [],
+            favoritedQuestions: [],
+
         };
     },
     computed: {
@@ -332,6 +334,7 @@ export default {
                 }, 1000);
 
                 // Call the backend API to generate the quiz
+                console.log(this.favoritedQuestions);
                 const response = await fetch(`${API_BASE_URL}/api/quiz/generate`, {
                     method: 'POST',
                     headers: {
@@ -348,9 +351,11 @@ export default {
                         includePastYears: this.form.includePastYears,
                         includeTopical: this.form.includeTopical,
                         yearFrom: this.form.yearFrom,
-                        yearTo: this.form.yearTo
+                        yearTo: this.form.yearTo,
+                        includeQuestions: this.favoritedQuestions // ✅ pass full objects
                     })
                 });
+
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -399,6 +404,31 @@ export default {
                 }, 1200);
             }
         },
+        async initializeFromQuery() {
+            const query = this.$route.query;
+            if (query.subject) this.form.subject = query.subject;
+            if (query.banding) this.form.banding = query.banding;
+            if (query.level) this.form.level = query.level;
+            if (query.topic) this.form.topic = query.topic;
+
+            this.updateTopics();
+
+            if (query.favoriteId) {
+                try {
+                    const res = await fetch(`${API_BASE_URL}/api/favourite/favquiz/${query.favoriteId}`);
+                    const data = await res.json();
+                    console.log('Fetched favorited questions:', data);
+                    this.favoritedQuestions = data.questions || []; // ✅ assign full question objects
+
+                    if (this.favoritedQuestions.length > 0) {
+                        this.form.questionCount = Math.max(this.form.questionCount, this.favoritedQuestions.length);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch favorited questions:', err);
+                }
+            }
+        }
+        ,
         async saveQuiz() {
             if (this.generatedQuiz.length === 0) {
                 alert('No quiz to save. Please generate a quiz first.');
@@ -457,7 +487,8 @@ export default {
                 this.loading = false;
                 alert('Failed to save quiz: ' + error.message);
             }
-        }
+        },
+
     },
     watch: {
         'form.topic'() {
@@ -468,7 +499,9 @@ export default {
         if (window.MathJax) {
             window.MathJax.typesetPromise?.();
         }
-        this.getUserFromSession(); // 👈 Ensure user session is loaded
+        this.getUserFromSession();// 👈 Ensure user session is loaded
+        this.initializeFromQuery();
+
     }
     ,
     updated() {
