@@ -16,7 +16,7 @@
         <div v-else-if="!modeSelected" class="mode-selection-screen">
             <div class="mode-selection-container">
                 <button @click="goBack" class="back-btn">← Back to Quizzes</button>
-                
+
                 <div class="quiz-intro">
                     <h1 class="quiz-title">{{ quiz.folder_name }}</h1>
                     <div class="quiz-tags">
@@ -24,9 +24,9 @@
                         <span class="quiz-tag">{{ quiz.level }}</span>
                         <span class="quiz-tag">{{ quiz.question_count }} questions</span>
                     </div>
-                    
+
                     <p class="quiz-description">Choose how you'd like to practice:</p>
-                    
+
                     <div class="mode-options">
                         <div class="mode-card" @click="selectMode('learn')">
                             <div class="mode-icon">📚</div>
@@ -40,7 +40,7 @@
                             </ul>
                             <button class="mode-select-btn learn-btn">Start Learning</button>
                         </div>
-                        
+
                         <div class="mode-card" @click="selectMode('test')">
                             <div class="mode-icon">⏱️</div>
                             <h3>Test Mode</h3>
@@ -176,7 +176,18 @@
                         </div>
                     </div>
 
+
                     <div v-else class="free-response">
+
+                        <button @click="showMathEditor = !showMathEditor" class="toggle-editor-btn">
+                            {{ showMathEditor ? 'Hide Math Editor ✖️' : 'Show Math Editor ✍️' }}
+                        </button>
+
+                        <div v-if="showMathEditor" class="math-editor-section">
+                            <MathEditor v-model="mathInput" />
+                        </div>
+
+
                         <textarea v-model="userAnswer" placeholder="Enter your answer here..." :disabled="showAnswer"
                             rows="4"></textarea>
                     </div>
@@ -239,7 +250,8 @@
             </div>
 
             <div class="results-actions">
-                <button @click="restartQuiz" class="restart-btn">{{ mode === 'test' ? 'Retake Test' : 'Restart Quiz' }}</button>
+                <button @click="restartQuiz" class="restart-btn">{{ mode === 'test' ? 'Retake Test' : 'Restart Quiz'
+                }}</button>
                 <button @click="backToModeSelection" class="back-btn">Try Different Mode</button>
                 <button @click="goBack" class="back-btn">Back to Quizzes</button>
             </div>
@@ -251,10 +263,11 @@
 import Navbar from '../components/Navbar.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
+import MathEditor from '../components/MathEditor.vue';
 
 export default {
     name: 'QuizView',
-    components: { Navbar },
+    components: { Navbar, MathEditor },
     data() {
         return {
             quizId: null,
@@ -272,11 +285,13 @@ export default {
             currentQuestionIndex: 0,
             selectedOption: '',
             userAnswer: '',
+            mathInput: '',
             showAnswer: false,
             mode: '', // Start empty until user selects
             answeredQuestions: [],
             correctAnswers: 0,
             showResults: false,
+            showMathEditor: true,
             // Timer related
             timerStarted: false,
             remainingTime: 0,
@@ -440,7 +455,7 @@ export default {
         selectMode(selectedMode) {
             this.mode = selectedMode;
             this.modeSelected = true;
-            
+
             // If learn mode, start immediately. If test mode, show test start screen
             if (selectedMode === 'learn') {
                 this.$nextTick(() => {
@@ -455,7 +470,7 @@ export default {
                 clearInterval(this.timerInterval);
                 this.timerInterval = null;
             }
-            
+
             // Reset quiz state
             this.modeSelected = false;
             this.mode = '';
@@ -927,8 +942,15 @@ export default {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .timer-text {
@@ -1285,12 +1307,47 @@ export default {
     cursor: pointer;
 }
 
+.math-editor-section {
+    background-color: #f9f9f9;
+    padding: 1.5rem;
+    border-radius: 10px;
+    margin-top: 0.5rem;
+    width: 100%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+
+.math-editor-section h3 {
+    margin-bottom: 1rem;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #333;
+}
+
+.toggle-editor-btn {
+  margin-bottom: 1rem;
+  background: #f8f9fa;
+  border: 1px solid #ccc;
+  color: #333;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.toggle-editor-btn:hover {
+  background: #e6f3ec;
+  border-color: #66CC99;
+}
+
+
 @media (max-width: 768px) {
     .mode-options {
         grid-template-columns: 1fr;
         gap: 1rem;
     }
-    
+
     .quiz-header {
         flex-direction: column;
         gap: 1rem;
@@ -1328,12 +1385,12 @@ export default {
     .start-button-container {
         margin-top: 2rem;
     }
-    
+
     .results-actions {
         flex-direction: column;
         align-items: center;
     }
-    
+
     .results-actions button {
         width: 100%;
         max-width: 300px;
