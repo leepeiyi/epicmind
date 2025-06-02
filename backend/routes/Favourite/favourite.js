@@ -40,6 +40,257 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/by-topic", async (req, res) => {
+  try {
+    const subject = (req.query.subject || "").trim();
+    const banding = (req.query.banding || "").trim();
+    const level = (req.query.level || "").trim();
+    const topic_label = (req.query.topic_label || "").trim();
+    const difficulty_level = (req.query.difficulty_level || "").trim();
+    const paper_type = (req.query.paper_type || "").trim();
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+
+    // Validate required parameters
+    if (!subject || !banding || !level || !topic_label) {
+      return res.status(400).json({
+        error:
+          "Missing required parameters: subject, banding, level, topic_label",
+      });
+    }
+
+    // Build dynamic query
+    let query = `
+        SELECT 
+          id,
+          question_number,
+          question_text,
+          answer_options,
+          image_paths,
+          answer_key,
+          paper_name,
+          difficulty_level,
+          sub_topic,
+          paper_type,
+          created_at
+        FROM question 
+        WHERE subject = $1 
+          AND banding = $2 
+          AND level = $3 
+          AND topic_label = $4
+      `;
+
+    const queryParams = [subject, banding, level, topic_label];
+    let paramIndex = 5;
+
+    // Add optional filters
+    if (difficulty_level) {
+      query += ` AND difficulty_level = $${paramIndex}`;
+      queryParams.push(difficulty_level);
+      paramIndex++;
+    }
+
+    if (paper_type) {
+      query += ` AND paper_type = $${paramIndex}`;
+      queryParams.push(paper_type);
+      paramIndex++;
+    }
+
+    // Add ordering and pagination
+    query += ` ORDER BY paper_name, question_number`;
+
+    if (limit) {
+      query += ` LIMIT $${paramIndex}`;
+      queryParams.push(parseInt(limit));
+      paramIndex++;
+    }
+
+    if (offset) {
+      query += ` OFFSET $${paramIndex}`;
+      queryParams.push(parseInt(offset));
+    }
+
+    // Execute the query
+    const result = await pool.query(query, queryParams);
+
+    // Get total count for pagination
+    const countQuery = `
+        SELECT COUNT(*) as total
+        FROM question 
+        WHERE subject = $1 
+          AND banding = $2 
+          AND level = $3 
+          AND topic_label = $4
+          ${
+            difficulty_level
+              ? `AND difficulty_level = '${difficulty_level}'`
+              : ""
+          }
+          ${paper_type ? `AND paper_type = '${paper_type}'` : ""}
+      `;
+
+    const countResult = await pool.query(countQuery, [
+      subject,
+      banding,
+      level,
+      topic_label,
+    ]);
+    const totalCount = parseInt(countResult.rows[0].total);
+
+    // Process the questions (parse JSON fields)
+    const questions = result.rows.map((row) => {
+      // Parse answer_options
+      let answerOptions = [];
+      if (row.answer_options) {
+        try {
+          answerOptions =
+            typeof row.answer_options === "string"
+              ? JSON.parse(row.answer_options)
+              : row.answer_options;
+        } catch (e) {
+          console.error("Error parsing answer_options:", e);
+        }
+      }
+
+      // Parse image_paths
+      let imagePaths = [];
+      if (row.image_paths) {
+        try {
+          imagePaths =
+            typeof row.image_paths === "string"
+              ? JSON.parse(row.image_paths)
+              : row.image_paths;
+        } catch (e) {
+          console.error("Error parsing image_paths:", e);
+        }
+      }
+
+      // Parse answer_key
+      let answerKey = null;
+      if (row.answer_key) {
+        try {
+          answerKey =
+            typeof row.answer_key === "string"
+              ? JSON.parse(row.answer_key)
+              : row.answer_key;
+        } catch (e) {
+          console.error("Error parsing answer_key:", e);
+          answerKey = row.answer_key;
+        }
+      }
+
+      return {
+        id: row.id,
+        question_number: row.question_number,
+        question_text: row.question_text,
+        answer_options: answerOptions,
+        image_paths: imagePaths,
+        answer_key: answerKey,
+        paper_name: row.paper_name,
+        difficulty_level: row.difficulty_level,
+        sub_topic: row.sub_topic,
+        paper_type: row.paper_type,
+        created_at: row.created_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      questions: questions,
+      pagination: {
+        total: totalCount,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + questions.length < totalCount,
+      },
+      filters: {
+        subject,
+        banding,
+        level,
+        topic_label,
+        difficulty_level,
+        paper_type,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error fetching questions by topic:", error);
+    res.status(500).json({
+      error: "Failed to fetch questions",
+      details: error.message,
+    });
+  }
+});
+router.get("/favquiz/:favoriteId", async (req, res) => {
+  const { favoriteId } = req.params;
+
+  if (!favoriteId) {
+    return res.status(400).json({ error: "Missing favoriteId" });
+  }
+
+  try {
+    // Step 1: Get the favorite record
+    const favRes = await pool.query(
+      `SELECT * FROM user_favorites WHERE id = $1`,
+      [favoriteId]
+    );
+
+    if (favRes.rows.length === 0) {
+      return res.status(404).json({ error: "Favorite not found" });
+    }
+
+    const favorite = favRes.rows[0];
+    let questions = [];
+
+    // Step 2: Fetch question details
+    if (favorite.question_ids && favorite.question_ids.length > 0) {
+      const qRes = await pool.query(
+        `SELECT * FROM question WHERE id = ANY($1) ORDER BY array_position($1::int[], id)`,
+        [favorite.question_ids]
+      );
+
+      questions = qRes.rows.map((row) => {
+        let options = [];
+        try {
+          options =
+            typeof row.answer_options === "string"
+              ? JSON.parse(row.answer_options)
+              : row.answer_options;
+        } catch (e) {}
+
+        let answerKey = {};
+        try {
+          answerKey =
+            typeof row.answer_key === "string"
+              ? JSON.parse(row.answer_key)
+              : row.answer_key;
+        } catch (e) {}
+
+        return {
+          id: row.id,
+          question_number: row.question_number,
+          text: row.question_text,
+          options,
+          answer: answerKey.correct_answer || "",
+          topic: row.topic_label,
+          difficulty: row.difficulty_level || "Medium",
+          image_url: Array.isArray(row.image_paths)
+            ? row.image_paths[0]
+            : row.image_paths,
+          source: row.paper_type || "",
+        };
+      });
+    }
+
+    return res.json({
+      favorite,
+      questions,
+    });
+  } catch (err) {
+    console.error("❌ Failed to fetch favorite:", err.message);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/favorites/:id/questions - Get all questions for a favorite topic
 router.get("/my-fav-topic", async (req, res) => {
   try {
@@ -325,185 +576,5 @@ router.get("/topics", async (req, res) => {
 // Add this route to your backend (you can add it to favorites.js or create a new questions.js route file)
 
 // GET /api/questions/by-topic - Get questions filtered by topic criteria
-router.get("/by-topic", async (req, res) => {
-  try {
-    const subject = (req.query.subject || "").trim();
-    const banding = (req.query.banding || "").trim();
-    const level = (req.query.level || "").trim();
-    const topic_label = (req.query.topic_label || "").trim();
-    const difficulty_level = (req.query.difficulty_level || "").trim();
-    const paper_type = (req.query.paper_type || "").trim();
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
-
-    // Validate required parameters
-    if (!subject || !banding || !level || !topic_label) {
-      return res.status(400).json({
-        error:
-          "Missing required parameters: subject, banding, level, topic_label",
-      });
-    }
-
-    // Build dynamic query
-    let query = `
-        SELECT 
-          id,
-          question_number,
-          question_text,
-          answer_options,
-          image_paths,
-          answer_key,
-          paper_name,
-          difficulty_level,
-          sub_topic,
-          paper_type,
-          created_at
-        FROM question 
-        WHERE subject = $1 
-          AND banding = $2 
-          AND level = $3 
-          AND topic_label = $4
-      `;
-
-    const queryParams = [subject, banding, level, topic_label];
-    let paramIndex = 5;
-
-    // Add optional filters
-    if (difficulty_level) {
-      query += ` AND difficulty_level = $${paramIndex}`;
-      queryParams.push(difficulty_level);
-      paramIndex++;
-    }
-
-    if (paper_type) {
-      query += ` AND paper_type = $${paramIndex}`;
-      queryParams.push(paper_type);
-      paramIndex++;
-    }
-
-    // Add ordering and pagination
-    query += ` ORDER BY paper_name, question_number`;
-
-    if (limit) {
-      query += ` LIMIT $${paramIndex}`;
-      queryParams.push(parseInt(limit));
-      paramIndex++;
-    }
-
-    if (offset) {
-      query += ` OFFSET $${paramIndex}`;
-      queryParams.push(parseInt(offset));
-    }
-
-    // Execute the query
-    const result = await pool.query(query, queryParams);
-
-    // Get total count for pagination
-    const countQuery = `
-        SELECT COUNT(*) as total
-        FROM question 
-        WHERE subject = $1 
-          AND banding = $2 
-          AND level = $3 
-          AND topic_label = $4
-          ${
-            difficulty_level
-              ? `AND difficulty_level = '${difficulty_level}'`
-              : ""
-          }
-          ${paper_type ? `AND paper_type = '${paper_type}'` : ""}
-      `;
-
-    const countResult = await pool.query(countQuery, [
-      subject,
-      banding,
-      level,
-      topic_label,
-    ]);
-    const totalCount = parseInt(countResult.rows[0].total);
-
-    // Process the questions (parse JSON fields)
-    const questions = result.rows.map((row) => {
-      // Parse answer_options
-      let answerOptions = [];
-      if (row.answer_options) {
-        try {
-          answerOptions =
-            typeof row.answer_options === "string"
-              ? JSON.parse(row.answer_options)
-              : row.answer_options;
-        } catch (e) {
-          console.error("Error parsing answer_options:", e);
-        }
-      }
-
-      // Parse image_paths
-      let imagePaths = [];
-      if (row.image_paths) {
-        try {
-          imagePaths =
-            typeof row.image_paths === "string"
-              ? JSON.parse(row.image_paths)
-              : row.image_paths;
-        } catch (e) {
-          console.error("Error parsing image_paths:", e);
-        }
-      }
-
-      // Parse answer_key
-      let answerKey = null;
-      if (row.answer_key) {
-        try {
-          answerKey =
-            typeof row.answer_key === "string"
-              ? JSON.parse(row.answer_key)
-              : row.answer_key;
-        } catch (e) {
-          console.error("Error parsing answer_key:", e);
-          answerKey = row.answer_key;
-        }
-      }
-
-      return {
-        id: row.id,
-        question_number: row.question_number,
-        question_text: row.question_text,
-        answer_options: answerOptions,
-        image_paths: imagePaths,
-        answer_key: answerKey,
-        paper_name: row.paper_name,
-        difficulty_level: row.difficulty_level,
-        sub_topic: row.sub_topic,
-        paper_type: row.paper_type,
-        created_at: row.created_at,
-      };
-    });
-
-    res.json({
-      success: true,
-      questions: questions,
-      pagination: {
-        total: totalCount,
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        hasMore: parseInt(offset) + questions.length < totalCount,
-      },
-      filters: {
-        subject,
-        banding,
-        level,
-        topic_label,
-        difficulty_level,
-        paper_type,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Error fetching questions by topic:", error);
-    res.status(500).json({
-      error: "Failed to fetch questions",
-      details: error.message,
-    });
-  }
-});
 
 module.exports = router;

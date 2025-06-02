@@ -291,6 +291,7 @@ export default {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/favourite/by-topic?${queryParams.toString()}`);
 
+
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error("❌ API Error:", errorData);
@@ -566,7 +567,20 @@ export default {
                 }
             }
             return answerKey?.correct_answer || answerKey || '';
-        }
+        },
+        async generateQuizFromFavorite(favorite) {
+            // Navigate to quiz generation with this favorite's questions
+            this.$router.push({
+                name: 'GenerateTopical',
+                query: {
+                    subject: favorite.subject,
+                    banding: favorite.banding,
+                    level: favorite.level,
+                    topic: favorite.topic_label,
+                    favoriteId: favorite.id
+                }
+            });
+        },
     }
 };
 </script>
