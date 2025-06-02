@@ -11,6 +11,7 @@ import QuizView from "../pages//QuizView.vue";
 import PrintView from "../components/PrintView.vue";
 import PaperLogs from "../pages/PaperLogs.vue";
 import AllPapersEdit from "../pages/AllPapersEdit.vue";
+import Favourites from "../pages/Favourites.vue";
 
 const routes = [
   {
@@ -90,6 +91,12 @@ const routes = [
     name: "AllPapersEdit",
     component: AllPapersEdit,
     meta: { requiresAuth: true, requiresRole: "teacher" },
+  },
+  {
+    path: "/favourites",
+    name: "Favourites",
+    component: Favourites,
+    meta: { requiresAuth: true },
   },
 ];
 
