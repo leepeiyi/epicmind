@@ -237,7 +237,7 @@ router.delete("/:id", async (req, res) => {
 // GET /api/favorites/check-question - Check if a question is favorited
 router.get("/check-question", async (req, res) => {
   try {
-    const userId = req.user.id;
+    const { user_id } = req.query;
     const { question_id, subject, banding, level, topic_label } = req.query;
 
     if (!question_id || !subject || !banding || !level || !topic_label) {
@@ -254,7 +254,7 @@ router.get("/check-question", async (req, res) => {
        AND level = $4 
        AND topic_label = $5 
        AND $6 = ANY(question_ids)`,
-      [userId, subject, banding, level, topic_label, parseInt(question_id)]
+      [user_id, subject, banding, level, topic_label, parseInt(question_id)]
     );
 
     res.json({

@@ -61,7 +61,7 @@ export default {
                     topic_label: this.topicLabel
                 });
 
-                const response = await fetch(`${API_BASE_URL}/api/favorites/check-question?${params}`, {
+                const response = await fetch(`${API_BASE_URL}/api/favourite/check-question?${params}`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -94,8 +94,8 @@ export default {
             this.loading = true;
             try {
                 const url = this.isFavorited
-                    ? `${API_BASE_URL}/api/favourites/remove-question`
-                    : `${API_BASE_URL}/api/favourites/add-question`;
+                    ? `${API_BASE_URL}/api/favourite/remove-question`
+                    : `${API_BASE_URL}/api/favourite/add-question`;
 
                 const method = this.isFavorited ? 'DELETE' : 'POST';
                 const userId = this.getUserId();
