@@ -1091,6 +1091,7 @@ router.post("/image_to_s3", upload.single("image"), async (req, res) => {
 
 router.post("/gemini/split-question-parts", async (req, res) => {
   const { question_text, answer_key_text } = req.body;
+  console.log("🔍 Gemini question splitting request received");
 
   if (!question_text || !answer_key_text) {
     return res
@@ -1140,6 +1141,7 @@ Return only valid JSON, no markdown, no extra commentary.
 `;
 
     const result = await model.generateContent([{ text: prompt }]);
+    console.log(result);
     const raw =
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 

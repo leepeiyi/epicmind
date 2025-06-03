@@ -154,42 +154,118 @@
 
             <div class="question-container">
                 <div class="question-content">
-                    <h2>Question {{ currentQuestion.question_number }}</h2>
-                    <div class="question-text" v-html="formattedQuestionText"></div>
-
-                    <div v-if="currentQuestion.image_paths && currentQuestion.image_paths.length"
-                        class="question-images">
-                        <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="image"
-                            :alt="`Question ${currentQuestion.question_number} diagram ${index + 1}`"
-                            class="question-image" />
+                    <div class="question-header">
+                        <h2>Question {{ currentQuestion.question_number }}</h2>
                     </div>
 
-                    <div v-if="hasOptions" class="answer-options">
-                        <div v-for="option in currentQuestion.answer_options" :key="option.option" :class="[
-                            'answer-option',
-                            { 'selected': selectedOption === option.option },
-                            { 'correct': showAnswer && option.option === correctAnswer },
-                            { 'incorrect': showAnswer && selectedOption === option.option && option.option !== correctAnswer }
-                        ]" @click="selectOption(option.option)">
-                            <span class="option-label">{{ option.option }}</span>
-                            <span class="option-text" v-html="option.text"></span>
+                    <!-- Loading state for question splitting -->
+                    <div v-if="splittingQuestion" class="splitting-loader">
+                        <p>🤖 Analyzing question structure...</p>
+                    </div>
+
+                    <!-- Single question display (original format) -->
+                    <div v-if="!currentQuestion.questionParts && !splittingQuestion" class="single-question">
+                        <div class="question-text" v-html="formattedQuestionText"></div>
+
+                        <div v-if="currentQuestion.image_paths && currentQuestion.image_paths.length"
+                            class="question-images">
+                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="image"
+                                :alt="`Question ${currentQuestion.question_number} diagram ${index + 1}`"
+                                class="question-image" />
+                        </div>
+
+                        <div v-if="hasOptions" class="answer-options">
+                            <div v-for="option in currentQuestion.answer_options" :key="option.option" :class="[
+                                'answer-option',
+                                { 'selected': selectedOption === option.option },
+                                { 'correct': showAnswer && option.option === correctAnswer },
+                                { 'incorrect': showAnswer && selectedOption === option.option && option.option !== correctAnswer }
+                            ]" @click="selectOption(option.option)">
+                                <span class="option-label">{{ option.option }}</span>
+                                <span class="option-text" v-html="option.text"></span>
+                            </div>
+                        </div>
+
+                        <div v-else class="free-response">
+                            <button @click="showMathEditor = !showMathEditor" class="toggle-editor-btn">
+                                {{ showMathEditor ? 'Hide Math Editor ✖️' : 'Show Math Editor ✍️' }}
+                            </button>
+
+                            <div v-if="showMathEditor" class="math-editor-section">
+                                <MathEditor v-model="mathInput" />
+                            </div>
+
+                            <textarea v-model="userAnswer" placeholder="Enter your answer here..."
+                                :disabled="showAnswer" rows="4"></textarea>
                         </div>
                     </div>
 
+                    <!-- Multi-part question display -->
+                    <div v-if="currentQuestion.questionParts && !splittingQuestion" class="multi-part-question">
+                        <div class="main-question-text" v-html="formattedQuestionText"></div>
 
-                    <div v-else class="free-response">
-
-                        <button @click="showMathEditor = !showMathEditor" class="toggle-editor-btn">
-                            {{ showMathEditor ? 'Hide Math Editor ✖️' : 'Show Math Editor ✍️' }}
-                        </button>
-
-                        <div v-if="showMathEditor" class="math-editor-section">
-                            <MathEditor v-model="mathInput" />
+                        <div v-if="currentQuestion.image_paths && currentQuestion.image_paths.length"
+                            class="question-images">
+                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="image"
+                                :alt="`Question ${currentQuestion.question_number} diagram ${index + 1}`"
+                                class="question-image" />
                         </div>
 
+                        <div class="question-parts">
+                            <div v-for="(part, partIndex) in currentQuestion.questionParts" :key="partIndex"
+                                class="question-part" :class="{ 'show-that-part': part.requiresAnswer === false }">
 
-                        <textarea v-model="userAnswer" placeholder="Enter your answer here..." :disabled="showAnswer"
-                            rows="4"></textarea>
+                                <div class="part-header">
+                                    <h4 class="part-label">{{ part.partLabel }}</h4>
+                                    <span v-if="part.requiresAnswer === false" class="show-that-badge">Show that</span>
+                                </div>
+
+                                <div class="part-text" v-html="formatPartText(part.partText)"></div>
+
+                                <!-- Answer input for parts that require answers -->
+                                <div v-if="part.requiresAnswer !== false" class="part-answer-section">
+                                    <div v-if="part.hasOptions" class="part-answer-options">
+                                        <div v-for="option in part.answerOptions" :key="option.option" :class="[
+                                            'answer-option',
+                                            { 'selected': partAnswers[partIndex] === option.option },
+                                            { 'correct': showAnswer && option.option === part.correctAnswer },
+                                            { 'incorrect': showAnswer && partAnswers[partIndex] === option.option && option.option !== part.correctAnswer }
+                                        ]" @click="selectPartOption(partIndex, option.option)">
+                                            <span class="option-label">{{ option.option }}</span>
+                                            <span class="option-text" v-html="option.text"></span>
+                                        </div>
+                                    </div>
+
+                                    <div v-else class="part-free-response">
+                                        <h5 v-html="part.text"></h5>
+                                        <button @click="togglePartMathEditor(partIndex)" class="toggle-editor-btn">
+                                            {{ partMathEditors[partIndex] ? 'Hide Math Editor ✖️' : 'Show Math Editor✍️' }}
+                                        </button>
+
+                                        <div v-if="partMathEditors[partIndex]" class="math-editor-section">
+                                            <MathEditor v-model="partMathInputs[partIndex]" />
+                                        </div>
+
+                                        <textarea v-model="partAnswers[partIndex]"
+                                            :placeholder="`Enter your answer for part ${part.part_label}...`"
+                                            :disabled="showAnswer" rows="3" class="part-textarea"></textarea>
+                                    </div>
+
+                                    <!-- Show correct answer for this part in learn mode -->
+                                    <div v-if="showAnswer && mode === 'learn'" class="part-answer-feedback">
+                                        <div
+                                            :class="['part-feedback-message', isPartCorrect(partIndex) ? 'correct' : 'incorrect']">
+                                            <span v-if="isPartCorrect(partIndex)">✓ Correct!</span>
+                                            <span v-else>✗ Incorrect</span>
+                                        </div>
+                                        <div class="part-correct-answer">
+                                            <strong>Correct Answer:</strong>
+                                            <div v-html="formatPartText(part.answer)"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -200,12 +276,13 @@
                     </button>
 
                     <div v-if="showAnswer && mode === 'learn'" class="answer-feedback">
-                        <div :class="['feedback-message', isCorrect ? 'correct' : 'incorrect']">
-                            <span v-if="isCorrect">✓ Correct!</span>
-                            <span v-else>✗ Incorrect</span>
+                        <div :class="['feedback-message', overallCorrect ? 'correct' : 'incorrect']">
+                            <span v-if="overallCorrect">✓ All parts correct!</span>
+                            <span v-else>{{ getOverallFeedback() }}</span>
                         </div>
 
-                        <div class="correct-answer">
+                        <!-- Single question answer display -->
+                        <div v-if="!currentQuestion.questionParts" class="correct-answer">
                             <h3>Correct Answer:</h3>
                             <div v-html="formattedAnswer"></div>
                         </div>
@@ -251,7 +328,7 @@
 
             <div class="results-actions">
                 <button @click="restartQuiz" class="restart-btn">{{ mode === 'test' ? 'Retake Test' : 'Restart Quiz'
-                }}</button>
+                    }}</button>
                 <button @click="backToModeSelection" class="back-btn">Try Different Mode</button>
                 <button @click="goBack" class="back-btn">Back to Quizzes</button>
             </div>
@@ -281,13 +358,13 @@ export default {
             questions: [],
             loading: true,
             error: null,
-            modeSelected: false, // New: tracks if user has selected a mode
+            modeSelected: false,
             currentQuestionIndex: 0,
             selectedOption: '',
             userAnswer: '',
             mathInput: '',
             showAnswer: false,
-            mode: '', // Start empty until user selects
+            mode: '',
             answeredQuestions: [],
             correctAnswers: 0,
             showResults: false,
@@ -297,7 +374,12 @@ export default {
             remainingTime: 0,
             totalTime: 0,
             timerInterval: null,
-            timeExpired: false
+            timeExpired: false,
+            // Multi-part question support
+            splittingQuestion: false,
+            partAnswers: {},
+            partMathInputs: {},
+            partMathEditors: {}
         };
     },
     watch: {
@@ -312,11 +394,17 @@ export default {
             });
         },
         currentQuestionIndex() {
-            // Process MathJax when question changes (important for test mode)
+            this.resetQuestionState();
             this.$nextTick(() => {
-                this.processMathJax();
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise().catch((err) =>
+                        console.warn('MathJax rendering error:', err)
+                    );
+                }
             });
-        }
+
+        },
+
     },
     computed: {
         currentQuestion() {
@@ -325,7 +413,8 @@ export default {
                 question_text: '',
                 answer_options: [],
                 answer_key: null,
-                image_paths: []
+                image_paths: [],
+                questionParts: null
             };
         },
         hasOptions() {
@@ -347,12 +436,24 @@ export default {
             return answerKey.correct_answer || '';
         },
         isCorrect() {
+            if (this.currentQuestion.questionParts) {
+                return this.overallCorrect;
+            }
+
             if (this.hasOptions) {
                 return this.selectedOption === this.correctAnswer;
             } else {
-                // Simple text comparison for free-response questions
                 return this.userAnswer.trim().toLowerCase() === this.correctAnswer.trim().toLowerCase();
             }
+        },
+        overallCorrect() {
+            if (!this.currentQuestion.questionParts) return this.isCorrect;
+
+            return this.currentQuestion.questionParts.every((part, index) => {
+                // If answer is null, it's a "show that" question - always considered correct
+                if (part.answer === null) return true;
+                return this.isPartCorrect(index);
+            });
         },
         isLastQuestion() {
             return this.currentQuestionIndex === this.questions.length - 1;
@@ -369,7 +470,6 @@ export default {
                     ? JSON.parse(this.currentQuestion.answer_key)
                     : this.currentQuestion.answer_key;
 
-                // Process through marked just like the question text
                 return parsed.correct_answer ? marked(parsed.correct_answer) : '';
             } catch {
                 return '';
@@ -380,6 +480,17 @@ export default {
             return Math.round((this.correctAnswers / this.questions.length) * 100);
         },
         canCheckAnswer() {
+            if (this.currentQuestion.questionParts) {
+                // For multi-part questions, check if all required parts have answers
+                return this.currentQuestion.questionParts.every((part, index) => {
+                    // If answer is null, it's a "show that" question - no answer required
+                    if (part.answer === null) return true;
+
+                    // Check if this part has an answer
+                    return this.partAnswers[index] && this.partAnswers[index].trim() !== '';
+                });
+            }
+
             return this.hasOptions ? this.selectedOption !== '' : this.userAnswer.trim() !== '';
         },
         formattedTime() {
@@ -414,7 +525,7 @@ export default {
             this.error = null;
 
             try {
-                // Fetch quiz metadata (includes time_per_question_minutes)
+                // Fetch quiz metadata
                 const metaResponse = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}`);
                 if (!metaResponse.ok) {
                     throw new Error(`Quiz metadata fetch failed: ${metaResponse.status}`);
@@ -431,18 +542,21 @@ export default {
                 const questionsData = await questionsResponse.json();
                 this.questions = questionsData || [];
 
-                // Calculate timer (in seconds)
+                // Auto-split all questions into parts
+                await this.autoSplitAllQuestions();
+
+                // Calculate timer
                 const timePerQuestion = metaData.time_per_question_minutes || 1;
                 this.totalTime = Math.round(timePerQuestion * this.questions.length * 60);
                 this.remainingTime = this.totalTime;
 
-                // Reset quiz state but don't show questions yet
+                // Reset quiz state
                 this.currentQuestionIndex = 0;
                 this.answeredQuestions = [];
                 this.correctAnswers = 0;
                 this.showResults = false;
                 this.timeExpired = false;
-                this.modeSelected = false; // Show mode selection first
+                this.modeSelected = false;
 
             } catch (error) {
                 console.error('❌ Failed to fetch quiz data:', error);
@@ -452,11 +566,125 @@ export default {
             }
         },
 
+        async autoSplitAllQuestions() {
+            console.log('🔄 Auto-splitting all questions...');
+
+            for (let i = 0; i < this.questions.length; i++) {
+                const question = this.questions[i];
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            question_text: question.question_text,
+                            answer_key_text: question.answer_key
+                        })
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log(result)
+
+                        // Only add parts if there are multiple parts
+                        if (result.parts && result.parts.length > 1) {
+                            this.questions[i].questionParts = result.parts;
+                            console.log(`✅ Question ${i + 1} split into ${result.parts.length} parts`);
+                        } else {
+                            console.log(`ℹ️ Question ${i + 1} is single-part`);
+                        }
+                    } else {
+                        console.warn(`⚠️ Failed to split question ${i + 1}`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error splitting question ${i + 1}:`, error);
+                }
+            }
+
+            console.log('✅ Finished auto-splitting questions');
+        },
+
+        async splitIntoparts() {
+            this.splittingQuestion = true;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question_text: this.currentQuestion.question_text,
+                        answer_key_text: this.currentQuestion.answer_key
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to split question parts');
+                }
+
+                const result = await response.json();
+
+                // Update the current question with the split parts
+                this.questions[this.currentQuestionIndex].questionParts = result.parts;
+
+                // Initialize part answers and math editor states
+                this.initializePartAnswers();
+
+                console.log('Question split successfully:', result);
+
+            } catch (error) {
+                console.error('❌ Failed to split question:', error);
+                alert('Failed to split question into parts. Please try again.');
+            } finally {
+                this.splittingQuestion = false;
+            }
+        },
+
+        initializePartAnswers() {
+            const questionIndex = this.currentQuestionIndex;
+
+            if (this.currentQuestion.questionParts) {
+                const newPartAnswers = {};
+                const newPartMathInputs = {};
+                const newPartMathEditors = {};
+
+                this.currentQuestion.questionParts.forEach((part, index) => {
+                    // If answer is null, it's likely a "show that" question
+                    if (part.answer !== null) {
+                        newPartAnswers[index] = '';
+                        newPartMathInputs[index] = '';
+                        newPartMathEditors[index] = false;
+                    }
+                });
+
+                this.partAnswers = { ...this.partAnswers, ...newPartAnswers };
+                this.partMathInputs = { ...this.partMathInputs, ...newPartMathInputs };
+                this.partMathEditors = { ...this.partMathEditors, ...newPartMathEditors };
+            }
+        },
+
+        resetQuestionState() {
+            this.selectedOption = '';
+            this.userAnswer = '';
+            this.mathInput = '';
+            this.showAnswer = false;
+            this.partAnswers = {};
+            this.partMathInputs = {};
+            this.partMathEditors = {};
+
+            // Initialize part answers for multi-part questions
+            if (this.currentQuestion.questionParts) {
+                this.initializePartAnswers();
+            }
+        },
+
         selectMode(selectedMode) {
             this.mode = selectedMode;
             this.modeSelected = true;
 
-            // If learn mode, start immediately. If test mode, show test start screen
             if (selectedMode === 'learn') {
                 this.$nextTick(() => {
                     this.processMathJax();
@@ -465,20 +693,16 @@ export default {
         },
 
         backToModeSelection() {
-            // Clear timer if running
             if (this.timerInterval) {
                 clearInterval(this.timerInterval);
                 this.timerInterval = null;
             }
 
-            // Reset quiz state
             this.modeSelected = false;
             this.mode = '';
             this.timerStarted = false;
+            this.resetQuestionState();
             this.currentQuestionIndex = 0;
-            this.selectedOption = '';
-            this.userAnswer = '';
-            this.showAnswer = false;
             this.answeredQuestions = [];
             this.correctAnswers = 0;
             this.showResults = false;
@@ -489,7 +713,6 @@ export default {
         startTest() {
             this.timerStarted = true;
             this.startTimer();
-            // Process MathJax for the first question when test starts
             this.$nextTick(() => {
                 this.processMathJax();
             });
@@ -501,7 +724,7 @@ export default {
                     this.remainingTime--;
                 } else {
                     this.timeExpired = true;
-                    this.finishQuiz(false); // ⏰ timer expired
+                    this.finishQuiz(false);
                 }
             }, 1000);
         },
@@ -519,6 +742,39 @@ export default {
             this.selectedOption = option;
         },
 
+        selectPartOption(partIndex, option) {
+            if (this.showAnswer && this.mode === 'learn') return;
+            this.partAnswers = { ...this.partAnswers, [partIndex]: option };
+        },
+
+        togglePartMathEditor(partIndex) {
+            this.partMathEditors = { ...this.partMathEditors, [partIndex]: !this.partMathEditors[partIndex] };
+        },
+
+        formatPartText(text) {
+            return text ? marked(text) : '';
+        },
+
+        isPartCorrect(partIndex) {
+            const part = this.currentQuestion.questionParts[partIndex];
+            const userAnswer = this.partAnswers[partIndex];
+
+            // Simple text comparison (you can enhance this logic as needed)
+            return userAnswer && userAnswer.trim().toLowerCase() === part.answer.trim().toLowerCase();
+        },
+
+        getOverallFeedback() {
+            if (!this.currentQuestion.questionParts) return '';
+
+            const totalParts = this.currentQuestion.questionParts.filter(part => part.answer !== null).length;
+            const correctParts = this.currentQuestion.questionParts.filter((part, index) => {
+                if (part.answer === null) return false;
+                return this.isPartCorrect(index);
+            }).length;
+
+            return `${correctParts}/${totalParts} parts correct`;
+        },
+
         checkAnswer() {
             this.showAnswer = true;
 
@@ -530,13 +786,11 @@ export default {
                 }
             }
 
-            // In test mode, automatically move to next question after a brief delay
             if (this.mode === 'test') {
                 setTimeout(() => {
                     this.nextQuestion();
                 }, 500);
             } else {
-                // In learn mode, process MathJax for the answer
                 this.$nextTick(() => {
                     this.processMathJax();
                 });
@@ -545,14 +799,12 @@ export default {
 
         nextQuestion() {
             this.showAnswer = false;
-            this.selectedOption = '';
-            this.userAnswer = '';
+            this.resetQuestionState();
 
             if (this.isLastQuestion) {
                 this.finishQuiz();
             } else {
                 this.currentQuestionIndex++;
-                // Process MathJax for the new question
                 this.$nextTick(() => {
                     this.processMathJax();
                 });
@@ -567,7 +819,6 @@ export default {
             this.showResults = true;
             this.timerStarted = false;
 
-            // ✅ Send completion update if in test mode
             if (this.mode === 'test') {
                 const user = JSON.parse(sessionStorage.getItem('user') || '{}');
                 const payload = {
@@ -594,34 +845,25 @@ export default {
 
         jumpToQuestion(index) {
             if (this.mode === 'test' && !this.answeredQuestions.includes(this.currentQuestionIndex)) {
-                // In test mode, require answering the current question before jumping
                 alert('Please answer the current question before moving to another one.');
                 return;
             }
 
             this.currentQuestionIndex = index;
-            this.showAnswer = false;
-            this.selectedOption = '';
-            this.userAnswer = '';
-
-            // Process MathJax for the new question
+            this.resetQuestionState();
             this.$nextTick(() => {
                 this.processMathJax();
             });
         },
 
         restartQuiz() {
-            // Clear timer
             if (this.timerInterval) {
                 clearInterval(this.timerInterval);
                 this.timerInterval = null;
             }
 
-            // Reset all state
             this.currentQuestionIndex = 0;
-            this.selectedOption = '';
-            this.userAnswer = '';
-            this.showAnswer = false;
+            this.resetQuestionState();
             this.answeredQuestions = [];
             this.correctAnswers = 0;
             this.showResults = false;
@@ -629,7 +871,6 @@ export default {
             this.timeExpired = false;
             this.remainingTime = this.totalTime;
 
-            // Process MathJax for the first question
             this.$nextTick(() => {
                 this.processMathJax();
             });
@@ -640,11 +881,6 @@ export default {
                 clearInterval(this.timerInterval);
             }
             this.$router.push('/quiz-folder');
-        },
-
-        editQuiz() {
-            // Implementation for edit quiz functionality
-            console.log('Edit quiz clicked');
         }
     }
 };
@@ -654,6 +890,196 @@ export default {
 .quiz-view-page {
     font-family: Arial, sans-serif;
     min-height: 100vh;
+}
+
+/* Part Question Text Styling */
+.part-question-text {
+    background-color: #f8f9fa;
+    border-left: 4px solid #66CC99;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0 6px 6px 0;
+}
+
+.part-text-label {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+.part-text-content {
+    line-height: 1.5;
+    color: #555;
+}
+
+.part-answer-controls {
+    width: 100%;
+}
+
+.show-that-section {
+    padding: 1rem;
+    background-color: #f0f8ff;
+    border-radius: 6px;
+    border-left: 4px solid #4285f4;
+}
+
+.show-that-section .part-text {
+    margin: 0;
+    line-height: 1.5;
+    color: #333;
+}
+
+/* Question Header */
+.question-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.split-question-btn {
+    padding: 0.5rem 1rem;
+    background-color: #66CC99;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.split-question-btn:hover {
+    background-color: #4CAF50;
+}
+
+.split-question-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.splitting-loader {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+    font-style: italic;
+}
+
+/* Multi-part Question Styles */
+.multi-part-question {
+    width: 100%;
+}
+
+.main-question-text {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.question-parts {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.question-part {
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 1.5rem;
+    background-color: #fafafa;
+    transition: border-color 0.2s ease;
+}
+
+.question-part:hover {
+    border-color: #66CC99;
+}
+
+.show-that-part {
+    background-color: #f0f8ff;
+    border-color: #b3d9ff;
+}
+
+.part-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.part-label {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #333;
+    margin: 0;
+}
+
+.show-that-badge {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    padding: 0.3rem 0.8rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.part-text {
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+
+.part-answer-section {
+    margin-top: 1rem;
+}
+
+.part-answer-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.part-free-response {
+    width: 100%;
+}
+
+.part-textarea {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 1rem;
+    margin-top: 0.5rem;
+}
+
+.part-answer-feedback {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+}
+
+.part-feedback-message {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+
+.part-feedback-message.correct {
+    color: #4CAF50;
+    background-color: #ebffef;
+}
+
+.part-feedback-message.incorrect {
+    color: #FF4444;
+    background-color: #fff0f0;
+}
+
+.part-correct-answer {
+    margin-top: 0.5rem;
+    color: #333;
 }
 
 /* Mode Selection Screen */
@@ -1030,16 +1456,6 @@ export default {
     cursor: pointer;
 }
 
-.edit-btn {
-    padding: 0.5rem 1rem;
-    background-color: white;
-    color: #66CC99;
-    border: 2px solid #66CC99;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-}
-
 .quiz-controls {
     display: flex;
     justify-content: space-between;
@@ -1316,7 +1732,6 @@ export default {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-
 .math-editor-section h3 {
     margin-bottom: 1rem;
     font-weight: 600;
@@ -1325,22 +1740,21 @@ export default {
 }
 
 .toggle-editor-btn {
-  margin-bottom: 1rem;
-  background: #f8f9fa;
-  border: 1px solid #ccc;
-  color: #333;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background 0.2s ease;
+    margin-bottom: 1rem;
+    background: #f8f9fa;
+    border: 1px solid #ccc;
+    color: #333;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s ease;
 }
 
 .toggle-editor-btn:hover {
-  background: #e6f3ec;
-  border-color: #66CC99;
+    background: #e6f3ec;
+    border-color: #66CC99;
 }
-
 
 @media (max-width: 768px) {
     .mode-options {
@@ -1394,6 +1808,24 @@ export default {
     .results-actions button {
         width: 100%;
         max-width: 300px;
+    }
+
+    .question-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .split-question-btn {
+        align-self: flex-end;
+    }
+
+    .question-parts {
+        gap: 1.5rem;
+    }
+
+    .question-part {
+        padding: 1rem;
     }
 }
 </style>
