@@ -1055,7 +1055,9 @@ router.post("/image_to_s3", upload.single("image"), async (req, res) => {
     const { paper_name, question_number } = req.body;
 
     if (!file || !paper_name) {
-      return res.status(400).json({ error: "Missing required image or paper_name" });
+      return res
+        .status(400)
+        .json({ error: "Missing required image or paper_name" });
     }
 
     const extension = path.extname(file.originalname) || ".png";
@@ -1076,12 +1078,81 @@ router.post("/image_to_s3", upload.single("image"), async (req, res) => {
       })
     );
 
-    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(s3Key)}`;
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
+      process.env.S3_REGION
+    }.amazonaws.com/${encodeURIComponent(s3Key)}`;
 
     res.json({ imageUrl });
   } catch (err) {
     console.error("❌ Failed to upload image to S3:", err);
     res.status(500).json({ error: "Upload to S3 failed", detail: err.message });
+  }
+});
+
+router.post("/gemini/split-question-parts", async (req, res) => {
+  const { question_text, answer_key_text } = req.body;
+
+  if (!question_text || !answer_key_text) {
+    return res
+      .status(400)
+      .json({ error: "Missing question_text or answer_key_text" });
+  }
+
+  try {
+    const prompt = `
+You are helping to parse a mathematics question and its answer key into structured sub-questions.
+
+RULES:
+- Split the full question into logical parts, e.g., (a), (b), (a)(i), (ii), etc.
+- Each sub-part must have:
+  - "part_label" like "(a)", "(i)", "(b)", etc.
+  - "text": the actual question text for that part.
+  - "answer": match this part with the corresponding portion of the answer_key_text.
+- If a part is a "show that", "prove that", or similar (where the student is expected to derive a result), DO NOT include an answer field.
+- The answer_key_text may include answers for parts (a), (b), (c), etc. Match accurately.
+
+Return a JSON array like:
+[
+  {
+    "part_label": "(a)",
+    "text": "...",
+    "answer": "..."
+  },
+  {
+    "part_label": "(b)",
+    "text": "...",
+    "answer": "..."
+  },
+  {
+    "part_label": "(c)(i)",
+    "text": "Show that ...",
+    "answer": null
+  }
+]
+
+QUESTION:
+${question_text}
+
+ANSWER KEY:
+${answer_key_text}
+
+Return only valid JSON, no markdown, no extra commentary.
+`;
+
+    const result = await model.generateContent([{ text: prompt }]);
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // Strip possible code block markers
+    const cleaned = raw.replace(/^```json\s*|```\s*$/g, "").trim();
+
+    const parsed = JSON.parse(cleaned);
+    return res.json({ parts: parsed });
+  } catch (err) {
+    console.error("❌ Gemini question splitting error:", err.message);
+    return res
+      .status(500)
+      .json({ error: "Failed to process with Gemini", detail: err.message });
   }
 });
 
