@@ -1158,4 +1158,57 @@ Return only valid JSON, no markdown, no extra commentary.
   }
 });
 
+router.post("/gemini/check-answer-similarity", async (req, res) => {
+  const { user_answer, correct_answer, question_context } = req.body;
+
+  if (!user_answer || !correct_answer) {
+    return res
+      .status(400)
+      .json({ error: "Missing user_answer or correct_answer" });
+  }
+
+  const prompt = `Compare the student's answer with the correct answer in a math context.
+- Ignore superficial differences like whitespace or formatting.
+- Focus on whether the student logically gave the correct final result.
+- Be tolerant of equivalent expressions.
+- Use the question context to disambiguate notation if needed.
+
+Respond in JSON format:
+{
+  "is_correct": true/false,
+  "similarity": 0.0 to 1.0,
+  "explanation": "short reason"
+}
+
+QUESTION: ${question_context || "N/A"}
+STUDENT ANSWER: ${user_answer}
+CORRECT ANSWER: ${correct_answer}`;
+
+  try {
+    const result = await model.generateContent([{ text: prompt }]);
+    const output =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    const jsonMatch = output.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No valid JSON block found in Gemini response.");
+    }
+    const json = JSON.parse(jsonMatch[0]);
+
+    res.json({
+      is_correct: json.is_correct,
+      similarity: json.similarity,
+      explanation: json.explanation,
+    });
+  } catch (err) {
+    console.error("❌ Gemini similarity check failed:", err);
+    res
+      .status(500)
+      .json({
+        error: "Failed to evaluate answer similarity",
+        details: err.message,
+      });
+  }
+});
+
 module.exports = router;

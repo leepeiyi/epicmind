@@ -213,49 +213,40 @@
 
                         <div class="question-parts">
                             <div v-for="(part, partIndex) in currentQuestion.questionParts" :key="partIndex"
-                                class="question-part" :class="{ 'show-that-part': part.requiresAnswer === false }">
+                                class="question-part" :class="{ 'show-that-part': part.answer === null }">
 
                                 <div class="part-header">
-                                    <h4 class="part-label">{{ part.partLabel }}</h4>
-                                    <span v-if="part.requiresAnswer === false" class="show-that-badge">Show that</span>
+                                    <h4 class="part-label">{{ part.part_label }}</h4>
+                                    <span v-if="part.answer === null" class="show-that-badge">Show that</span>
                                 </div>
 
-                                <div class="part-text" v-html="formatPartText(part.partText)"></div>
-
                                 <!-- Answer input for parts that require answers -->
-                                <div v-if="part.requiresAnswer !== false" class="part-answer-section">
-                                    <div v-if="part.hasOptions" class="part-answer-options">
-                                        <div v-for="option in part.answerOptions" :key="option.option" :class="[
-                                            'answer-option',
-                                            { 'selected': partAnswers[partIndex] === option.option },
-                                            { 'correct': showAnswer && option.option === part.correctAnswer },
-                                            { 'incorrect': showAnswer && partAnswers[partIndex] === option.option && option.option !== part.correctAnswer }
-                                        ]" @click="selectPartOption(partIndex, option.option)">
-                                            <span class="option-label">{{ option.option }}</span>
-                                            <span class="option-text" v-html="option.text"></span>
-                                        </div>
+                                <div v-if="part.answer !== null" class="part-answer-section">
+                                    <div class="part-question-text">
+                                        <div class="part-text-content" v-html="formatPartText(part.text)"></div>
                                     </div>
-
-                                    <div v-else class="part-free-response">
-                                        <h5 v-html="part.text"></h5>
+                                    
+                                    <div class="part-answer-controls">
                                         <button @click="togglePartMathEditor(partIndex)" class="toggle-editor-btn">
-                                            {{ partMathEditors[partIndex] ? 'Hide Math Editor ✖️' : 'Show Math Editor✍️' }}
+                                            {{ partMathEditors[partIndex] ? 'Hide Math Editor ✖️' : 'Show Math Editor ✍️' }}
                                         </button>
 
                                         <div v-if="partMathEditors[partIndex]" class="math-editor-section">
                                             <MathEditor v-model="partMathInputs[partIndex]" />
                                         </div>
 
-                                        <textarea v-model="partAnswers[partIndex]"
-                                            :placeholder="`Enter your answer for part ${part.part_label}...`"
-                                            :disabled="showAnswer" rows="3" class="part-textarea"></textarea>
+                                        <textarea 
+                                            v-model="partAnswers[partIndex]" 
+                                            :placeholder="`Enter your answer for ${part.part_label}...`" 
+                                            :disabled="showAnswer"
+                                            rows="3"
+                                            class="part-textarea"></textarea>
                                     </div>
 
                                     <!-- Show correct answer for this part in learn mode -->
                                     <div v-if="showAnswer && mode === 'learn'" class="part-answer-feedback">
-                                        <div
-                                            :class="['part-feedback-message', isPartCorrect(partIndex) ? 'correct' : 'incorrect']">
-                                            <span v-if="isPartCorrect(partIndex)">✓ Correct!</span>
+                                        <div :class="['part-feedback-message', (partResults && partResults[partIndex]) ? 'correct' : 'incorrect']">
+                                            <span v-if="partResults && partResults[partIndex]">✓ Correct!</span>
                                             <span v-else>✗ Incorrect</span>
                                         </div>
                                         <div class="part-correct-answer">
@@ -263,6 +254,11 @@
                                             <div v-html="formatPartText(part.answer)"></div>
                                         </div>
                                     </div>
+                                </div>
+                                
+                                <!-- Show that parts - just display the text -->
+                                <div v-else class="show-that-section">
+                                    <div class="part-text" v-html="formatPartText(part.text)"></div>
                                 </div>
                             </div>
                         </div>
@@ -379,7 +375,10 @@ export default {
             splittingQuestion: false,
             partAnswers: {},
             partMathInputs: {},
-            partMathEditors: {}
+            partMathEditors: {},
+            // Answer checking results
+            currentAnswerResult: null,
+            partResults: []
         };
     },
     watch: {
@@ -402,9 +401,7 @@ export default {
                     );
                 }
             });
-
         },
-
     },
     computed: {
         currentQuestion() {
@@ -436,24 +433,11 @@ export default {
             return answerKey.correct_answer || '';
         },
         isCorrect() {
-            if (this.currentQuestion.questionParts) {
-                return this.overallCorrect;
-            }
-
-            if (this.hasOptions) {
-                return this.selectedOption === this.correctAnswer;
-            } else {
-                return this.userAnswer.trim().toLowerCase() === this.correctAnswer.trim().toLowerCase();
-            }
+            // This will be updated in checkAnswer method with async results
+            return this.currentAnswerResult?.isCorrect || false;
         },
         overallCorrect() {
-            if (!this.currentQuestion.questionParts) return this.isCorrect;
-
-            return this.currentQuestion.questionParts.every((part, index) => {
-                // If answer is null, it's a "show that" question - always considered correct
-                if (part.answer === null) return true;
-                return this.isPartCorrect(index);
-            });
+            return this.currentAnswerResult?.isCorrect || false;
         },
         isLastQuestion() {
             return this.currentQuestionIndex === this.questions.length - 1;
@@ -569,8 +553,10 @@ export default {
         async autoSplitAllQuestions() {
             console.log('🔄 Auto-splitting all questions...');
 
-            for (let i = 0; i < this.questions.length; i++) {
-                const question = this.questions[i];
+            const updatedQuestions = [...this.questions];
+
+            for (let i = 0; i < updatedQuestions.length; i++) {
+                const question = updatedQuestions[i];
 
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
@@ -586,11 +572,13 @@ export default {
 
                     if (response.ok) {
                         const result = await response.json();
-                        console.log(result)
 
                         // Only add parts if there are multiple parts
                         if (result.parts && result.parts.length > 1) {
-                            this.questions[i].questionParts = result.parts;
+                            updatedQuestions[i] = {
+                                ...updatedQuestions[i],
+                                questionParts: result.parts
+                            };
                             console.log(`✅ Question ${i + 1} split into ${result.parts.length} parts`);
                         } else {
                             console.log(`ℹ️ Question ${i + 1} is single-part`);
@@ -603,43 +591,80 @@ export default {
                 }
             }
 
+            // Update the reactive questions array
+            this.questions = updatedQuestions;
             console.log('✅ Finished auto-splitting questions');
         },
 
-        async splitIntoparts() {
-            this.splittingQuestion = true;
-
+        async checkAnswerWithGemini(userAnswer, correctAnswer, questionText = '') {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/check-answer-similarity`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        question_text: this.currentQuestion.question_text,
-                        answer_key_text: this.currentQuestion.answer_key
+                        user_answer: userAnswer,
+                        correct_answer: correctAnswer,
+                        question_context: questionText
                     })
                 });
 
-                if (!response.ok) {
-                    throw new Error('Failed to split question parts');
+                if (response.ok) {
+                    const result = await response.json();
+                    return {
+                        isCorrect: result.is_correct || false,
+                        similarity: result.similarity || 0,
+                        explanation: result.explanation || ''
+                    };
+                } else {
+                    console.warn('Failed to check answer with Gemini, falling back to basic comparison');
+                    return this.basicAnswerCheck(userAnswer, correctAnswer);
                 }
-
-                const result = await response.json();
-
-                // Update the current question with the split parts
-                this.questions[this.currentQuestionIndex].questionParts = result.parts;
-
-                // Initialize part answers and math editor states
-                this.initializePartAnswers();
-
-                console.log('Question split successfully:', result);
-
             } catch (error) {
-                console.error('❌ Failed to split question:', error);
-                alert('Failed to split question into parts. Please try again.');
-            } finally {
-                this.splittingQuestion = false;
+                console.error('Error checking answer with Gemini:', error);
+                return this.basicAnswerCheck(userAnswer, correctAnswer);
+            }
+        },
+
+        basicAnswerCheck(userAnswer, correctAnswer) {
+            // Fallback basic comparison
+            const cleanUser = userAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+            const cleanCorrect = correctAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+            return {
+                isCorrect: cleanUser === cleanCorrect,
+                similarity: cleanUser === cleanCorrect ? 1 : 0,
+                explanation: 'Basic text comparison'
+            };
+        },
+
+        async isPartCorrect(partIndex) {
+            const part = this.currentQuestion.questionParts[partIndex];
+            const userAnswer = this.partAnswers[partIndex];
+            
+            if (!userAnswer || !part.answer) return false;
+            
+            // Use Gemini for intelligent answer checking
+            const checkResult = await this.checkAnswerWithGemini(
+                userAnswer, 
+                part.answer, 
+                part.text
+            );
+            
+            return checkResult.isCorrect;
+        },
+
+        async checkSingleQuestionAnswer() {
+            if (this.hasOptions) {
+                return this.selectedOption === this.correctAnswer;
+            } else {
+                // Use Gemini for free-response questions
+                const checkResult = await this.checkAnswerWithGemini(
+                    this.userAnswer,
+                    this.correctAnswer,
+                    this.currentQuestion.question_text
+                );
+                return checkResult.isCorrect;
             }
         },
 
@@ -674,11 +699,15 @@ export default {
             this.partAnswers = {};
             this.partMathInputs = {};
             this.partMathEditors = {};
+            this.currentAnswerResult = null;
+            this.partResults = [];
 
             // Initialize part answers for multi-part questions
-            if (this.currentQuestion.questionParts) {
-                this.initializePartAnswers();
-            }
+            this.$nextTick(() => {
+                if (this.currentQuestion.questionParts) {
+                    this.initializePartAnswers();
+                }
+            });
         },
 
         selectMode(selectedMode) {
@@ -755,33 +784,56 @@ export default {
             return text ? marked(text) : '';
         },
 
-        isPartCorrect(partIndex) {
-            const part = this.currentQuestion.questionParts[partIndex];
-            const userAnswer = this.partAnswers[partIndex];
-
-            // Simple text comparison (you can enhance this logic as needed)
-            return userAnswer && userAnswer.trim().toLowerCase() === part.answer.trim().toLowerCase();
-        },
-
         getOverallFeedback() {
-            if (!this.currentQuestion.questionParts) return '';
-
-            const totalParts = this.currentQuestion.questionParts.filter(part => part.answer !== null).length;
-            const correctParts = this.currentQuestion.questionParts.filter((part, index) => {
-                if (part.answer === null) return false;
-                return this.isPartCorrect(index);
-            }).length;
-
-            return `${correctParts}/${totalParts} parts correct`;
+            if (!this.currentQuestion.questionParts || !this.partResults) return '';
+            
+            // Count only parts that require answers (exclude "show that" parts)
+            let correctCount = 0;
+            let totalCount = 0;
+            
+            this.currentQuestion.questionParts.forEach((part, index) => {
+                if (part.answer !== null) {  // Only count parts that require answers
+                    totalCount++;
+                    if (this.partResults[index] === true) {
+                        correctCount++;
+                    }
+                }
+            });
+            
+            return `${correctCount}/${totalCount} parts correct`;
         },
 
-        checkAnswer() {
+        async checkAnswer() {
             this.showAnswer = true;
+            let isCorrect = false;
+
+            // Check answer based on question type
+            if (this.currentQuestion.questionParts) {
+                // Multi-part question - check all parts
+                const partResults = [];
+                for (let i = 0; i < this.currentQuestion.questionParts.length; i++) {
+                    const part = this.currentQuestion.questionParts[i];
+                    if (part.answer !== null) {
+                        const partCorrect = await this.isPartCorrect(i);
+                        partResults.push(partCorrect);
+                    } else {
+                        partResults.push(true); // "Show that" parts are always correct
+                    }
+                }
+                isCorrect = partResults.every(result => result === true);
+                this.partResults = partResults; // Store for individual feedback
+            } else {
+                // Single question
+                isCorrect = await this.checkSingleQuestionAnswer();
+            }
+
+            // Store the result for reactive updates
+            this.currentAnswerResult = { isCorrect };
 
             if (!this.answeredQuestions.includes(this.currentQuestionIndex)) {
                 this.answeredQuestions.push(this.currentQuestionIndex);
 
-                if (this.isCorrect) {
+                if (isCorrect) {
                     this.correctAnswers++;
                 }
             }
@@ -896,8 +948,8 @@ export default {
 .part-question-text {
     background-color: #f8f9fa;
     border-left: 4px solid #66CC99;
-    padding: 1rem;
-    margin-bottom: 1rem;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
     border-radius: 0 6px 6px 0;
 }
 
@@ -909,7 +961,7 @@ export default {
 }
 
 .part-text-content {
-    line-height: 1.5;
+    line-height: 1;
     color: #555;
 }
 
@@ -918,7 +970,7 @@ export default {
 }
 
 .show-that-section {
-    padding: 1rem;
+    padding: 0.3cqi;
     background-color: #f0f8ff;
     border-radius: 6px;
     border-left: 4px solid #4285f4;
@@ -926,7 +978,7 @@ export default {
 
 .show-that-section .part-text {
     margin: 0;
-    line-height: 1.5;
+    line-height: 1;
     color: #333;
 }
 
@@ -936,27 +988,6 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
-}
-
-.split-question-btn {
-    padding: 0.5rem 1rem;
-    background-color: #66CC99;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-    transition: background-color 0.2s ease;
-}
-
-.split-question-btn:hover {
-    background-color: #4CAF50;
-}
-
-.split-question-btn:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
 }
 
 .splitting-loader {
@@ -1368,15 +1399,8 @@ export default {
 }
 
 @keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.7;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 
 .timer-text {
@@ -1814,10 +1838,6 @@ export default {
         flex-direction: column;
         align-items: flex-start;
         gap: 1rem;
-    }
-
-    .split-question-btn {
-        align-self: flex-end;
     }
 
     .question-parts {
