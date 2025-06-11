@@ -44,8 +44,7 @@
             <div v-if="filteredPapers.length" class="all-papers">
                 <h3>📚 All Papers ({{ filteredPapers.length }})</h3>
                 <div class="papers-grid">
-                    <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card"
-                        @click="loadPaper(paper.paper_name)">
+                    <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card">
                         <div class="paper-card-header">
                             <span class="paper-name">{{ paper.paper_name }}</span>
                             <span v-if="paper.topic_label" class="paper-topic">{{ paper.topic_label }}</span>
@@ -59,6 +58,12 @@
                             <span class="question-count">{{ paper.question_count || 0 }} questions</span>
                             <span class="upload-time">{{ new Date(paper.last_uploaded).toLocaleDateString() }}</span>
                         </div>
+                        <div class="paper-actions"
+                            style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button @click="loadPaper(paper.paper_name)" class="action-btn">✏️ Edit</button>
+                            <button @click="printQuiz(paper)" class="action-btn">🖨️ Print</button>
+                        </div>
+
                     </div>
                 </div>
 
@@ -139,6 +144,7 @@
 import Navbar from '../components/Navbar.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
+import PrintView from '../components/PrintView.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 
@@ -147,7 +153,8 @@ export default {
     components: {
         Navbar,
         LatexConverter,
-        ImageUploader
+        ImageUploader,
+        PrintView
     },
     data() {
         return {
@@ -200,6 +207,9 @@ export default {
             const start = (this.currentPage - 1) * this.itemsPerPage;
             const end = start + this.itemsPerPage;
             return this.filteredPapers.slice(start, end);
+        },
+        paperName() {
+            return this.$route.query.paper_name;
         }
     },
     async mounted() {
@@ -318,6 +328,26 @@ export default {
                 alert('Failed to load paper content. Please try again.');
             }
         },
+        viewQuiz(paperName) {
+            this.$router.push({
+                name: 'QuizView',
+                query: { paper_name: paperName }
+            });
+        },
+        printQuiz(paper) {
+            this.$router.push({
+                path: '/print-view',
+                query: {
+                    paper_name: paper.paper_name,
+                    subject: paper.subject,
+                    level: paper.level,
+                    banding: paper.banding,
+                    topic_label: paper.topic_label
+                }
+            });
+        }
+
+        ,
 
         closeEditor() {
             this.markdownContent = '';
@@ -692,6 +722,22 @@ export default {
     animation: spin 1s linear infinite;
     margin-bottom: 1rem;
 }
+
+.action-btn {
+    background-color: #f1f3f5;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.action-btn:hover {
+    background-color: #e3fcef;
+    border-color: #66CC99;
+}
+
 
 @keyframes spin {
     to {
