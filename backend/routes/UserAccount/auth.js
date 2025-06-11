@@ -6,7 +6,8 @@ const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const SibApiV3Sdk = require("sib-api-v3-sdk");
+const SibApiV3Sdk = require("sib-api-v3-sdk"); 
+const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:5008";
 
 const client = new Client({
   host: process.env.DB_HOST,
@@ -103,7 +104,7 @@ router.post("/forgot-password", async (req, res) => {
       [token, expires, email]
     );
 
-    const resetLink = `${process.env.RESET_PASSWORD_URL}?token=${token}`;
+    const resetLink = `${API_BASE_URL}/reset-password?token=${token}`;
 
     const defaultClient = SibApiV3Sdk.ApiClient.instance;
     defaultClient.authentications["api-key"].apiKey = process.env.BREVO_API_KEY;
