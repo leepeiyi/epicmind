@@ -12,7 +12,6 @@
 <script>
 import API_BASE_URL from '../config/api.js';
 
-
 export default {
     name: 'FavoriteButton',
     props: {
@@ -51,9 +50,29 @@ export default {
         await this.checkFavoriteStatus();
     },
     methods: {
+        getUserId() {
+            const userStr = sessionStorage.getItem('user');
+            if (!userStr) return null;
+
+            try {
+                const user = JSON.parse(userStr);
+                return user.id;
+            } catch (e) {
+                console.error('❌ Failed to parse session user:', e);
+                return null;
+            }
+        },
+
         async checkFavoriteStatus() {
             try {
+                const userId = this.getUserId();
+                if (!userId) {
+                    console.log('No user logged in, skipping favorite status check');
+                    return;
+                }
+
                 const params = new URLSearchParams({
+                    user_id: userId, // ✅ Added the missing user_id parameter
                     question_id: this.questionId,
                     subject: this.subject,
                     banding: this.banding,
@@ -70,21 +89,11 @@ export default {
                 if (response.ok) {
                     const data = await response.json();
                     this.isFavorited = data.is_favorited;
+                } else {
+                    console.error('❌ Failed to check favorite status:', response.status);
                 }
             } catch (error) {
                 console.error('❌ Error checking favorite status:', error);
-            }
-        },
-        getUserId() {
-            const userStr = sessionStorage.getItem('user');
-            if (!userStr) return null;
-
-            try {
-                const user = JSON.parse(userStr);
-                return user.id;
-            } catch (e) {
-                console.error('❌ Failed to parse session user:', e);
-                return null;
             }
         },
 
@@ -93,11 +102,6 @@ export default {
 
             this.loading = true;
             try {
-                const url = this.isFavorited
-                    ? `${API_BASE_URL}/api/favourite/remove-question`
-                    : `${API_BASE_URL}/api/favourite/add-question`;
-
-                const method = this.isFavorited ? 'DELETE' : 'POST';
                 const userId = this.getUserId();
                 if (!userId) {
                     alert("User not logged in or session expired.");
@@ -105,6 +109,11 @@ export default {
                     return;
                 }
 
+                const url = this.isFavorited
+                    ? `${API_BASE_URL}/api/favourite/remove-question`
+                    : `${API_BASE_URL}/api/favourite/add-question`;
+
+                const method = this.isFavorited ? 'DELETE' : 'POST';
 
                 const response = await fetch(url, {
                     method: method,
@@ -120,8 +129,6 @@ export default {
                         level: this.level,
                         topic_label: this.topicLabel
                     })
-
-
                 });
 
                 if (response.ok) {
@@ -133,7 +140,9 @@ export default {
                         isFavorited: this.isFavorited
                     });
                 } else {
-                    throw new Error('Failed to update favorite status');
+                    const errorData = await response.json();
+                    console.error('❌ Server error:', errorData);
+                    throw new Error(errorData.error || 'Failed to update favorite status');
                 }
             } catch (error) {
                 console.error('❌ Error toggling favorite:', error);

@@ -203,7 +203,7 @@
                                 </div>
                                 <div class="assignment-meta">
                                     <span class="assigned-date">Assigned: {{ formatDate(assignment.assigned_at)
-                                        }}</span>
+                                    }}</span>
                                     <span v-if="assignment.completed" class="completion-info">
                                         <span class="completion-date">Completed: {{
                                             formatDate(assignment.completion_date) }}</span>
@@ -231,53 +231,10 @@
         </div>
 
         <!-- Assignment Modal -->
-        <div v-if="showAssignModal" class="modal-overlay">
-            <div class="modal-container">
-                <div class="modal-header">
-                    <h3>Assign Quiz to Students</h3>
-                    <button class="close-btn" @click="closeAssignModal">×</button>
-                </div>
+        <!-- Reusable Assign Quiz Modal -->
+        <AssignQuizModal :show="showAssignModal" :quiz-id="selectedQuizId" @close="closeAssignModal"
+            @assignments-saved="handleAssignmentsSaved" />
 
-                <div class="modal-body">
-                    <div class="search-container">
-                        <input type="text" v-model="assignSearchQuery" placeholder="Search students by name..."
-                            class="student-search" />
-                    </div>
-
-                    <div v-if="assignLoading" class="loading-indicator">
-                        <p>Loading students...</p>
-                    </div>
-
-                    <div v-else-if="assignError" class="error-message">
-                        <p>{{ assignError }}</p>
-                        <button @click="fetchStudentsForAssignment" class="retry-btn">Try Again</button>
-                    </div>
-
-                    <div v-else-if="filteredAssignStudents.length === 0" class="empty-state">
-                        <p v-if="assignSearchQuery">No students match your search. Try a different search term.</p>
-                        <p v-else>No students found. You need to have students to assign quizzes.</p>
-                    </div>
-
-                    <div v-else class="student-list">
-                        <div v-for="student in filteredAssignStudents" :key="student.id" class="student-item">
-                            <label class="checkbox-container">
-                                <input type="checkbox" :checked="isStudentAssigned(student.id)"
-                                    @change="toggleAssignment(student.id)" />
-                                <span class="student-name">{{ student.name }}</span>
-                                <span class="student-email">{{ student.email }}</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="modal-footer">
-                    <button class="cancel-btn" @click="closeAssignModal">Cancel</button>
-                    <button class="save-btn" @click="saveAssignments" :disabled="savingAssignments">
-                        {{ savingAssignments ? 'Saving...' : 'Save Assignments' }}
-                    </button>
-                </div>
-            </div>
-        </div>
         <!-- Timer Modal -->
         <div v-if="showTimerModal" class="modal-overlay">
             <div class="modal-container">
@@ -312,10 +269,12 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import API_BASE_URL from '../config/api.js';
+import AssignQuizModal from '../components/AssignQuiz.vue';
+
 
 export default {
     name: 'QuizFolder',
-    components: { Navbar },
+    components: { Navbar, AssignQuizModal },
     data() {
         return {
             // Quiz list data
@@ -345,17 +304,6 @@ export default {
             addingStudent: false,
             teacherEmail: null,
 
-            // Quiz assignment data
-            showAssignModal: false,
-            activeQuizId: null,
-            assignedStudentIds: [],
-            newAssignments: [],
-            removedAssignments: [],
-            assignSearchQuery: '',
-            assignLoading: false,
-            assignError: null,
-            savingAssignments: false,
-
             // Available students data
             availableStudents: [],
             availableStudentSearch: '',
@@ -380,6 +328,10 @@ export default {
             timerQuestionCount: 0,
             timerQuizId: null,
             savingTimer: false,
+
+            showAssignModal: false,
+            selectedQuizId: null,
+
 
         };
     },
@@ -442,6 +394,14 @@ export default {
         window.removeEventListener('storage', this.getUserFromSession);
     },
     methods: {
+        openAssignModal(quizId) {
+            this.selectedQuizId = quizId;
+            this.showAssignModal = true;
+        },
+        handleAssignmentsSaved() {
+            this.showAssignModal = false;
+            this.refreshQuizList?.(); // optional, if you want to refresh the list
+        },
         getUserFromSession() {
             const userStr = sessionStorage.getItem('user');
             if (userStr) {
@@ -921,19 +881,7 @@ export default {
         },
 
         // QUIZ ASSIGNMENT METHODS
-        assignQuiz(quizId) {
-            this.activeQuizId = quizId;
-            this.showAssignModal = true;
-            this.activeDropdown = null; // Close the dropdown
 
-            // If we haven't loaded students yet, load them now
-            if (this.students.length === 0) {
-                this.fetchStudents();
-            }
-
-            // Fetch current assignments for this quiz
-            this.fetchAssignments(quizId);
-        },
         async setQuiz(quizId) {
             this.activeDropdown = null;
             this.timerQuizId = quizId;
@@ -990,148 +938,21 @@ export default {
             }
         }
         ,
-
-        async fetchAssignments(quizId) {
-            this.assignLoading = true;
-            this.assignError = null;
-
-            try {
-                // Fetch current assignments for this quiz
-                const response = await fetch(`${API_BASE_URL}/api/quiz/${quizId}/assignments`, {
-                    headers: {
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch quiz assignments');
-                }
-
-                const data = await response.json();
-                this.assignedStudentIds = data.assignments.map(a => a.student_id) || [];
-
-                // Reset tracking arrays when we load fresh data
-                this.newAssignments = [];
-                this.removedAssignments = [];
-            } catch (err) {
-                console.error('Failed to fetch assignments:', err);
-                this.assignError = err.message || 'Could not load assignments';
-            } finally {
-                this.assignLoading = false;
-            }
+        assignQuiz(quizId) {
+            this.selectedQuizId = quizId;
+            this.showAssignModal = true;
+            this.activeDropdown = null;
         },
 
-        async fetchStudentsForAssignment() {
-            // Same as fetchStudents but updates assign-specific loading states
-            if (!this.userId || this.userRole !== 'teacher') return;
-
-            this.assignLoading = true;
-            this.assignError = null;
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
-                    headers: {
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch students');
-                }
-
-                const data = await response.json();
-                this.students = data.students || [];
-            } catch (err) {
-                console.error('❌ Failed to fetch students:', err);
-                this.assignError = err.message || 'Could not load students. Please try again.';
-            } finally {
-                this.assignLoading = false;
-            }
-        },
-
-        isStudentAssigned(studentId) {
-            // Check if student is in the assigned list and not in the removed list,
-            // or if they're in the new assignments list
-            return (
-                (this.assignedStudentIds.includes(studentId) &&
-                    !this.removedAssignments.includes(studentId)) ||
-                this.newAssignments.includes(studentId)
-            );
-        },
-
-        toggleAssignment(studentId) {
-            if (this.isStudentAssigned(studentId)) {
-                // If currently assigned, track for removal
-                if (this.assignedStudentIds.includes(studentId)) {
-                    // Only add to removedAssignments if it was already assigned
-                    if (!this.removedAssignments.includes(studentId)) {
-                        this.removedAssignments.push(studentId);
-                    }
-                }
-
-                // Remove from newAssignments if it was just added
-                const newIndex = this.newAssignments.indexOf(studentId);
-                if (newIndex !== -1) {
-                    this.newAssignments.splice(newIndex, 1);
-                }
-            } else {
-                // If not currently assigned, track for addition
-                if (!this.newAssignments.includes(studentId)) {
-                    this.newAssignments.push(studentId);
-                }
-
-                // Remove from removedAssignments if it was marked for removal
-                const removeIndex = this.removedAssignments.indexOf(studentId);
-                if (removeIndex !== -1) {
-                    this.removedAssignments.splice(removeIndex, 1);
-                }
-            }
-        },
-
-        async saveAssignments() {
-            if (!this.activeQuizId) return;
-
-            this.savingAssignments = true;
-
-            try {
-                // Save the assignments
-                const response = await fetch(`${API_BASE_URL}/api/quiz/${this.activeQuizId}/assignments`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                    },
-                    body: JSON.stringify({
-                        teacher_id: this.userId,
-                        add_student_ids: this.newAssignments,
-                        remove_student_ids: this.removedAssignments
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to save assignments');
-                }
-
-                alert('Quiz assignments saved successfully!');
-
-                // Close the modal on success
-                this.closeAssignModal();
-            } catch (err) {
-                console.error('Failed to save assignments:', err);
-                alert(err.message || 'Failed to save assignments. Please try again.');
-            } finally {
-                this.savingAssignments = false;
-            }
+        handleAssignmentsSaved() {
+            this.showAssignModal = false;
+            this.fetchQuizFolders(); // Optional refresh
         },
 
         closeAssignModal() {
             this.showAssignModal = false;
-            this.activeQuizId = null;
-            this.assignedStudentIds = [];
-            this.newAssignments = [];
-            this.removedAssignments = [];
-            this.assignSearchQuery = '';
-        }
+            this.selectedQuizId = null;
+        },
     },
     watch: {
         // When student management section is shown, fetch students
