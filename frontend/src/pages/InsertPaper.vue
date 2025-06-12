@@ -182,8 +182,9 @@ export default {
     },
     computed: {
         compiledMarkdown() {
-            return marked(this.markdownContent || '');
-        },
+            const safeContent = this.escapeLatexInMarkdown(this.markdownContent || '');
+            return marked(safeContent);
+        }
     },
     async mounted() {
         try {
@@ -217,6 +218,10 @@ export default {
     },
     methods: {
         // Configure MathJax for LaTeX rendering
+        escapeLatexInMarkdown(md) {
+            return md.replace(/\\(?!\\)/g, '\\\\');
+        }
+        ,
         configureMathJax() {
             window.MathJax = {
                 tex: {
@@ -363,6 +368,11 @@ export default {
 
                 console.log(`Loaded recent paper: ${this.form.uploadType}`);
 
+                const needsLabeling = data.questions.some(q => {
+                    return !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === '';
+                });
+
+
                 // 🧠 Step 1: Add topic labels (only if exam type)
                 let labeledQuestions = data.questions.map(q => ({
                     question_number: q.question_number,
@@ -371,7 +381,9 @@ export default {
 
                 console.log(data.questions);
                 console.log(labeledQuestions)
-                if (this.form.uploadType === 'exam') {
+                console.log('Needs labeling:', needsLabeling);
+
+                if (this.form.uploadType === 'exam' && needsLabeling) {
                     const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
