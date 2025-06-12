@@ -13,6 +13,7 @@ import PaperLogs from "../pages/PaperLogs.vue";
 import AllPapersEdit from "../pages/AllPapersEdit.vue";
 import Favourites from "../pages/Favourites.vue";
 import Mathstery from "../pages/Mathstery.vue";
+import CompletionLogs from "../pages/CompletionLogs.vue";
 
 const routes = [
   {
@@ -104,6 +105,12 @@ const routes = [
     name: "Mathstery",
     component: Mathstery,
     meta: { requiresAuth: true },
+  },
+  {
+    path: "/completion-logs",
+    name: "CompletionLogs",
+    component: CompletionLogs,
+    meta: { requiresAuth: true, requiresRole: "teacher" },
   },
 ];
 
