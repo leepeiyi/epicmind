@@ -1,4 +1,4 @@
-export const mathTopicsData = {
+const mathTopicsData = {
     mathSec1: [
         { label: "01 Factors and Multiples", description: "• Prime factorisation\n• Finding HCF and LCM using factor trees\n• Multiples and divisibility rules" },
         { label: "02 Real Numbers", description: "• Types of numbers: integers, rational, irrational\n• Number line and ordering\n• Absolute value" },
@@ -81,3 +81,5 @@ export const mathTopicsData = {
         { label: "11 Plane Geometry", description: "• Geometrical proofs using triangle and circle properties (e.g., tangent-chord theorem)." },
     ],
 };
+
+module.exports = mathTopicsData;

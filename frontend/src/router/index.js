@@ -12,6 +12,7 @@ import PrintView from "../components/PrintView.vue";
 import PaperLogs from "../pages/PaperLogs.vue";
 import AllPapersEdit from "../pages/AllPapersEdit.vue";
 import Favourites from "../pages/Favourites.vue";
+import Mathstery from "../pages/Mathstery.vue";
 
 const routes = [
   {
@@ -96,6 +97,12 @@ const routes = [
     path: "/favourites",
     name: "Favourites",
     component: Favourites,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/mathstery",
+    name: "Mathstery",
+    component: Mathstery,
     meta: { requiresAuth: true },
   },
 ];
