@@ -92,6 +92,12 @@ app.use("/api/markdown", markdownRoutes);
 const favouriteRoutes = require("./routes/Favourite/favourite");
 app.use("/api/favourite", favouriteRoutes);
 
+const mathsteryRoutes = require("./routes/Mathstery/mathstery");
+app.use("/api/mathstery", mathsteryRoutes);
+
+const topicLabelRoutes = require("./routes/Mathpix/topicLabel");
+app.use("/api/topic-label", topicLabelRoutes);
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 

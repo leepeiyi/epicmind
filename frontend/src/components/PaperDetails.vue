@@ -40,7 +40,7 @@
             <label>Topic</label>
             <select v-model="localTopicLabel">
                 <option value="" disabled>Select Topic</option>
-                <option v-for="topic in availableTopics" :key="topic" :value="topic">{{ topic }}</option>
+                <option v-for="topic in availableTopics" :key="topic" :value="topic">{{ topic.label }}</option>
             </select>
         </div>
     </div>

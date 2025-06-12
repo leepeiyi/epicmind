@@ -372,7 +372,7 @@ export default {
             try {
                 this.isGeneratingPreview = true;
 
-                // Call backend to extract questions (without processing images or saving to DB)
+                // Step 1: Extract questions from markdown
                 const previewRes = await fetch(`${API_BASE_URL}/api/markdown/preview`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -386,7 +386,6 @@ export default {
                         topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
                         year: this.form.year
                     })
-
                 });
 
                 if (!previewRes.ok) {
@@ -397,12 +396,60 @@ export default {
                 const previewData = await previewRes.json();
                 this.extractedQuestions = previewData.questions || [];
 
-                // Count total images
+                // Step 2: Auto-label topics if exam paper
+                if (this.uploadType === "exam") {
+                    try {
+                        const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                questions: this.extractedQuestions,
+                                level: this.form.level,
+                                subject: this.form.subject,
+                                paper_type: this.uploadType
+                            })
+                        });
+                        const labelData = await labelRes.json();
+                        if (labelRes.ok) {
+                            this.extractedQuestions = labelData.questions;
+
+                            // ✅ Step 3: Upload updated questions to update topic_label
+                            try {
+                                const syllabusRes = await fetch(`${API_BASE_URL}/uploadSyllabus`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        jsonData: this.extractedQuestions,
+                                        subject: this.form.subject,
+                                        banding: this.form.banding,
+                                        level: this.form.level
+                                    })
+                                });
+
+                                const syllabusData = await syllabusRes.json();
+                                if (!syllabusRes.ok) {
+                                    console.warn("⚠️ Syllabus upload failed:", syllabusData.error);
+                                } else {
+                                    console.log("✅ Topic labels saved via /uploadSyllabus");
+                                }
+                            } catch (syllabusError) {
+                                console.warn("❌ Error uploading topic labels:", syllabusError);
+                            }
+
+                        } else {
+                            console.warn("⚠️ Topic labelling failed:", labelData.error);
+                        }
+                    } catch (labelError) {
+                        console.warn("❌ Error during topic labelling:", labelError);
+                    }
+                }
+
+                // Step 4: Count total images
                 this.totalImages = this.extractedQuestions.reduce((total, q) => {
                     return total + (Array.isArray(q.image_path) ? q.image_path.length : 0);
                 }, 0);
 
-                // Generate preview markdown
+                // Step 5: Generate preview markdown
                 this.previewMarkdown = this.extractedQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
@@ -429,7 +476,8 @@ export default {
             } finally {
                 this.isGeneratingPreview = false;
             }
-        },
+        }
+        ,
 
         clearPreview() {
             this.previewMarkdown = '';

@@ -145,8 +145,8 @@ import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'InsertPaper',
-    components: { 
-        Navbar, 
+    components: {
+        Navbar,
         PaperDetails,
         LatexConverter
     },
@@ -182,8 +182,9 @@ export default {
     },
     computed: {
         compiledMarkdown() {
-            return marked(this.markdownContent || '');
-        },
+            const safeContent = this.escapeLatexInMarkdown(this.markdownContent || '');
+            return marked(safeContent);
+        }
     },
     async mounted() {
         try {
@@ -217,6 +218,10 @@ export default {
     },
     methods: {
         // Configure MathJax for LaTeX rendering
+        escapeLatexInMarkdown(md) {
+            return md.replace(/\\(?!\\)/g, '\\\\');
+        }
+        ,
         configureMathJax() {
             window.MathJax = {
                 tex: {
@@ -348,13 +353,70 @@ export default {
         async loadRecentPaper(paperName) {
             try {
                 const encodedName = encodeURIComponent(paperName);
-
                 const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
                 this.questionCount = data.questions.length;
                 this.paperName = paperName;
 
-                this.markdownContent = data.questions.map((q) => {
+                if (data.questions.length > 0) {
+                    const first = data.questions[0];
+                    this.form.subject = first.subject || '';
+                    this.form.banding = first.banding || '';
+                    this.form.level = first.level || '';
+                    this.form.uploadType = first.paper_type || '';
+                }
+
+                console.log(`Loaded recent paper: ${this.form.uploadType}`);
+
+                const needsLabeling = data.questions.some(q => {
+                    return !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === '';
+                });
+
+
+                // 🧠 Step 1: Add topic labels (only if exam type)
+                let labeledQuestions = data.questions.map(q => ({
+                    question_number: q.question_number,
+                    question_text: q.question_text
+                }));
+
+                console.log(data.questions);
+                console.log(labeledQuestions)
+                console.log('Needs labeling:', needsLabeling);
+
+                if (this.form.uploadType === 'exam' && needsLabeling) {
+                    const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            questions: labeledQuestions,
+                            subject: this.form.subject,
+                            banding: this.form.banding,
+                            level: this.form.level,
+                            paper_type: 'exam'
+                        })
+                    });
+
+                    const labelData = await labelRes.json();
+                    console.log('labelData', labelData);
+                    if (!labelRes.ok) throw new Error(labelData.error);
+
+                    labeledQuestions = labelData.questions;
+
+                    // ✅ Step 2: Save to DB
+                    await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jsonData: labeledQuestions,
+                            subject: this.form.subject,
+                            banding: this.form.banding,
+                            level: this.form.level
+                        })
+                    });
+                }
+
+                // ✏️ Step 3: Convert labeled questions to markdown
+                this.markdownContent = labeledQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
@@ -377,13 +439,15 @@ export default {
                         }
                     }
 
-                    return `### Q${q.question_number} (Topic)\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
+                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
                 }).join('\n\n---\n\n');
 
             } catch (err) {
                 console.error('❌ Failed to load recent paper content:', err);
+                alert('❌ Error loading paper: ' + err.message);
             }
         },
+
 
         async saveEditedMarkdown() {
             this.isSaving = true;
