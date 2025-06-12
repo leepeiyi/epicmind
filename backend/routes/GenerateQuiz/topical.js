@@ -108,6 +108,7 @@ router.post("/generate", async (req, res) => {
       });
     }
 
+
     // Step 1: Query additional candidates
     let query = `
       SELECT 
@@ -128,7 +129,7 @@ router.post("/generate", async (req, res) => {
         AND q.topic_label LIKE $4
     `;
 
-    const queryParams = [subject, banding, level, `%${topic}%`];
+    const queryParams = [subject, banding, level, `%${topic.label}%`];
     let paramIndex = 5;
 
     if (subTopic) {
@@ -143,20 +144,22 @@ router.post("/generate", async (req, res) => {
       paramIndex++;
     }
 
-    const maxCandidates = Math.min(questionCount * 3, 50);
+    // ✅ Increase candidate pool to ensure enough options
+    const maxCandidates = Math.max(questionCount * 5, 100); // Increased multiplier
     query += ` LIMIT $${paramIndex}`;
     queryParams.push(maxCandidates);
 
     const result = await pool.query(query, queryParams);
     let candidateQuestions = result.rows;
-    console.log("includedQuestions:", includeQuestions);
+    console.log(`Found ${candidateQuestions.length} database questions`);
+    console.log("includeQuestions:", includeQuestions);
 
-    // ✅ Merge includeQuestions (full objects)
+    // ✅ Merge includeQuestions (full objects) - prioritize them
     if (includeQuestions.length > 0) {
       const existingIds = new Set(candidateQuestions.map((q) => q.id));
       includeQuestions.forEach((q) => {
         if (!existingIds.has(q.id)) {
-          candidateQuestions.unshift(q);
+          candidateQuestions.unshift(q); // Add to beginning for priority
         }
       });
     }
@@ -172,66 +175,158 @@ router.post("/generate", async (req, res) => {
     candidateQuestions = candidateQuestions.map(normalizeQuestion);
 
     console.log(`Formatted ${candidateQuestions.length} candidate questions`);
-    console.log("Sample formatted question:", candidateQuestions[0]);
-    const requiredQuestionIds = new Set(includeQuestions.map(q => q.id));
+    const requiredQuestionIds = new Set(includeQuestions.map((q) => q.id));
+    const requiredCount = requiredQuestionIds.size;
+    const additionalNeeded = Math.max(0, questionCount - requiredCount);
 
+    console.log(
+      `Required questions: ${requiredCount}, Additional needed: ${additionalNeeded}`
+    );
 
-    // Step 2: Use Gemini to select the final question set
+    // ✅ If we have enough required questions, just return them
+    if (requiredCount >= questionCount) {
+      const selectedQuestions = candidateQuestions
+        .filter((q) => requiredQuestionIds.has(q.id))
+        .slice(0, questionCount)
+        .map((q) => ({
+          id: q.id,
+          text: q.text,
+          options: q.options,
+          image_url: Array.isArray(q.image_path)
+            ? q.image_path[0]
+            : q.image_path,
+          topic: q.topic.label,
+          difficulty: q.difficulty,
+          source: q.source,
+          answer: q.answer,
+        }));
+
+      return res.json({
+        success: true,
+        questions: selectedQuestions,
+      });
+    }
+
+    // ✅ Get non-required candidates for Gemini to choose from
+    const nonRequiredCandidates = candidateQuestions.filter(
+      (q) => !requiredQuestionIds.has(q.id)
+    );
+
+    console.log(`Non-required candidates: ${nonRequiredCandidates.length}`);
+
+    // ✅ If we don't have enough additional candidates, use what we have
+    if (nonRequiredCandidates.length === 0) {
+      console.log(
+        "No additional candidates available, using only required questions"
+      );
+      const selectedQuestions = candidateQuestions
+        .filter((q) => requiredQuestionIds.has(q.id))
+        .map((q) => ({
+          id: q.id,
+          text: q.text,
+          options: q.options,
+          image_url: Array.isArray(q.image_path)
+            ? q.image_path[0]
+            : q.image_path,
+          topic: q.topic.label,
+          difficulty: q.difficulty,
+          source: q.source,
+          answer: q.answer,
+        }));
+
+      return res.json({
+        success: true,
+        questions: selectedQuestions,
+      });
+    }
+    console.log(topic)
+
+    // Step 2: Use Gemini to select additional questions
     const promptContext = `
-You are an expert educational quiz generator specializing in ${subject} for secondary school students. 
-I need you to create a balanced, effective quiz from a pool of candidate questions.
+You are an expert educational quiz generator specializing in ${subject} for secondary school students.
+
+CONTEXT:
+- I already have ${requiredCount} required questions that MUST be included in the final quiz
+- I need you to select exactly ${additionalNeeded} additional questions from the candidate pool below
+- Total final quiz size will be: ${questionCount} questions
 
 QUIZ REQUIREMENTS:
 - Subject: ${subject}
 - Academic Level: ${level}
-- Topic: ${topic}
+- Topic: ${topic.label}
 ${subTopic ? `- Sub-topic: ${subTopic}` : ""}
-- Total Questions Needed: ${questionCount}
 
 ${
   difficultyLevel
     ? `- Difficulty: All questions should be ${difficultyLevel} level`
-    : `- Difficulty Distribution: Create a balanced quiz with approximately:
-      * 30% Easy questions
-      * 40% Medium questions  
-      * 30% Hard questions`
+    : `- Difficulty Distribution: Select questions to create a balanced difficulty distribution:
+      * ~30% Easy questions
+      * ~40% Medium questions  
+      * ~30% Hard questions`
 }
 
-CANDIDATE QUESTION POOL:
-${JSON.stringify(candidateQuestions, null, 2)}
+CANDIDATE QUESTIONS TO CHOOSE FROM:
+${JSON.stringify(nonRequiredCandidates, null, 2)}
 
 YOUR TASK:
-1. You **must** include the following question IDs in the quiz: [${[...requiredQuestionIds].join(", ")}]
-2. Then, select the remaining questions (if needed) to reach exactly ${questionCount} total.
-3. If no difficulty was specified, ensure a balanced distribution across difficulty levels.
-4. Choose questions that cover different aspects of the topic for comprehensive assessment.
-5. Prioritize questions with clear wording and pedagogical value.
-6. Include a mix of question formats (multiple choice, short answer) if available.
-7. Include some questions with diagrams/images if available.
+Select EXACTLY ${additionalNeeded} question IDs from the candidate pool above.
 
+SELECTION CRITERIA:
+1. Choose questions that complement the required questions already in the quiz
+2. Ensure good coverage of different aspects of the topic
+3. Maintain balanced difficulty distribution (if no specific difficulty was requested)
+4. Prioritize questions with clear wording and pedagogical value
+5. Include a mix of question formats if available
+6. Include questions with diagrams/images if available and relevant
 
 RESPONSE FORMAT:
-Respond only with a JSON array of the selected question IDs in your recommended order.
+Respond with ONLY a JSON array of exactly ${additionalNeeded} question IDs.
+Example: [123, 456, 789]
+
+Do not include any other text, explanations, or formatting.
 `;
 
-    const geminiResponse = await model.generateContent(promptContext);
-    const responseText = geminiResponse.response.text();
-    const selectedIdsMatch = responseText.match(/\[.*\]/s);
-    if (!selectedIdsMatch) throw new Error("Failed to parse Gemini response");
+    let selectedAdditionalIds = [];
 
-    let selectedIds;
-    try {
-      selectedIds = JSON.parse(selectedIdsMatch[0]);
-    } catch (error) {
-      console.error("Error parsing Gemini response:", error, responseText);
-      throw new Error("Invalid response format from Gemini");
+    if (additionalNeeded > 0) {
+      const geminiResponse = await model.generateContent(promptContext);
+      const responseText = geminiResponse.response.text();
+      console.log("Gemini response:", responseText);
+
+      const selectedIdsMatch = responseText.match(/\[.*\]/s);
+      if (!selectedIdsMatch) {
+        console.log(
+          "Failed to parse Gemini response, using fallback selection"
+        );
+        // Fallback: select first N available candidates
+        selectedAdditionalIds = nonRequiredCandidates
+          .slice(0, additionalNeeded)
+          .map((q) => q.id);
+      } else {
+        try {
+          let parsed = JSON.parse(selectedIdsMatch[0]);
+          selectedAdditionalIds = parsed.slice(0, additionalNeeded);
+        } catch (error) {
+          console.error("Error parsing Gemini response:", error);
+          // Fallback: select first N available candidates
+          selectedAdditionalIds = nonRequiredCandidates
+            .slice(0, additionalNeeded)
+            .map((q) => q.id);
+        }
+      }
     }
 
-    selectedIds = selectedIds.slice(0, questionCount);
+    // Step 3: Combine required and selected additional questions
+    const finalQuestionIds = [
+      ...Array.from(requiredQuestionIds),
+      ...selectedAdditionalIds,
+    ];
 
-    // Step 3: Assemble final list
+    console.log(`Final question IDs: ${finalQuestionIds}`);
+
+    // Step 4: Assemble final question list
     const selectedQuestions = [];
-    for (const id of selectedIds) {
+    for (const id of finalQuestionIds) {
       const q = candidateQuestions.find((q) => q.id === id);
       if (q) {
         selectedQuestions.push({
@@ -248,9 +343,8 @@ Respond only with a JSON array of the selected question IDs in your recommended 
         });
       }
     }
-    console.log("Selected questions:", selectedQuestions);
 
-    // Fill if Gemini returns fewer than requested
+    // ✅ Fallback: if we still don't have enough, add more from candidates
     if (selectedQuestions.length < questionCount) {
       const needed = questionCount - selectedQuestions.length;
       const selectedSet = new Set(selectedQuestions.map((q) => q.id));
@@ -273,6 +367,8 @@ Respond only with a JSON array of the selected question IDs in your recommended 
         });
       }
     }
+
+    console.log(`Final selected questions: ${selectedQuestions.length}`);
 
     return res.json({
       success: true,

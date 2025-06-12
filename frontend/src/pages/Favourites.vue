@@ -14,16 +14,16 @@
                 <PaperDetails v-model:subject="filterSubject" v-model:banding="filterBanding"
                     v-model:level="filterLevel" v-model:topic_label="selectedTopic" upload-type="topical" />
                 <div v-if="selectedTopic" class="selected-topic-info">
-                    <p><strong>Selected Topic:</strong> {{ selectedTopic }} </p>
+                    <p><strong>Selected Topic:</strong> {{ getTopicLabel() }} </p>
                     <button @click="browseTopicQuestions" class="browse-btn">
-                        Browse {{ selectedTopic }} Questions
+                        Browse {{ getTopicLabel() }} Questions
                     </button>
                 </div>
             </div>
 
             <!-- Topic Questions Display -->
             <div v-if="showTopicQuestions" class="questions-list">
-                <h3>📄 Questions for "{{ selectedTopic }}"</h3>
+                <h3>📄 Questions for "{{ getTopicLabel() }}"</h3>
 
                 <div v-if="topicQuestions.length === 0" class="empty-state">
                     <p>No questions found for this topic.</p>
@@ -36,8 +36,10 @@
                                 <span class="question-number">Q{{ question.question_number }}</span>
                                 <span class="paper-name">{{ question.paper_name }}</span>
                             </div>
-                            <FavouriteButton :question-id="question.id" :question="question" :subject="filterSubject"
-                                :banding="filterBanding" :level="filterLevel" :topic-label="selectedTopic" />
+                            <!-- Fixed: Pass topic-label as string and add event handler -->
+                            <FavouriteButton :question-id="question.id" :subject="filterSubject"
+                                :banding="filterBanding" :level="filterLevel" :topic-label="getTopicLabel()"
+                                @favoriteChanged="handleFavoriteChanged" />
                         </div>
 
                         <div class="question-content">
@@ -68,8 +70,6 @@
                     </div>
                 </div>
             </div>
-
-
 
             <!-- My Favorites Section -->
             <div class="my-favorites-section">
@@ -136,7 +136,6 @@
                                         title="Remove from favorites">
                                         ❌
                                     </button>
-
                                 </div>
 
                                 <div class="question-content">
@@ -213,7 +212,6 @@ export default {
 
             topicQuestions: [],
             showTopicQuestions: false,
-
         };
     },
     watch: {
@@ -238,6 +236,21 @@ export default {
         this.configureMathJax();
     },
     methods: {
+        // Helper method to get topic label as string
+        getTopicLabel() {
+            if (typeof this.selectedTopic === 'object' && this.selectedTopic?.label) {
+                return this.selectedTopic.label;
+            }
+            return this.selectedTopic || '';
+        },
+
+        // Handle favorite changes from FavouriteButton
+        handleFavoriteChanged(data) {
+            console.log('Favorite changed:', data);
+            // Optionally refresh favorites list if needed
+            // this.loadMyFavorites();
+        },
+
         configureMathJax() {
             window.MathJax = {
                 tex: {
@@ -276,21 +289,23 @@ export default {
             });
 
             return decoded;
-        }
-        ,
+        },
+
         async browseTopicQuestions() {
             if (!this.selectedTopic) return;
+
+            const topicLabel = this.getTopicLabel();
+            if (!topicLabel.trim()) return;
 
             const queryParams = new URLSearchParams({
                 subject: this.filterSubject,
                 banding: this.filterBanding,
                 level: this.filterLevel,
-                topic_label: this.selectedTopic.trim(),
+                topic_label: topicLabel.trim(),
             });
 
             try {
                 const response = await fetch(`${API_BASE_URL}/api/favourite/by-topic?${queryParams.toString()}`);
-
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -333,13 +348,13 @@ export default {
                 return;
             }
 
-            // Prepare query parameters
+            // Prepare query parameters - fix the topic_label handling
             const queryParams = new URLSearchParams({
                 user_id: userId,
                 subject: this.filterSubject,
                 banding: this.filterBanding,
                 level: this.filterLevel,
-                topic_label: this.selectedTopic?.trim() || ""
+                topic_label: this.getTopicLabel() || ""
             });
 
             try {
@@ -355,10 +370,7 @@ export default {
             } finally {
                 this.loadingFavorites = false;
             }
-        }
-
-
-        ,
+        },
 
         async onFilterChange() {
             if (this.filterSubject && this.filterBanding && this.filterLevel) {
@@ -366,6 +378,11 @@ export default {
             } else {
                 this.availableTopics = [];
             }
+        },
+
+        async loadAvailableTopics() {
+            // Add this method if you need it for topic browsing
+            console.log('Loading available topics...');
         },
 
         async viewFavoriteQuestions(favorite) {
@@ -421,8 +438,8 @@ export default {
             } finally {
                 this.loadingQuestions = false;
             }
-        }
-        ,
+        },
+
         async deleteFavourite(favorite) {
             const userStr = sessionStorage.getItem("user");
             let userId = null;
@@ -470,9 +487,8 @@ export default {
                 console.error("❌ Request failed:", err);
                 alert("Failed to remove favorite. Please try again.");
             }
-        }
+        },
 
-        ,
         async removeFromFavorites(questionId) {
             const userStr = sessionStorage.getItem("user");
             let userId = null;
@@ -526,8 +542,7 @@ export default {
                 console.error("❌ Request failed:", err);
                 alert("Failed to remove favorite. Please try again.");
             }
-        }
-        ,
+        },
 
         closeQuestionsModal() {
             this.showQuestionsModal = false;
@@ -568,6 +583,7 @@ export default {
             }
             return answerKey?.correct_answer || answerKey || '';
         },
+
         async generateQuizFromFavorite(favorite) {
             // Navigate to quiz generation with this favorite's questions
             this.$router.push({

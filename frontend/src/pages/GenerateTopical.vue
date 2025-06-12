@@ -41,7 +41,7 @@
                         <label>Topic</label>
                         <select v-model="form.topic" :disabled="!topics.length">
                             <option value="" disabled>Select Topic</option>
-                            <option v-for="topic in topics" :key="topic" :value="topic">{{ topic }}</option>
+                            <option v-for="topic in topics" :key="topic" :value="topic">{{ topic.label }}</option>
                         </select>
                     </div>
                 </div>

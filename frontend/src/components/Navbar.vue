@@ -9,26 +9,47 @@
     <div class="nav-right">
       <div v-for="item in filteredNavItems" :key="item.label" class="nav-item-wrapper">
         <!-- Special handling for Insert Paper with dropdown -->
-        <div v-if="item.label === 'Insert Paper'" class="nav-item-dropdown" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
+        <div v-if="item.label === 'Insert Paper'" class="nav-item-dropdown" @mouseenter="showInsertDropdown = true" @mouseleave="showInsertDropdown = false">
           <div class="dropdown-trigger">
             <component :is="item.icon" class="icon" />
             <span class="label">{{ item.label }}</span>
             <ChevronDown class="dropdown-arrow" />
           </div>
           
-          <!-- Dropdown Menu -->
-          <div v-show="showDropdown" class="dropdown-menu">
-            <router-link to="/insert-paper" class="dropdown-item" @click="showDropdown = false">
+          <!-- Insert Paper Dropdown Menu -->
+          <div v-show="showInsertDropdown" class="dropdown-menu">
+            <router-link to="/insert-paper" class="dropdown-item" @click="showInsertDropdown = false">
               <Upload class="dropdown-icon" />
               <span>Upload Files</span>
             </router-link>
-            <router-link to="/markdown-insertpaper" class="dropdown-item" @click="showDropdown = false">
+            <router-link to="/markdown-insertpaper" class="dropdown-item" @click="showInsertDropdown = false">
               <FileText class="dropdown-icon" />
               <span>From Mathpix</span>
             </router-link>
-            <router-link to="/all-papers-edit" class="dropdown-item" @click="showDropdown = false">
+            <router-link to="/all-papers-edit" class="dropdown-item" @click="showInsertDropdown = false">
               <FolderOpen class="dropdown-icon" />
               <span>View All Papers</span>
+            </router-link>
+          </div>
+        </div>
+
+        <!-- Special handling for Quiz Folder with dropdown -->
+        <div v-else-if="item.label === 'Quiz Folder'" class="nav-item-dropdown" @mouseenter="showQuizDropdown = true" @mouseleave="showQuizDropdown = false">
+          <div class="dropdown-trigger">
+            <component :is="item.icon" class="icon" />
+            <span class="label">{{ item.label }}</span>
+            <ChevronDown class="dropdown-arrow" />
+          </div>
+          
+          <!-- Quiz Folder Dropdown Menu -->
+          <div v-show="showQuizDropdown" class="dropdown-menu">
+            <router-link to="/quiz-folder" class="dropdown-item" @click="showQuizDropdown = false">
+              <HelpCircle class="dropdown-icon" />
+              <span>My Quizzes</span>
+            </router-link>
+            <router-link to="/favourites" class="dropdown-item" @click="showQuizDropdown = false">
+              <Star class="dropdown-icon" />
+              <span>Favourites</span>
             </router-link>
           </div>
         </div>
@@ -71,15 +92,16 @@ export default {
   data() {
     return {
       user: null,
-      showDropdown: false,
+      showInsertDropdown: false,
+      showQuizDropdown: false,
       navItems: [
         { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper' },
         { icon: 'BookOpen', label: 'Mathstery', route: '/mathstery' },
         { icon: 'FolderOpen', label: 'Topical Revision', route: '/generate-topical' },
-        { icon: 'Star', label: 'Favourites', route: '/favourites' },
-        { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' },
+        { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' }, // This will have dropdown
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' },
         { icon: 'FolderOpen', label: 'Paper Logs', route: '/paper-logs', requiresRole: 'admin' },
+        // Note: Favourites is no longer a top-level item - it's in the Quiz Folder dropdown
       ],
     };
   },
