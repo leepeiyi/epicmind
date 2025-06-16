@@ -509,7 +509,6 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
       endPage,
     } = req.body;
 
-    // Validation
     if (!pdf_id || !subject || !banding || !level || !paper_name) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -543,7 +542,6 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
         ? `- Focus only on pages ${startPage} to ${endPage}.`
         : "";
 
-    // ✅ IMPROVED PROMPT - Critical LaTeX escaping instructions
     const prompt = `You are extracting questions from an exam worksheet in Markdown format.
 
 CRITICAL JSON & LaTeX FORMATTING RULES:
@@ -557,6 +555,9 @@ CRITICAL JSON & LaTeX FORMATTING RULES:
 
 Instructions:
 - Extract each question's number and full text
+- If a question includes a LaTeX table (e.g. tabular, multicolumn, etc), skip converting it and instead return the full question as-is including the LaTeX
+- Do NOT attempt to break down tables or tabular LaTeX. Keep them raw or return a placeholder like "[table omitted]"
+- If question_number is 1a, 1b, 1c — group under 1 so you should consolidate and give me question 1 with all the question_text combined together keeping the (a), (b), (c) etc.
 - Extract answer options (if present)  
 - Extract image URLs from ![Diagram](...) 
 - Match correct answers from answer section
@@ -587,32 +588,24 @@ Return the JSON array directly:`;
     console.log("📝 Gemini raw response length:", raw.length);
     console.log("📝 First 300 chars:", raw.substring(0, 300));
 
-    // ✅ COMPREHENSIVE JSON PARSING with multiple strategies
     let parsed;
 
     try {
       parsed = await parseGeminiJsonResponse(raw);
       console.log(`✅ Successfully parsed ${parsed.length} questions`);
     } catch (parseError) {
-      console.error(
-        "❌ All JSON parsing strategies failed:",
-        parseError.message
-      );
+      console.error("❌ All JSON parsing strategies failed:", parseError.message);
 
-      // Log to database
       try {
         const logClient = await pool.connect();
         await logClient.query(
           `INSERT INTO logs (paper_name, log_type, message)
-     VALUES ($1, 'error', $2)`,
-          [
-            paper_name || "UNKNOWN",
-            `Gemini JSON parse failure: ${parseError.message}`,
-          ]
+           VALUES ($1, 'error', $2)`,
+          [paper_name || "UNKNOWN", raw]
         );
         logClient.release();
       } catch (logErr) {
-        console.error("❌ Failed to write to logs table:", logErr.message);
+        console.error("❌ Failed to write raw Gemini response to logs:", logErr.message);
       }
 
       return res.status(500).json({
@@ -627,7 +620,6 @@ Return the JSON array directly:`;
       });
     }
 
-    // Continue with image processing...
     const pages = linesRes.data.pages || [];
     const orderedImageUrls = [];
 
@@ -645,11 +637,7 @@ Return the JSON array directly:`;
           line.text &&
           line.text.includes("https://cdn.mathpix.com/cropped")
         ) {
-          const matches = [
-            ...line.text.matchAll(
-              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
-            ),
-          ];
+          const matches = [...line.text.matchAll(/https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g)];
           for (const match of matches) {
             orderedImageUrls.push(match[0]);
           }
@@ -657,7 +645,6 @@ Return the JSON array directly:`;
       }
     }
 
-    // Replace image paths with correct ones
     let imageIndex = 0;
     const updatedQuestions = parsed.map((q) => {
       const image_path = [];
@@ -685,17 +672,17 @@ Return the JSON array directly:`;
       await logClient.query(
         `INSERT INTO logs (paper_name, log_type, message)
          VALUES ($1, 'error', $2)`,
-        [paper_name || "UNKNOWN", `Route error: ${err.message}`]
+        [paper_name || "UNKNOWN", err.message]
       );
       logClient.release();
     } catch (logErr) {
-      console.error(
-        "❌ Failed to write top-level error to logs:",
-        logErr.message
-      );
+      console.error("❌ Failed to write top-level error to logs:", logErr.message);
     }
+
+    return res.status(500).json({ error: "Unexpected error", detail: err.message });
   }
 });
+
 
 // Extract answers from Mathpix MMD
 router.post("/extract_answers_from_mmd", async (req, res) => {
@@ -1202,12 +1189,10 @@ CORRECT ANSWER: ${correct_answer}`;
     });
   } catch (err) {
     console.error("❌ Gemini similarity check failed:", err);
-    res
-      .status(500)
-      .json({
-        error: "Failed to evaluate answer similarity",
-        details: err.message,
-      });
+    res.status(500).json({
+      error: "Failed to evaluate answer similarity",
+      details: err.message,
+    });
   }
 });
 

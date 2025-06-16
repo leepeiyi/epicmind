@@ -368,19 +368,22 @@ export default {
 
                 console.log(`Loaded recent paper: ${this.form.uploadType}`);
 
-                const needsLabeling = data.questions.some(q => {
-                    return !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === '';
-                });
-
+                const needsLabeling = data.questions.some(q =>
+                    !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === ''
+                );
 
                 // 🧠 Step 1: Add topic labels (only if exam type)
                 let labeledQuestions = data.questions.map(q => ({
                     question_number: q.question_number,
-                    question_text: q.question_text
+                    question_text: q.question_text,
+                    answer_options: q.answer_options || [],
+                    image_paths: q.image_paths || [],
+                    answer_key: q.answer_key || null,
+                    topic_label: q.topic_label || '' // existing topic_label if present
                 }));
 
                 console.log(data.questions);
-                console.log(labeledQuestions)
+                console.log(labeledQuestions);
                 console.log('Needs labeling:', needsLabeling);
 
                 if (this.form.uploadType === 'exam' && needsLabeling) {
@@ -388,7 +391,10 @@ export default {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            questions: labeledQuestions,
+                            questions: labeledQuestions.map(q => ({
+                                question_number: q.question_number,
+                                question_text: q.question_text
+                            })),
                             subject: this.form.subject,
                             banding: this.form.banding,
                             level: this.form.level,
@@ -397,10 +403,17 @@ export default {
                     });
 
                     const labelData = await labelRes.json();
-                    console.log('labelData', labelData);
                     if (!labelRes.ok) throw new Error(labelData.error);
+                    console.log('labelData', labelData);
 
-                    labeledQuestions = labelData.questions;
+                    // Merge new topic_label into existing labeledQuestions
+                    labeledQuestions = labeledQuestions.map(q => {
+                        const updated = labelData.questions.find(lq => lq.question_number === q.question_number);
+                        return {
+                            ...q,
+                            topic_label: updated?.topic_label || q.topic_label
+                        };
+                    });
 
                     // ✅ Step 2: Save to DB
                     await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
@@ -447,6 +460,7 @@ export default {
                 alert('❌ Error loading paper: ' + err.message);
             }
         },
+
 
 
         async saveEditedMarkdown() {
@@ -538,6 +552,57 @@ export default {
 
                 // Generate markdown preview
                 this.progressMessage = "📄 Generating markdown preview...";
+                // Step 3: Extract answer key (if separate file is uploaded)
+                if (this.hasSeparateAnswerKey && this.answerKeyFile) {
+                    this.progressMessage = "📥 Uploading and matching answer key...";
+                    this.progressPercent = 95;
+
+                    const answerFormData = new FormData();
+                    answerFormData.append("pdf", this.answerKeyFile);
+
+                    const answerUploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
+                        method: "POST",
+                        body: answerFormData,
+                    });
+
+                    const answerUploadData = await answerUploadRes.json();
+                    const answerPdfId = answerUploadData.pdf_id;
+
+                    if (!answerPdfId) {
+                        throw new Error("❌ Failed to upload answer key to Mathpix.");
+                    }
+
+                    const matchRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_mmd`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            pdf_id: answerPdfId,
+                            paper_name: this.paperName
+                        })
+                    });
+
+                    const matchData = await matchRes.json();
+
+                    if (!Array.isArray(matchData.answers)) {
+                        throw new Error("❌ Answer extraction failed or returned invalid format.");
+                    }
+
+                    // Update each question's answer_key if match found
+                    this.allProcessedQuestions = this.allProcessedQuestions.map(q => {
+                        const matched = matchData.answers.find(a => a.question_number === String(q.question_number));
+                        if (matched && matched.correct_answer) {
+                            return {
+                                ...q,
+                                answer_key: {
+                                    question_number: q.question_number,
+                                    correct_answer: matched.correct_answer
+                                }
+                            };
+                        }
+                        return q;
+                    });
+                }
+
                 this.progressPercent = 90;
 
                 this.markdownContent = this.allProcessedQuestions.map((q) => {
