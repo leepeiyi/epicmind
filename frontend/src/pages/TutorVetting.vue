@@ -210,7 +210,7 @@ export default {
         async loadPaper(paperName) {
             this.selectedPaper = paperName;
             try {
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${paperName}`);
+                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodeURIComponent(paperName)}`);
                 const { questions } = await res.json();
 
                 // Debug the first question to see its format

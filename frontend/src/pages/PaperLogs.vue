@@ -89,7 +89,8 @@ export default {
             this.logs = [];
             this.loadingLogs = true;
             try {
-                const res = await axios.get(`${API_BASE_URL}/api/paper/logs/${paperName}`);
+                const encodedName = encodeURIComponent(paperName);
+                const res = await axios.get(`${API_BASE_URL}/api/paper/logs/${encodedName}`);
                 this.logs = res.data.logs || [];
             } catch (err) {
                 console.error("❌ Failed to load logs:", err);
