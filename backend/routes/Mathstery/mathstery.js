@@ -53,68 +53,52 @@ router.get("/exam-papers", async (req, res) => {
   }
 });
 
-// Route to get questions by topic label
 router.get("/by-topic/:topicLabel", async (req, res) => {
-  try {
-    const { topicLabel } = req.params;
+  const { topicLabel } = req.params;
 
+  try {
     const query = `
-            SELECT 
-                q.id,
-                q.question_number,
-                q.question_text,
-                q.topic_label,
-                q.sub_topic,
-                q.difficulty_level,
-                q.paper_name,
-                q.paper_type,
-                q.image_paths,
-                q.answer_options,
-                q.answer_key,
-                p.subject,
-                p.banding,
-                p.level,
-                p.year
-            FROM question q
-            LEFT JOIN paper p ON q.paper_name = p.paper_name
-            WHERE q.topic_label = $1
-            ORDER BY 
-                CASE WHEN q.paper_type = 'exam' THEN 1 ELSE 2 END,
-                p.year DESC NULLS LAST,
-                q.question_number ASC
-        `;
+      SELECT
+        id,
+        question_number,
+        question_text,
+        topic_label,
+        paper_name,
+        paper_type,
+        difficulty_level,
+        sub_topic,
+        image_paths,
+        answer_options,
+        answer_key
+      FROM question
+      WHERE topic_label = $1
+      ORDER BY
+        CASE WHEN paper_type = 'exam' THEN 1 ELSE 2 END,
+        question_number ASC
+    `;
 
     const result = await pool.query(query, [topicLabel]);
 
-    // Process the results to ensure proper JSON parsing
     const questions = result.rows.map((row) => {
       let answer_options = [];
       let answer_key = {};
 
-      // Parse answer_options if it exists
-      if (row.answer_options) {
-        try {
-          answer_options =
-            typeof row.answer_options === "string"
-              ? JSON.parse(row.answer_options)
-              : row.answer_options;
-        } catch (e) {
-          console.error("Error parsing answer_options:", e);
-          answer_options = [];
-        }
+      try {
+        answer_options =
+          typeof row.answer_options === "string"
+            ? JSON.parse(row.answer_options)
+            : row.answer_options || [];
+      } catch {
+        answer_options = [];
       }
 
-      // Parse answer_key if it exists
-      if (row.answer_key) {
-        try {
-          answer_key =
-            typeof row.answer_key === "string"
-              ? JSON.parse(row.answer_key)
-              : row.answer_key;
-        } catch (e) {
-          console.error("Error parsing answer_key:", e);
-          answer_key = {};
-        }
+      try {
+        answer_key =
+          typeof row.answer_key === "string"
+            ? JSON.parse(row.answer_key)
+            : row.answer_key || {};
+      } catch {
+        answer_key = {};
       }
 
       return {
@@ -122,23 +106,19 @@ router.get("/by-topic/:topicLabel", async (req, res) => {
         question_number: row.question_number,
         question_text: row.question_text,
         topic_label: row.topic_label,
-        sub_topic: row.sub_topic,
-        difficulty_level: row.difficulty_level,
         paper_name: row.paper_name,
         paper_type: row.paper_type,
+        difficulty_level: row.difficulty_level,
+        sub_topic: row.sub_topic,
         image_paths: row.image_paths,
-        answer_options: answer_options,
-        answer_key: answer_key,
-        subject: row.subject,
-        banding: row.banding,
-        level: row.level,
-        year: row.year,
+        answer_options,
+        answer_key,
       };
     });
 
     res.json({
       success: true,
-      questions: questions,
+      questions,
       count: questions.length,
     });
   } catch (error) {

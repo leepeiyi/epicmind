@@ -109,14 +109,7 @@
                                 <span class="question-number">Q{{ question.question_number || index + 1 }}</span>
                                 <span class="question-topic">{{ question.topic_label || 'No Topic' }}</span>
                             </div>
-                            <div class="question-preview" v-html="sanitizeLatex(question.question_text)"></div>
-
-
-                            <!-- ✅ Render question image(s) below -->
-                            <div v-if="question.image_paths && question.image_paths.length">
-                                <img v-for="(img, i) in question.image_paths" :key="i" :src="img" alt="diagram"
-                                    style="max-width: 100%; margin-top: 0.5rem;" />
-                            </div>
+                            <div class="question-preview" v-html="processQuestionText(question.question_text)"></div>
                         </div>
                     </div>
                 </div>
@@ -128,6 +121,13 @@
                             🔍 Related Questions: {{ selectedQuestion.topic_label }}
                         </h3>
                         <h3 v-else>Select a question to see related questions</h3>
+                        
+                        <!-- Save Quiz Button -->
+                        <button v-if="examQuestions.length" 
+                                @click="showSaveQuizModal = true" 
+                                class="save-quiz-btn">
+                            💾 Save as Quiz
+                        </button>
                     </div>
 
                     <!-- Loading indicator for related questions -->
@@ -139,8 +139,10 @@
                     <!-- Related questions list -->
                     <div v-else-if="relatedQuestions.length" class="related-questions">
                         <p class="related-count">Found {{ relatedQuestions.length }} related questions</p>
+                        <p class="click-to-replace-hint">💡 Click on any question below to replace Q{{ selectedQuestion.question_number }} in your quiz</p>
                         <div v-for="(relatedQ, index) in relatedQuestions" :key="relatedQ.id"
-                            class="related-question-item">
+                            :class="['related-question-item', { 'selected-for-replacement': selectedReplacementQuestion && selectedReplacementQuestion.id === relatedQ.id }]"
+                            @click="selectReplacementQuestion(relatedQ)">
                             <div class="related-question-header">
                                 <span class="related-question-number">
                                     Q{{ relatedQ.question_number }}
@@ -149,16 +151,20 @@
                                 <span class="related-paper-type" :class="relatedQ.paper_type">
                                     {{ relatedQ.paper_type === 'exam' ? 'EXAM' : 'TOPICAL' }}
                                 </span>
+                                <span v-if="selectedReplacementQuestion && selectedReplacementQuestion.id === relatedQ.id" class="replacement-selected-badge">
+                                    ✓ Selected
+                                </span>
                             </div>
-                            <div class="related-question-text" v-html="relatedQ.question_text"></div>
+                            <div class="related-question-text" v-html="processQuestionText(relatedQ.question_text)"></div>
                             <div class="related-question-meta">
                                 <span class="related-difficulty">{{ relatedQ.difficulty_level || 'Medium' }}</span>
-                                <!-- ✅ Render image(s) -->
-                                <div v-if="relatedQ.image_paths && relatedQ.image_paths.length">
-                                    <img v-for="(img, i) in relatedQ.image_paths" :key="i" :src="img"
-                                        alt="related diagram" style="max-width: 100%; margin-top: 0.5rem;" />
-                                </div>
                             </div>
+                        </div>
+                        
+                        <div v-if="selectedReplacementQuestion" class="replacement-summary">
+                            <p><strong>Replacement Selected:</strong></p>
+                            <p>Q{{ selectedQuestion.question_number }} will be replaced with Q{{ selectedReplacementQuestion.question_number }} from {{ selectedReplacementQuestion.paper_name }}</p>
+                            <button @click="clearReplacement" class="clear-replacement-btn">✕ Clear Replacement</button>
                         </div>
                     </div>
 
@@ -170,6 +176,97 @@
                     <!-- No question selected -->
                     <div v-else-if="!selectedQuestion && !loadingRelated" class="no-selection">
                         <p>👈 Select a question from the left panel to see related questions</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Save Quiz Modal -->
+            <div v-if="showSaveQuizModal" class="modal-overlay" @click="closeSaveQuizModal">
+                <div class="modal-content" @click.stop>
+                    <div class="modal-header">
+                        <h3>💾 Save as Quiz</h3>
+                        <button @click="closeSaveQuizModal" class="modal-close-btn">✕</button>
+                    </div>
+                    
+                    <div class="modal-body">
+                        <p class="modal-description">
+                            Create a quiz from this exam paper ({{ examQuestions.length }} questions total)
+                            <span v-if="selectedReplacementQuestion">
+                                <br><strong>Note:</strong> Q{{ selectedQuestion.question_number }} will be replaced with Q{{ selectedReplacementQuestion.question_number }} from {{ selectedReplacementQuestion.paper_name }}
+                            </span>
+                        </p>
+                        
+                        <div class="quiz-form">
+                            <div class="form-group">
+                                <label>Quiz Name *</label>
+                                <input v-model="quizForm.quizName" 
+                                       type="text" 
+                                       placeholder="Enter quiz name..."
+                                       class="form-input" />
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Teacher ID *</label>
+                                <input v-model="quizForm.teacher_id" 
+                                       type="text" 
+                                       placeholder="Enter your teacher ID..."
+                                       class="form-input" />
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Subject</label>
+                                    <input v-model="quizForm.subject" 
+                                           type="text" 
+                                           class="form-input" />
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Banding</label>
+                                    <input v-model="quizForm.banding" 
+                                           type="text" 
+                                           class="form-input" />
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Level</label>
+                                    <input v-model="quizForm.level" 
+                                           type="text" 
+                                           class="form-input" />
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Topic</label>
+                                    <input v-model="quizForm.topic" 
+                                           type="text" 
+                                           class="form-input" />
+                                </div>
+                            </div>
+                            
+                            <div class="quiz-preview">
+                                <h4>Quiz will include {{ finalQuizQuestions.length }} questions:</h4>
+                                <ul class="question-list">
+                                    <li v-for="(q, index) in finalQuizQuestions.slice(0, 5)" :key="q.id || index">
+                                        Q{{ index + 1 }}: {{ truncateText(q.question_text, 60) }}
+                                        <span v-if="q.isReplacement" class="replacement-indicator">(Replacement)</span>
+                                    </li>
+                                    <li v-if="finalQuizQuestions.length > 5" class="more-questions">
+                                        ... and {{ finalQuizQuestions.length - 5 }} more questions
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <button @click="closeSaveQuizModal" class="cancel-btn">Cancel</button>
+                        <button @click="saveQuiz" 
+                                :disabled="!quizForm.quizName || !quizForm.teacher_id || isSavingQuiz"
+                                class="save-btn">
+                            {{ isSavingQuiz ? 'Saving...' : 'Save Quiz' }}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -203,6 +300,17 @@ export default {
             filterLevel: '',
             currentPage: 1,
             itemsPerPage: 12,
+            showSaveQuizModal: false,
+            isSavingQuiz: false,
+            selectedReplacementQuestion: null,
+            quizForm: {
+                quizName: '',
+                teacher_id: '',
+                subject: '',
+                banding: '',
+                level: '',
+                topic: ''
+            }
         };
     },
     computed: {
@@ -235,6 +343,26 @@ export default {
             const start = (this.currentPage - 1) * this.itemsPerPage;
             const end = start + this.itemsPerPage;
             return this.filteredPapers.slice(start, end);
+        },
+        quizQuestions() {
+            // Combine selected question with related questions
+            if (!this.selectedQuestion) return [];
+            return [this.selectedQuestion, ...this.relatedQuestions];
+        },
+        finalQuizQuestions() {
+            // Start with all exam questions
+            let questions = [...this.examQuestions];
+            
+            // If user has selected a replacement question
+            if (this.selectedReplacementQuestion && this.selectedQuestion) {
+                // Remove the selected question
+                questions = questions.filter(q => q.id !== this.selectedQuestion.id);
+                
+                // Add the replacement question
+                questions.push({ ...this.selectedReplacementQuestion, isReplacement: true });
+            }
+            
+            return questions;
         }
     },
     async mounted() {
@@ -255,6 +383,12 @@ export default {
             this.$nextTick(() => {
                 this.renderMathJax();
             });
+        },
+        selectedRelatedQuestions: {
+            handler(newVal) {
+                console.log('Selected related questions changed:', newVal);
+            },
+            deep: true
         },
         searchQuery() {
             this.currentPage = 1;
@@ -309,6 +443,22 @@ export default {
                 alert('Failed to load exam paper content. Please try again.');
             }
         },
+
+        processQuestionText(text) {
+            if (!text) return '';
+            
+            // First, handle LaTeX escaping
+            let processedText = this.sanitizeLatex(text);
+            
+            // Convert markdown image syntax to HTML img tags if needed
+            processedText = processedText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="question-image" />');
+            
+            // Ensure existing img tags have proper styling
+            processedText = processedText.replace(/<img([^>]*)>/g, '<img$1 class="question-image" />');
+            
+            return processedText;
+        },
+
         renderMathJax() {
             if (window.MathJax && window.MathJax.typesetPromise) {
                 return window.MathJax.typesetPromise().then(() => {
@@ -318,8 +468,8 @@ export default {
                 });
             }
             return Promise.resolve();
-        }
-        ,
+        },
+        
         configureMathJax() {
             window.MathJax = {
                 tex: {
@@ -339,18 +489,125 @@ export default {
                 document.head.appendChild(script);
             }
         },
+
         sanitizeLatex(text) {
             return text.replace(/\\\\/g, '\\');
-        }
-        ,
+        },
 
         async selectQuestion(index) {
             this.selectedQuestionIndex = index;
             this.selectedQuestion = this.examQuestions[index];
 
+            // Reset replacement selection when switching questions
+            this.selectedReplacementQuestion = null;
+
             if (this.selectedQuestion && this.selectedQuestion.topic_label) {
                 await this.loadRelatedQuestions(this.selectedQuestion.topic_label);
+                
+                // Update quiz form topic when a specific question is selected
+                if (this.selectedQuestion.topic_label) {
+                    this.quizForm.topic = this.selectedQuestion.topic_label;
+                }
             }
+        },
+
+        populateQuizForm() {
+            // Extract metadata from the first question or paper name
+            const firstQuestion = this.examQuestions[0];
+            const paperParts = this.currentPaperName.split('_');
+            
+            // Try to get from question data first, fallback to paper name parsing
+            this.quizForm.subject = (firstQuestion && firstQuestion.subject) || 
+                                  (paperParts.length > 1 ? paperParts[1] : 'Math');
+            this.quizForm.banding = (firstQuestion && firstQuestion.banding) || 
+                                  (paperParts.length > 2 ? paperParts[2] : 'Express');
+            this.quizForm.level = (firstQuestion && firstQuestion.level) || 
+                                (paperParts.length > 3 ? paperParts[3] : 'Sec 4');
+            this.quizForm.topic = this.selectedQuestion ? this.selectedQuestion.topic_label : 'Mixed Topics';
+            
+            // Generate default quiz name
+            if (!this.quizForm.quizName) {
+                const timestamp = new Date().toLocaleDateString();
+                this.quizForm.quizName = `${this.currentPaperName.replace(/_/g, ' ')} Quiz - ${timestamp}`;
+            }
+
+            console.log('Quiz form populated:', {
+                subject: this.quizForm.subject,
+                banding: this.quizForm.banding,
+                level: this.quizForm.level,
+                topic: this.quizForm.topic,
+                paperName: this.currentPaperName,
+                firstQuestion: firstQuestion
+            });
+        },
+
+        async saveQuiz() {
+            if (!this.quizForm.quizName || !this.quizForm.teacher_id) {
+                alert('Please fill in quiz name and teacher ID');
+                return;
+            }
+
+            if (!this.quizForm.subject || !this.quizForm.banding || !this.quizForm.level) {
+                alert('Please fill in subject, banding, and level');
+                return;
+            }
+
+            if (this.finalQuizQuestions.length === 0) {
+                alert('No questions to save');
+                return;
+            }
+
+            try {
+                this.isSavingQuiz = true;
+
+                console.log('Saving quiz with data:', {
+                    quizName: this.quizForm.quizName,
+                    subject: this.quizForm.subject,
+                    banding: this.quizForm.banding,
+                    level: this.quizForm.level,
+                    topic: this.quizForm.topic,
+                    questionsCount: this.finalQuizQuestions.length,
+                    teacher_id: this.quizForm.teacher_id
+                });
+
+                const response = await fetch(`${API_BASE_URL}/api/quiz/save`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        quizName: this.quizForm.quizName,
+                        subject: this.quizForm.subject,
+                        banding: this.quizForm.banding,
+                        level: this.quizForm.level,
+                        topic: this.quizForm.topic,
+                        questions: this.finalQuizQuestions,
+                        teacher_id: this.quizForm.teacher_id
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert(`✅ Quiz saved successfully! Quiz ID: ${result.quizId}`);
+                    this.closeSaveQuizModal();
+                } else {
+                    alert(`❌ Failed to save quiz: ${result.error}`);
+                }
+
+            } catch (error) {
+                console.error('❌ Error saving quiz:', error);
+                alert('❌ Failed to save quiz. Please try again.');
+            } finally {
+                this.isSavingQuiz = false;
+            }
+        },
+
+        closeSaveQuizModal() {
+            this.showSaveQuizModal = false;
+            // Reset form but keep pre-populated fields
+            this.quizForm.quizName = '';
+            this.quizForm.teacher_id = '';
         },
 
         async loadRelatedQuestions(topicLabel) {
@@ -389,6 +646,22 @@ export default {
             this.currentPaperName = '';
             this.selectedQuestionIndex = null;
             this.selectedQuestion = null;
+            this.selectedReplacementQuestion = null;
+            this.closeSaveQuizModal();
+        },
+
+        selectReplacementQuestion(relatedQuestion) {
+            // Toggle selection - if same question is clicked, deselect it
+            if (this.selectedReplacementQuestion && this.selectedReplacementQuestion.id === relatedQuestion.id) {
+                this.selectedReplacementQuestion = null;
+            } else {
+                this.selectedReplacementQuestion = { ...relatedQuestion };
+            }
+            console.log('Selected replacement question:', this.selectedReplacementQuestion);
+        },
+
+        clearReplacement() {
+            this.selectedReplacementQuestion = null;
         }
     }
 };
@@ -658,6 +931,22 @@ export default {
     background-color: #c82333;
 }
 
+.save-quiz-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.save-quiz-btn:hover {
+    background-color: #218838;
+}
+
 /* Left Panel - Question List */
 .questions-list {
     max-height: 700px;
@@ -714,6 +1003,17 @@ export default {
     margin-bottom: 0.5rem;
 }
 
+/* Image styling within questions */
+.question-preview :deep(.question-image),
+.related-question-text :deep(.question-image) {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 .has-image-indicator {
     font-size: 12px;
     color: #888;
@@ -743,11 +1043,21 @@ export default {
     border-radius: 8px;
     margin-bottom: 0.75rem;
     background-color: #fafafa;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
+    cursor: pointer;
 }
 
 .related-question-item:hover {
     background-color: #f5f5f5;
+    border-color: #66CC99;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.related-question-item.selected-for-replacement {
+    background-color: #e8f5e8;
+    border-color: #66CC99;
+    box-shadow: 0 2px 8px rgba(102, 204, 153, 0.2);
 }
 
 .related-question-header {
@@ -872,6 +1182,350 @@ export default {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1.25rem;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.modal-close-btn:hover {
+    background-color: #f3f4f6;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-description {
+    color: #6b7280;
+    margin-bottom: 1.5rem;
+    font-size: 14px;
+}
+
+.quiz-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-group label {
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+    font-size: 14px;
+}
+
+.form-input {
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: #66CC99;
+    box-shadow: 0 0 0 3px rgba(102, 204, 153, 0.1);
+}
+
+.form-input.readonly {
+    background-color: #f9fafb;
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+.quiz-preview {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.quiz-preview h4 {
+    margin: 0 0 0.75rem 0;
+    color: #495057;
+    font-size: 14px;
+}
+
+.question-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.question-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #e9ecef;
+    font-size: 13px;
+    color: #6c757d;
+}
+
+.question-list li:last-child {
+    border-bottom: none;
+}
+
+.more-questions {
+    font-style: italic;
+    color: #868e96 !important;
+}
+
+.modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.cancel-btn {
+    padding: 0.75rem 1.5rem;
+    border: 1px solid #d1d5db;
+    background-color: white;
+    color: #374151;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+    background-color: #f9fafb;
+}
+
+.save-btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    background-color: #66CC99;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.save-btn:hover:not(:disabled) {
+    background-color: #55bb88;
+}
+
+.save-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Question Replacement Section */
+.question-replacement-section {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.question-replacement-section h4 {
+    margin: 0 0 0.75rem 0;
+    color: #495057;
+    font-size: 16px;
+}
+
+.replacement-description {
+    color: #6c757d;
+    font-size: 14px;
+    margin-bottom: 1rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 14px;
+    color: #495057;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin: 0;
+}
+
+.related-questions-selector {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+}
+
+.selector-description {
+    font-size: 14px;
+    color: #495057;
+    margin-bottom: 0.75rem;
+}
+
+.question-checkboxes {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.question-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.question-checkbox:hover {
+    background-color: #f8f9fa;
+}
+
+.question-checkbox input[type="checkbox"] {
+    margin: 0;
+    margin-top: 0.2rem;
+}
+
+.checkbox-content {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.question-text-preview {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.replacement-indicator {
+    font-size: 11px;
+    color: #28a745;
+    font-weight: 500;
+    background-color: #d4edda;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+}
+
+.selection-summary {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #d4edda;
+    color: #155724;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.click-to-replace-hint {
+    background-color: #e3f2fd;
+    color: #1976d2;
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 1rem;
+    text-align: center;
+    border: 1px solid #bbdefb;
+}
+
+.replacement-selected-badge {
+    background-color: #28a745;
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.replacement-summary {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    border-radius: 8px;
+    color: #155724;
+}
+
+.replacement-summary p {
+    margin: 0 0 0.5rem 0;
+    font-size: 14px;
+}
+
+.clear-replacement-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 0.5rem;
+}
+
+.clear-replacement-btn:hover {
+    background-color: #c82333;
 }
 
 /* Responsive Design */

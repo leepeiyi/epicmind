@@ -547,7 +547,7 @@ export default {
                         banding: this.form.banding,
                         level: this.form.level,
                         paper_type: this.uploadType,
-                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label.label : null,
                         year: this.form.year
                     })
                 });
@@ -582,7 +582,7 @@ export default {
                         answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
                     }
 
-                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
+                    return `### Q${q.question_number} (${q.topic_label|| 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
                 }).join('\n\n---\n\n');
 
                 this.progressMessage = "✅ Processing complete!";

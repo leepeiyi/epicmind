@@ -6,6 +6,11 @@
             <p>Saving Markdown...</p>
         </div>
 
+        <div v-if="isLabeling" class="overlay-spinner">
+            <div class="spinner"></div>
+            <p>Adding topic labels...</p>
+        </div>
+
         <div class="papers-page">
             <h1>All Papers</h1>
             <p class="subtitle">
@@ -118,6 +123,7 @@
 
             <!-- Markdown Editor and Preview Section -->
             <div v-if="markdownContent" class="output-wrapper">
+                <!-- Markdown Editor -->
                 <div class="editor">
                     <h3>Markdown Editor</h3>
                     <div class="editor-header">
@@ -126,11 +132,27 @@
                     </div>
                     <textarea v-model="markdownContent" class="markdown-editor" />
                 </div>
+
+                <!-- Preview + Images -->
                 <div class="preview">
                     <h3>Preview</h3>
-                    <div :key="compiledMarkdown" v-html="compiledMarkdown"></div>
+                    <div v-for="(q, index) in parsedQuestions" :key="index" class="question-block">
+                        <h4>Q{{ q.number }} ({{ q.topic || 'Topic' }})</h4>
+                        <div v-html="q.text"></div>
+
+                        <div v-for="(img, i) in q.images" :key="i" class="image-row">
+                            <img :src="img.url" class="preview-img" />
+                            <button class="action-btn" @click="toggleImageLabel(img.globalIndex)"
+                                :class="{ marked: img.isAnswer }">
+                                {{ img.isAnswer ? '✅ Marked as Answer Key' : 'Mark as Answer Key' }}
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
+
             </div>
+
 
             <!-- Save Section -->
             <div v-if="markdownContent" class="save-section">
@@ -163,6 +185,7 @@ export default {
             currentPaperName: '',
             isSaving: false,
             isLoading: true,
+            isLabeling: false,
             searchQuery: '',
             filterSubject: '',
             filterBanding: '',
@@ -170,10 +193,47 @@ export default {
             currentPage: 1,
             itemsPerPage: 12,
             selectedQuestionNumber: '',
-
+            allImagesInMarkdown: [],
+            form: {
+                subject: '',
+                banding: '',
+                level: '',
+                uploadType: ''
+            }
         };
     },
     computed: {
+        parsedQuestions() {
+            const blocks = this.markdownContent.split(/### Q(\d+) \((.*?)\)/g);
+            const questions = [];
+            let globalImageIndex = 0;
+
+            for (let i = 1; i < blocks.length; i += 3) {
+                const number = blocks[i];
+                const topic = blocks[i + 1];
+                const content = blocks[i + 2];
+                const images = [];
+
+                const textOnly = content.replace(/!\[(.*?)\]\((.*?)\)/g, (match, label, url) => {
+                    const isAnswer = label.toLowerCase().includes('answer');
+                    images.push({
+                        url,
+                        label,
+                        isAnswer,
+                        globalIndex: globalImageIndex++
+                    });
+                    return ''; // strip image from text
+                });
+
+                questions.push({
+                    number,
+                    topic,
+                    text: marked.parse(textOnly),
+                    images
+                });
+            }
+            return questions;
+        },
         compiledMarkdown() {
             return marked(this.markdownContent || '');
         },
@@ -221,6 +281,30 @@ export default {
         }
     },
     watch: {
+        markdownContent(newContent) {
+            // 🔍 Reset the array
+            this.allImagesInMarkdown = [];
+
+            // 🔍 Split markdown into question sections using ### Q<number>
+            const questionBlocks = newContent.split(/### Q(\d+)/g); // ['pre', '1', 'Q1 content', '2', 'Q2 content', ...]
+
+            for (let i = 1; i < questionBlocks.length; i += 2) {
+                const qNum = questionBlocks[i];            // e.g. '1'
+                const content = questionBlocks[i + 1];     // content after ### Q1
+
+                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
+                let match;
+                while ((match = imageRegex.exec(content)) !== null) {
+                    this.allImagesInMarkdown.push({
+                        questionNumber: qNum,
+                        label: match[1],
+                        url: match[2],
+                        isAnswer: match[1].toLowerCase().includes('answer'),
+                    });
+                }
+            }
+        },
+
         compiledMarkdown() {
             this.$nextTick(() => {
                 if (window.MathJax && window.MathJax.typesetPromise) {
@@ -289,13 +373,105 @@ export default {
                 const data = await res.json();
 
                 this.currentPaperName = paperName;
-                this.markdownContent = data.questions.map((q) => {
+
+                // Extract metadata from first question
+                if (data.questions.length > 0) {
+                    const first = data.questions[0];
+                    this.form.subject = first.subject || '';
+                    this.form.banding = first.banding || '';
+                    this.form.level = first.level || '';
+                    this.form.uploadType = first.paper_type || '';
+                }
+
+                console.log(`Loaded paper: ${this.form.uploadType}`);
+
+                // Check if topic labeling is needed
+                const needsLabeling = data.questions.some(q =>
+                    !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === ''
+                );
+
+                // Step 1: Prepare questions for labeling
+                let labeledQuestions = data.questions.map(q => ({
+                    question_number: q.question_number,
+                    question_text: q.question_text,
+                    answer_options: q.answer_options || [],
+                    image_paths: q.image_paths || [],
+                    answer_key: q.answer_key || null,
+                    topic_label: q.topic_label || '' // existing topic_label if present
+                }));
+
+                console.log('Original questions:', data.questions);
+                console.log('Prepared questions:', labeledQuestions);
+                console.log('Needs labeling:', needsLabeling);
+
+                // Step 2: Add topic labels (only if exam type and needs labeling)
+                if (this.form.uploadType === 'exam' && needsLabeling) {
+                    this.isLabeling = true;
+
+                    try {
+                        const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                questions: labeledQuestions.map(q => ({
+                                    question_number: q.question_number,
+                                    question_text: q.question_text
+                                })),
+                                subject: this.form.subject,
+                                banding: this.form.banding,
+                                level: this.form.level,
+                                paper_type: 'exam'
+                            })
+                        });
+
+                        const labelData = await labelRes.json();
+                        if (!labelRes.ok) throw new Error(labelData.error);
+                        console.log('Label data:', labelData);
+
+                        // Merge new topic_label into existing labeledQuestions
+                        labeledQuestions = labeledQuestions.map(q => {
+                            const updated = labelData.questions.find(lq => lq.question_number === q.question_number);
+                            return {
+                                ...q,
+                                topic_label: updated?.topic_label || q.topic_label
+                            };
+                        });
+
+                        // Step 3: Save to DB
+                        await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonData: labeledQuestions,
+                                subject: this.form.subject,
+                                banding: this.form.banding,
+                                level: this.form.level
+                            })
+                        });
+
+                        console.log('✅ Topic labels added and saved successfully');
+                    } catch (error) {
+                        console.error('❌ Error during topic labeling:', error);
+                        alert('Failed to add topic labels. Proceeding with existing data.');
+                    } finally {
+                        this.isLabeling = false;
+                    }
+                }
+
+                // Step 4: Generate markdown using the (possibly updated) questions
+                this.markdownContent = labeledQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
 
                     const images = (q.image_paths || [])
-                        .map((img) => `![Diagram](${img.image_url || img})`)
+                        .map((imgObj) => {
+                            const img = typeof imgObj === 'string' ? imgObj : imgObj.url;
+                            const isAnswer = typeof imgObj === 'object' && imgObj.is_answer;
+                            return isAnswer
+                                ? `![AnswerKey](${img})`
+                                : `![Diagram](${img})`;
+                        })
                         .join('\n');
 
                     let answer = '';
@@ -328,12 +504,14 @@ export default {
                 alert('Failed to load paper content. Please try again.');
             }
         },
+
         viewQuiz(paperName) {
             this.$router.push({
                 name: 'QuizView',
                 query: { paper_name: paperName }
             });
         },
+
         printQuiz(paper) {
             this.$router.push({
                 path: '/print-view',
@@ -345,14 +523,13 @@ export default {
                     topic_label: paper.topic_label
                 }
             });
-        }
-
-        ,
+        },
 
         closeEditor() {
             this.markdownContent = '';
             this.currentPaperName = '';
         },
+
         handleInsertMarkdown(markdownImage) {
             if (!this.markdownContent || !this.selectedQuestionNumber) return;
 
@@ -366,8 +543,7 @@ export default {
             // Insert the image markdown right after the header
             parts[1] = `\n\n${markdownImage}\n` + parts[1];
             this.markdownContent = parts.join(marker);
-        }
-        ,
+        },
 
         async saveEditedMarkdown() {
             this.isSaving = true;
@@ -393,6 +569,23 @@ export default {
             } finally {
                 this.isSaving = false;
             }
+        },
+
+        toggleImageLabel(index) {
+            const img = this.allImagesInMarkdown[index];
+            const newLabel = img.isAnswer ? 'Diagram' : 'AnswerKey';
+
+            // Replace using RegExp to allow whitespace flexibility in original label
+            const escapedUrl = img.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`!\\[.*?\\]\\(${escapedUrl}\\)`, 'g');
+            const newMarkdown = `![${newLabel}](${img.url})`;
+
+            // Replace in markdown
+            this.markdownContent = this.markdownContent.replace(regex, newMarkdown);
+
+            // Update the UI label toggle
+            this.allImagesInMarkdown[index].label = newLabel;
+            this.allImagesInMarkdown[index].isAnswer = !img.isAnswer;
         }
     }
 };
@@ -738,10 +931,28 @@ export default {
     border-color: #66CC99;
 }
 
+.image-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.preview-img {
+    max-width: 300px;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+}
+
+.marked {
+    background-color: #e3fcef;
+    border-color: #66CC99;
+}
 
 @keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
+
 </style>
