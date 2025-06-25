@@ -1,4 +1,3 @@
-
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
@@ -404,9 +403,14 @@ router.post("/update-question-details", async (req, res) => {
 
       // Extract image paths
       const imagePaths = [];
-      const imageRegex = /!\[.*?\]\((.*?)\)/g;
+      const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
       while ((match = imageRegex.exec(block)) !== null) {
-        imagePaths.push(match[1]);
+        const label = match[1].toLowerCase();
+        const url = match[2];
+        imagePaths.push({
+          url,
+          is_answer: label.includes("answer"),
+        });
       }
 
       // Extract answer key (if exists) - IMPROVED VERSION
@@ -553,7 +557,5 @@ router.get("/logs/:paper_name", async (req, res) => {
     client.release();
   }
 });
-
-
 
 module.exports = router;

@@ -22,41 +22,41 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // Configure multer for image uploads
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
     // Check if file is an image
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith("image/")) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error("Only image files are allowed"), false);
     }
-  }
+  },
 });
 
 // Helper function to get file extension from mimetype
 function getFileExtension(mimetype) {
   const extensions = {
-    'image/jpeg': '.jpg',
-    'image/jpg': '.jpg',
-    'image/png': '.png',
-    'image/gif': '.gif',
-    'image/webp': '.webp',
-    'image/svg+xml': '.svg',
-    'image/bmp': '.bmp',
-    'image/tiff': '.tiff'
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff",
   };
-  return extensions[mimetype] || '.jpg';
+  return extensions[mimetype] || ".jpg";
 }
 
 // Helper function to sanitize filename
 function sanitizeFilename(filename) {
   return filename
-    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace special chars with underscore
-    .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+    .replace(/[^a-zA-Z0-9.-]/g, "_") // Replace special chars with underscore
+    .replace(/_{2,}/g, "_") // Replace multiple underscores with single
     .toLowerCase();
 }
 
@@ -320,7 +320,7 @@ router.post("/upload/image", upload.single("image"), async (req, res) => {
 
     // Get folder from request or use default
     const folder = req.body.folder || "manual-uploads";
-    
+
     // Generate unique filename
     const fileExtension = getFileExtension(req.file.mimetype);
     const sanitizedOriginalName = sanitizeFilename(
@@ -336,14 +336,16 @@ router.post("/upload/image", upload.single("image"), async (req, res) => {
       Key: key,
       Body: req.file.buffer,
       ContentType: req.file.mimetype,
-      ContentDisposition: 'inline', // Allow direct viewing in browser
-      CacheControl: 'max-age=31536000', // 1 year cache
+      ContentDisposition: "inline", // Allow direct viewing in browser
+      CacheControl: "max-age=31536000", // 1 year cache
     });
 
     await s3.send(uploadCommand);
 
     // Generate S3 URL
-    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(key)}`;
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
+      process.env.S3_REGION
+    }.amazonaws.com/${encodeURIComponent(key)}`;
 
     console.log(`✅ Image uploaded successfully: ${imageUrl}`);
 
@@ -355,23 +357,24 @@ router.post("/upload/image", upload.single("image"), async (req, res) => {
       originalName: req.file.originalname,
       size: req.file.size,
       mimetype: req.file.mimetype,
-      s3Key: key
+      s3Key: key,
     });
-
   } catch (error) {
     console.error("❌ Image upload error:", error);
-    
-    if (error.message === 'Only image files are allowed') {
+
+    if (error.message === "Only image files are allowed") {
       return res.status(400).json({ error: "Only image files are allowed" });
     }
-    
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: "File too large. Maximum size is 10MB." });
+
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res
+        .status(400)
+        .json({ error: "File too large. Maximum size is 10MB." });
     }
-    
-    res.status(500).json({ 
-      error: "Failed to upload image", 
-      details: error.message 
+
+    res.status(500).json({
+      error: "Failed to upload image",
+      details: error.message,
     });
   }
 });
@@ -407,14 +410,16 @@ router.post("/upload/images", upload.array("images", 10), async (req, res) => {
           Key: key,
           Body: file.buffer,
           ContentType: file.mimetype,
-          ContentDisposition: 'inline',
-          CacheControl: 'max-age=31536000',
+          ContentDisposition: "inline",
+          CacheControl: "max-age=31536000",
         });
 
         await s3.send(uploadCommand);
 
         // Generate S3 URL
-        const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encodeURIComponent(key)}`;
+        const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
+          process.env.S3_REGION
+        }.amazonaws.com/${encodeURIComponent(key)}`;
 
         uploadResults.push({
           success: true,
@@ -423,16 +428,15 @@ router.post("/upload/images", upload.array("images", 10), async (req, res) => {
           originalName: file.originalname,
           size: file.size,
           mimetype: file.mimetype,
-          s3Key: key
+          s3Key: key,
         });
 
         console.log(`✅ Uploaded: ${fileName}`);
-
       } catch (uploadError) {
         console.error(`❌ Failed to upload ${file.originalname}:`, uploadError);
         errors.push({
           fileName: file.originalname,
-          error: uploadError.message
+          error: uploadError.message,
         });
       }
     }
@@ -443,14 +447,13 @@ router.post("/upload/images", upload.array("images", 10), async (req, res) => {
       results: uploadResults,
       errors: errors,
       totalUploaded: uploadResults.length,
-      totalFailed: errors.length
+      totalFailed: errors.length,
     });
-
   } catch (error) {
     console.error("❌ Batch image upload error:", error);
-    res.status(500).json({ 
-      error: "Failed to upload images", 
-      details: error.message 
+    res.status(500).json({
+      error: "Failed to upload images",
+      details: error.message,
     });
   }
 });
@@ -459,10 +462,17 @@ router.post("/upload/images", upload.array("images", 10), async (req, res) => {
 router.get("/upload/info", (req, res) => {
   res.json({
     maxFileSize: "10MB",
-    allowedTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp"],
+    allowedTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+      "image/bmp",
+    ],
     maxFiles: 10,
     bucket: process.env.S3_BUCKET_NAME,
-    region: process.env.S3_REGION
+    region: process.env.S3_REGION,
   });
 });
 
@@ -624,20 +634,21 @@ router.post("/process", async (req, res) => {
         }
 
         const newImagePaths = await Promise.all(
-          question.image_path.map(async (mathpixUrl, index) => {
-            if (mathpixUrl && mathpixUrl.includes("cdn.mathpix.com")) {
+          question.image_path.map(async (rawUrl, index) => {
+            const cleanedUrl = rawUrl.replace(/\\&/g, "&");
+            if (cleanedUrl.includes("cdn.mathpix.com")) {
               const s3Url = await downloadAndUploadImage(
-                mathpixUrl,
+                cleanedUrl,
                 paper_name,
                 question.question_number,
                 index
               );
-              if (s3Url !== mathpixUrl) {
+              if (s3Url !== rawUrl) {
                 imagesProcessed++;
               }
               return s3Url;
             }
-            return mathpixUrl;
+            return rawUrl;
           })
         );
 
