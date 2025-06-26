@@ -594,7 +594,10 @@ Return the JSON array directly:`;
       parsed = await parseGeminiJsonResponse(raw);
       console.log(`✅ Successfully parsed ${parsed.length} questions`);
     } catch (parseError) {
-      console.error("❌ All JSON parsing strategies failed:", parseError.message);
+      console.error(
+        "❌ All JSON parsing strategies failed:",
+        parseError.message
+      );
 
       try {
         const logClient = await pool.connect();
@@ -605,7 +608,10 @@ Return the JSON array directly:`;
         );
         logClient.release();
       } catch (logErr) {
-        console.error("❌ Failed to write raw Gemini response to logs:", logErr.message);
+        console.error(
+          "❌ Failed to write raw Gemini response to logs:",
+          logErr.message
+        );
       }
 
       return res.status(500).json({
@@ -637,7 +643,11 @@ Return the JSON array directly:`;
           line.text &&
           line.text.includes("https://cdn.mathpix.com/cropped")
         ) {
-          const matches = [...line.text.matchAll(/https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g)];
+          const matches = [
+            ...line.text.matchAll(
+              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
+            ),
+          ];
           for (const match of matches) {
             orderedImageUrls.push(match[0]);
           }
@@ -676,13 +686,17 @@ Return the JSON array directly:`;
       );
       logClient.release();
     } catch (logErr) {
-      console.error("❌ Failed to write top-level error to logs:", logErr.message);
+      console.error(
+        "❌ Failed to write top-level error to logs:",
+        logErr.message
+      );
     }
 
-    return res.status(500).json({ error: "Unexpected error", detail: err.message });
+    return res
+      .status(500)
+      .json({ error: "Unexpected error", detail: err.message });
   }
 });
-
 
 // Extract answers from Mathpix MMD
 router.post("/extract_answers_from_mmd", async (req, res) => {
@@ -809,8 +823,10 @@ router.post("/extract_answers_from_mmd", async (req, res) => {
       // We need to remove these markers before parsing.
       // Use a more robust regex to ensure it catches variations and newlines.
       const cleanedResponse = geminiGeneratedText
-        .replace(/^```json\s*|```\s*$/g, "") // Remove '```json\n' from start and '\n```' from end, including any surrounding whitespace
-        .trim(); // Trim any remaining whitespace
+        .replace(/^```json\s*|```\s*$/g, "")
+        // Fix malformed escaped characters like \\$ or \\(
+        .replace(/\\([^\\ntubrf"'\\/])/g, "\\\\$1")
+        .trim();
 
       answersData = JSON.parse(cleanedResponse);
 

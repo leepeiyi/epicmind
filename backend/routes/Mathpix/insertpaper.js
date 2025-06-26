@@ -558,4 +558,185 @@ router.get("/logs/:paper_name", async (req, res) => {
   }
 });
 
+// POST route to add manual question
+router.post("/add-manual-question", async (req, res) => {
+  const {
+    paper_name,
+    question_number,
+    question_text,
+    topic_label,
+    answer_options,
+    image_paths,
+    answer_key,
+    subject,
+    banding,
+    level,
+    paper_type
+  } = req.body;
+
+  // Validation
+  if (!paper_name || !question_number || !question_text) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing required fields: paper_name, question_number, and question_text"
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Check if question number already exists for this paper
+    const existingQuestion = await client.query(
+      `SELECT question_number FROM question 
+       WHERE paper_name = $1 AND question_number = $2`,
+      [paper_name, question_number]
+    );
+
+    if (existingQuestion.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Question ${question_number} already exists for paper ${paper_name}`
+      });
+    }
+
+    // Get paper metadata if not provided (fallback to existing questions in the paper)
+    let finalSubject = subject;
+    let finalBanding = banding;
+    let finalLevel = level;
+    let finalPaperType = paper_type;
+
+    if (!finalSubject || !finalBanding || !finalLevel) {
+      const existingPaperData = await client.query(
+        `SELECT subject, banding, level, paper_type 
+         FROM question 
+         WHERE paper_name = $1 
+         LIMIT 1`,
+        [paper_name]
+      );
+
+      if (existingPaperData.rows.length > 0) {
+        const existing = existingPaperData.rows[0];
+        finalSubject = finalSubject || existing.subject;
+        finalBanding = finalBanding || existing.banding;
+        finalLevel = finalLevel || existing.level;
+        finalPaperType = finalPaperType || existing.paper_type;
+      } else {
+        // Default values if no existing questions
+        finalSubject = finalSubject || 'Math';
+        finalBanding = finalBanding || 'Express';
+        finalLevel = finalLevel || 'Sec 4';
+        finalPaperType = finalPaperType || 'exam';
+      }
+    }
+
+    // Insert the new question
+    const insertQuery = `
+      INSERT INTO question (
+        paper_name,
+        question_number,
+        question_text,
+        topic_label,
+        answer_options,
+        image_paths,
+        answer_key,
+        subject,
+        banding,
+        level,
+        paper_type,
+        difficulty_level,
+        vetted,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+      RETURNING id, question_number`;
+
+    const result = await client.query(insertQuery, [
+      paper_name,
+      question_number,
+      question_text,
+      topic_label || 'Manual Addition',
+      JSON.stringify(answer_options || []),
+      JSON.stringify(image_paths || []),
+      answer_key ? JSON.stringify(answer_key) : null,
+      finalSubject,
+      finalBanding,
+      finalLevel,
+      finalPaperType,
+      'Medium', // Default difficulty
+      false // Not vetted by default
+    ]);
+
+    const insertedQuestion = result.rows[0];
+
+    console.log(`✅ Manual question added: Q${question_number} for paper ${paper_name}`);
+
+    // Log the addition
+    try {
+      await client.query(
+        `INSERT INTO logs (paper_name, action, details, timestamp) 
+         VALUES ($1, $2, $3, NOW())`,
+        [
+          paper_name,
+          'MANUAL_QUESTION_ADDED',
+          `Question ${question_number} manually added by user`
+        ]
+      );
+    } catch (logError) {
+      console.warn('⚠️ Failed to log manual question addition:', logError.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Question ${question_number} added successfully to ${paper_name}`,
+      question: {
+        id: insertedQuestion.id,
+        question_number: insertedQuestion.question_number,
+        paper_name,
+        topic_label: topic_label || 'Manual Addition'
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Error adding manual question:", err.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to add question: ${err.message}`
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// GET route to get the next available question number for a paper
+router.get("/next-question-number/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  const client = await pool.connect();
+
+  try {
+    const result = await client.query(
+      `SELECT MAX(question_number) as max_question_number 
+       FROM question 
+       WHERE paper_name = $1`,
+      [paper_name]
+    );
+
+    const maxQuestionNumber = result.rows[0].max_question_number || 0;
+    const nextQuestionNumber = maxQuestionNumber + 1;
+
+    res.json({
+      success: true,
+      next_question_number: nextQuestionNumber,
+      current_max: maxQuestionNumber
+    });
+
+  } catch (err) {
+    console.error("❌ Error getting next question number:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get next question number"
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

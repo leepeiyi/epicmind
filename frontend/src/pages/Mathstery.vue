@@ -121,11 +121,9 @@
                             🔍 Related Questions: {{ selectedQuestion.topic_label }}
                         </h3>
                         <h3 v-else>Select a question to see related questions</h3>
-                        
+
                         <!-- Save Quiz Button -->
-                        <button v-if="examQuestions.length" 
-                                @click="showSaveQuizModal = true" 
-                                class="save-quiz-btn">
+                        <button v-if="examQuestions.length" @click="showSaveQuizModal = true" class="save-quiz-btn">
                             💾 Save as Quiz
                         </button>
                     </div>
@@ -139,7 +137,8 @@
                     <!-- Related questions list -->
                     <div v-else-if="relatedQuestions.length" class="related-questions">
                         <p class="related-count">Found {{ relatedQuestions.length }} related questions</p>
-                        <p class="click-to-replace-hint">💡 Click on any question below to replace Q{{ selectedQuestion.question_number }} in your quiz</p>
+                        <p class="click-to-replace-hint">💡 Click on any question below to replace Q{{
+                            selectedQuestion.question_number }} in your quiz</p>
                         <div v-for="(relatedQ, index) in relatedQuestions" :key="relatedQ.id"
                             :class="['related-question-item', { 'selected-for-replacement': selectedReplacementQuestion && selectedReplacementQuestion.id === relatedQ.id }]"
                             @click="selectReplacementQuestion(relatedQ)">
@@ -151,19 +150,24 @@
                                 <span class="related-paper-type" :class="relatedQ.paper_type">
                                     {{ relatedQ.paper_type === 'exam' ? 'EXAM' : 'TOPICAL' }}
                                 </span>
-                                <span v-if="selectedReplacementQuestion && selectedReplacementQuestion.id === relatedQ.id" class="replacement-selected-badge">
+                                <span
+                                    v-if="selectedReplacementQuestion && selectedReplacementQuestion.id === relatedQ.id"
+                                    class="replacement-selected-badge">
                                     ✓ Selected
                                 </span>
                             </div>
-                            <div class="related-question-text" v-html="processQuestionText(relatedQ.question_text)"></div>
+                            <div class="related-question-text" v-html="processQuestionText(relatedQ.question_text)">
+                            </div>
                             <div class="related-question-meta">
                                 <span class="related-difficulty">{{ relatedQ.difficulty_level || 'Medium' }}</span>
                             </div>
                         </div>
-                        
+
                         <div v-if="selectedReplacementQuestion" class="replacement-summary">
                             <p><strong>Replacement Selected:</strong></p>
-                            <p>Q{{ selectedQuestion.question_number }} will be replaced with Q{{ selectedReplacementQuestion.question_number }} from {{ selectedReplacementQuestion.paper_name }}</p>
+                            <p>Q{{ selectedQuestion.question_number }} will be replaced with Q{{
+                                selectedReplacementQuestion.question_number }} from {{
+                                    selectedReplacementQuestion.paper_name }}</p>
                             <button @click="clearReplacement" class="clear-replacement-btn">✕ Clear Replacement</button>
                         </div>
                     </div>
@@ -187,64 +191,54 @@
                         <h3>💾 Save as Quiz</h3>
                         <button @click="closeSaveQuizModal" class="modal-close-btn">✕</button>
                     </div>
-                    
+
                     <div class="modal-body">
                         <p class="modal-description">
                             Create a quiz from this exam paper ({{ examQuestions.length }} questions total)
                             <span v-if="selectedReplacementQuestion">
-                                <br><strong>Note:</strong> Q{{ selectedQuestion.question_number }} will be replaced with Q{{ selectedReplacementQuestion.question_number }} from {{ selectedReplacementQuestion.paper_name }}
+                                <br><strong>Note:</strong> Q{{ selectedQuestion.question_number }} will be replaced with
+                                Q{{ selectedReplacementQuestion.question_number }} from {{
+                                    selectedReplacementQuestion.paper_name }}
                             </span>
                         </p>
-                        
+
                         <div class="quiz-form">
                             <div class="form-group">
                                 <label>Quiz Name *</label>
-                                <input v-model="quizForm.quizName" 
-                                       type="text" 
-                                       placeholder="Enter quiz name..."
-                                       class="form-input" />
+                                <input v-model="quizForm.quizName" type="text" placeholder="Enter quiz name..."
+                                    class="form-input" />
                             </div>
-                            
+
                             <div class="form-group">
                                 <label>Teacher ID *</label>
-                                <input v-model="quizForm.teacher_id" 
-                                       type="text" 
-                                       placeholder="Enter your teacher ID..."
-                                       class="form-input" />
+                                <input v-model="quizForm.teacher_id" type="text" placeholder="Enter your teacher ID..."
+                                    class="form-input" />
                             </div>
-                            
+
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Subject</label>
-                                    <input v-model="quizForm.subject" 
-                                           type="text" 
-                                           class="form-input" />
+                                    <input v-model="quizForm.subject" type="text" class="form-input" />
                                 </div>
-                                
+
                                 <div class="form-group">
                                     <label>Banding</label>
-                                    <input v-model="quizForm.banding" 
-                                           type="text" 
-                                           class="form-input" />
+                                    <input v-model="quizForm.banding" type="text" class="form-input" />
                                 </div>
                             </div>
-                            
+
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Level</label>
-                                    <input v-model="quizForm.level" 
-                                           type="text" 
-                                           class="form-input" />
+                                    <input v-model="quizForm.level" type="text" class="form-input" />
                                 </div>
-                                
+
                                 <div class="form-group">
                                     <label>Topic</label>
-                                    <input v-model="quizForm.topic" 
-                                           type="text" 
-                                           class="form-input" />
+                                    <input v-model="quizForm.topic" type="text" class="form-input" />
                                 </div>
                             </div>
-                            
+
                             <div class="quiz-preview">
                                 <h4>Quiz will include {{ finalQuizQuestions.length }} questions:</h4>
                                 <ul class="question-list">
@@ -259,12 +253,11 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="modal-footer">
                         <button @click="closeSaveQuizModal" class="cancel-btn">Cancel</button>
-                        <button @click="saveQuiz" 
-                                :disabled="!quizForm.quizName || !quizForm.teacher_id || isSavingQuiz"
-                                class="save-btn">
+                        <button @click="saveQuiz" :disabled="!quizForm.quizName || !quizForm.teacher_id || isSavingQuiz"
+                            class="save-btn">
                             {{ isSavingQuiz ? 'Saving...' : 'Save Quiz' }}
                         </button>
                     </div>
@@ -352,16 +345,16 @@ export default {
         finalQuizQuestions() {
             // Start with all exam questions
             let questions = [...this.examQuestions];
-            
+
             // If user has selected a replacement question
             if (this.selectedReplacementQuestion && this.selectedQuestion) {
                 // Remove the selected question
                 questions = questions.filter(q => q.id !== this.selectedQuestion.id);
-                
+
                 // Add the replacement question
                 questions.push({ ...this.selectedReplacementQuestion, isReplacement: true });
             }
-            
+
             return questions;
         }
     },
@@ -375,14 +368,14 @@ export default {
     },
     watch: {
         examQuestions() {
-            this.$nextTick(() => {
+            setTimeout(() => {
                 this.renderMathJax();
-            });
+            }, 50); // small delay to allow DOM updates
         },
         relatedQuestions() {
-            this.$nextTick(() => {
+            setTimeout(() => {
                 this.renderMathJax();
-            });
+            }, 50);
         },
         selectedRelatedQuestions: {
             handler(newVal) {
@@ -446,16 +439,16 @@ export default {
 
         processQuestionText(text) {
             if (!text) return '';
-            
+
             // First, handle LaTeX escaping
             let processedText = this.sanitizeLatex(text);
-            
+
             // Convert markdown image syntax to HTML img tags if needed
             processedText = processedText.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="question-image" />');
-            
+
             // Ensure existing img tags have proper styling
             processedText = processedText.replace(/<img([^>]*)>/g, '<img$1 class="question-image" />');
-            
+
             return processedText;
         },
 
@@ -469,8 +462,12 @@ export default {
             }
             return Promise.resolve();
         },
-        
+
         configureMathJax() {
+            if (window.MathJax) {
+                return;
+            }
+
             window.MathJax = {
                 tex: {
                     inlineMath: [['$', '$'], ['\\(', '\\)']],
@@ -479,16 +476,25 @@ export default {
                 },
                 options: {
                     enableMenu: false
+                },
+                startup: {
+                    ready: () => {
+                        console.log('✅ MathJax loaded and ready');
+                        window.MathJax.startup.defaultReady(); // ← This is required
+                        this.renderMathJax(); // ← Only call after MathJax is ready
+                    }
                 }
             };
 
-            if (!window.MathJax || !window.MathJax.typesetPromise) {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
-                script.async = true;
-                document.head.appendChild(script);
-            }
-        },
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'; // more compatible than tex-svg
+            script.async = true;
+            script.onload = () => {
+                console.log('📦 MathJax script loaded');
+            };
+            document.head.appendChild(script);
+        }
+        ,
 
         sanitizeLatex(text) {
             return text.replace(/\\\\/g, '\\');
@@ -503,7 +509,7 @@ export default {
 
             if (this.selectedQuestion && this.selectedQuestion.topic_label) {
                 await this.loadRelatedQuestions(this.selectedQuestion.topic_label);
-                
+
                 // Update quiz form topic when a specific question is selected
                 if (this.selectedQuestion.topic_label) {
                     this.quizForm.topic = this.selectedQuestion.topic_label;
@@ -515,16 +521,16 @@ export default {
             // Extract metadata from the first question or paper name
             const firstQuestion = this.examQuestions[0];
             const paperParts = this.currentPaperName.split('_');
-            
+
             // Try to get from question data first, fallback to paper name parsing
-            this.quizForm.subject = (firstQuestion && firstQuestion.subject) || 
-                                  (paperParts.length > 1 ? paperParts[1] : 'Math');
-            this.quizForm.banding = (firstQuestion && firstQuestion.banding) || 
-                                  (paperParts.length > 2 ? paperParts[2] : 'Express');
-            this.quizForm.level = (firstQuestion && firstQuestion.level) || 
-                                (paperParts.length > 3 ? paperParts[3] : 'Sec 4');
+            this.quizForm.subject = (firstQuestion && firstQuestion.subject) ||
+                (paperParts.length > 1 ? paperParts[1] : 'Math');
+            this.quizForm.banding = (firstQuestion && firstQuestion.banding) ||
+                (paperParts.length > 2 ? paperParts[2] : 'Express');
+            this.quizForm.level = (firstQuestion && firstQuestion.level) ||
+                (paperParts.length > 3 ? paperParts[3] : 'Sec 4');
             this.quizForm.topic = this.selectedQuestion ? this.selectedQuestion.topic_label : 'Mixed Topics';
-            
+
             // Generate default quiz name
             if (!this.quizForm.quizName) {
                 const timestamp = new Date().toLocaleDateString();
