@@ -102,6 +102,7 @@
 
             <!-- LaTeX Converter -->
             <LatexConverter v-if="markdownContent" />
+
             <!-- Image Uploader -->
             <div v-if="markdownContent" class="image-uploader-wrapper" style="margin: 2rem 0;">
                 <h3>🖼️ Upload Diagrams or Figures</h3>
@@ -117,9 +118,7 @@
                 </label>
                 <ImageUploader :paper-name="currentPaperName" :question-number="selectedQuestionNumber"
                     @insert-markdown="handleInsertMarkdown" />
-
             </div>
-
 
             <!-- Markdown Editor and Preview Section -->
             <div v-if="markdownContent" class="output-wrapper">
@@ -149,16 +148,31 @@
                         </div>
                     </div>
                 </div>
-
-
             </div>
-
 
             <!-- Save Section -->
             <div v-if="markdownContent" class="save-section">
                 <button class="save-btn" @click="saveEditedMarkdown">💾 Save Changes</button>
             </div>
+
+            <!-- Manual Question Addition Section -->
+            <div v-if="markdownContent" class="manual-question-section">
+                <div class="section-header">
+                    <h3>➕ Add Question Manually</h3>
+                    <button @click="showAddQuestionModal = true" class="add-question-btn">
+                        ➕ Add New Question
+                    </button>
+                </div>
+                <p class="section-description">
+                    Add questions that may have been missed during automatic extraction.
+                </p>
+            </div>
         </div>
+
+        <!-- Manual Question Modal Component -->
+        <ManualQuestionModal :show="showAddQuestionModal" :paper-name="currentPaperName"
+            :next-question-number="nextQuestionNumber" :paper-metadata="form" @close="showAddQuestionModal = false"
+            @question-added="onQuestionAdded" />
     </div>
 </template>
 
@@ -167,6 +181,7 @@ import Navbar from '../components/Navbar.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
 import PrintView from '../components/PrintView.vue';
+import ManualQuestionModal from '../components/ManualQuestionModal.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 
@@ -176,7 +191,8 @@ export default {
         Navbar,
         LatexConverter,
         ImageUploader,
-        PrintView
+        PrintView,
+        ManualQuestionModal
     },
     data() {
         return {
@@ -194,6 +210,8 @@ export default {
             itemsPerPage: 12,
             selectedQuestionNumber: '',
             allImagesInMarkdown: [],
+            showAddQuestionModal: false,
+            nextQuestionNumber: 1,
             form: {
                 subject: '',
                 banding: '',
@@ -491,6 +509,9 @@ export default {
                     return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
                 }).join('\n\n---\n\n');
 
+                // Get next available question number
+                await this.getNextQuestionNumber();
+
                 // Scroll to editor
                 this.$nextTick(() => {
                     const editorElement = document.querySelector('.output-wrapper');
@@ -586,6 +607,28 @@ export default {
             // Update the UI label toggle
             this.allImagesInMarkdown[index].label = newLabel;
             this.allImagesInMarkdown[index].isAnswer = !img.isAnswer;
+        },
+
+        // Manual Question Addition Methods
+        async getNextQuestionNumber() {
+            if (!this.currentPaperName) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/paper/next-question-number/${encodeURIComponent(this.currentPaperName)}`);
+                const data = await response.json();
+                if (data.success) {
+                    this.nextQuestionNumber = data.next_question_number;
+                }
+            } catch (error) {
+                console.error('❌ Error getting next question number:', error);
+            }
+        },
+
+        async onQuestionAdded(data) {
+            alert(`✅ ${data.message}`);
+
+            // Reload the paper to show the new question
+            await this.loadPaper(this.currentPaperName);
         }
     }
 };
@@ -949,10 +992,47 @@ export default {
     border-color: #66CC99;
 }
 
+.manual-question-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #f8f9fa;
+    border-radius: 12px;
+    border: 2px solid #28a745;
+    border-style: dashed;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.section-description {
+    color: #6c757d;
+    font-size: 14px;
+    margin: 0;
+}
+
+.add-question-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+}
+
+.add-question-btn:hover {
+    background-color: #218838;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
-
 </style>
