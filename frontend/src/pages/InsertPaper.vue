@@ -26,6 +26,78 @@
                 </ul>
             </div>
 
+            <!-- Answer Extraction Testing Section -->
+            <div class="answer-extraction-section">
+                <h2>🧪 Test Answer Extraction</h2>
+                <p class="subtitle">Test answer key extraction from PDF and save to existing papers</p>
+
+                <div class="answer-extraction-controls">
+                    <!-- Paper Selection -->
+                    <div class="paper-selection">
+                        <label for="paperSelect"><strong>Select Paper to Update:</strong></label>
+                        <select id="paperSelect" v-model="selectedPaperForAnswers" class="paper-select">
+                            <option value="">-- Choose a paper --</option>
+                            <option v-for="paper in recentPapers" :key="paper.paper_name" :value="paper.paper_name">
+                                {{ paper.paper_name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Answer Key Upload -->
+                    <div class="answer-key-upload">
+                        <label class="file-btn answer-file-btn">
+                            📝 Upload Answer Key PDF
+                            <input type="file" hidden @change="handleAnswerKeyForTesting" accept=".pdf" />
+                        </label>
+                        <div v-if="testAnswerKeyFile" class="uploaded-answer-preview">
+                            <p><strong>Answer Key:</strong> {{ testAnswerKeyFile.name }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Extract Button -->
+                    <button v-if="selectedPaperForAnswers && testAnswerKeyFile" @click="extractAnswersForTesting"
+                        class="extract-btn" :disabled="isExtractingAnswers">
+                        {{ isExtractingAnswers ? '🔄 Extracting...' : '🔍 Extract Answers' }}
+                    </button>
+                </div>
+
+                <!-- Extracted Answers Display -->
+                <div v-if="extractedAnswers.length > 0" class="extracted-answers-section">
+                    <h3>📋 Extracted Answers ({{ extractedAnswers.length }} found)</h3>
+                    <div class="answers-grid">
+                        <div v-for="answer in extractedAnswers" :key="answer.question_number" class="answer-item">
+                            <div class="answer-header">
+                                <span class="question-num">Q{{ answer.question_number }}</span>
+                                <span class="confidence-badge" :class="answer.confidence">{{ answer.confidence }}</span>
+                            </div>
+                            <div class="answer-content">
+                                <strong>Answer:</strong> {{ answer.correct_answer }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="save-answers-section">
+                        <button @click="saveAnswersToDatabase" class="save-answers-btn" :disabled="isSavingAnswers">
+                            {{ isSavingAnswers ? '💾 Saving...' : '💾 Save Answers to Database' }}
+                        </button>
+                        <p class="save-note">This will update the selected paper: <strong>{{ selectedPaperForAnswers
+                        }}</strong></p>
+                    </div>
+                </div>
+
+                <!-- Extraction Progress -->
+                <div v-if="answerExtractionProgress" class="extraction-progress">
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill" :style="{ width: answerExtractionPercent + '%' }"></div>
+                    </div>
+                    <p>{{ answerExtractionProgress }}</p>
+                </div>
+            </div>
+
+            <!-- Separator -->
+            <hr class="section-separator" />
+
+            <!-- Original Upload Section -->
             <div class="type-toggle">
                 <button :class="{ active: uploadType === 'exam' }" @click="uploadType = 'exam'">Exam Paper</button>
                 <button :class="{ active: uploadType === 'topical' }" @click="uploadType = 'topical'">Topical
@@ -50,7 +122,7 @@
                 </label>
             </div>
 
-            <!-- Dual upload areas (new) -->
+            <!-- Dual upload areas (existing) -->
             <div v-if="uploadType && hasSeparateAnswerKey" class="dual-dropzone">
                 <div class="dropzone questions-dropzone" @dragover.prevent @drop.prevent="handleQuestionFileDrop">
                     <p><strong>Questions File</strong></p>
@@ -73,7 +145,7 @@
                 </div>
             </div>
 
-            <!-- File previews -->
+            <!-- File previews (existing) -->
             <div v-if="hasSeparateAnswerKey" class="uploaded-files-preview">
                 <div v-if="questionsFile" class="uploaded-file">
                     <p><strong>Questions File:</strong> {{ questionsFile.name }}</p>
@@ -178,6 +250,15 @@ export default {
             answerKeyPdfPreviewUrl: '',
             questionsPdfPageCount: 0,
             answerKeyPdfPageCount: 0,
+
+            // Answer extraction testing data
+            selectedPaperForAnswers: '',
+            testAnswerKeyFile: null,
+            extractedAnswers: [],
+            isExtractingAnswers: false,
+            isSavingAnswers: false,
+            answerExtractionProgress: '',
+            answerExtractionPercent: 0,
         };
     },
     computed: {
@@ -220,8 +301,7 @@ export default {
         // Configure MathJax for LaTeX rendering
         escapeLatexInMarkdown(md) {
             return md.replace(/\\(?!\\)/g, '\\\\');
-        }
-        ,
+        },
         configureMathJax() {
             window.MathJax = {
                 tex: {
@@ -242,7 +322,181 @@ export default {
             }
         },
 
-        // File handling methods
+        // Answer extraction testing methods
+        handleAnswerKeyForTesting(event) {
+            this.testAnswerKeyFile = event.target.files[0];
+            this.extractedAnswers = []; // Clear previous results
+        },
+
+        async extractAnswersForTesting() {
+            if (!this.selectedPaperForAnswers || !this.testAnswerKeyFile) {
+                alert('Please select a paper and upload an answer key file.');
+                return;
+            }
+
+            this.isExtractingAnswers = true;
+            this.answerExtractionProgress = '🔄 Extracting answers from PDF...';
+            this.answerExtractionPercent = 25;
+
+            try {
+                const formData = new FormData();
+                formData.append('pdf', this.testAnswerKeyFile);
+                formData.append('paper_name', this.selectedPaperForAnswers);
+
+                this.answerExtractionProgress = '📄 Processing answer key with AI...';
+                this.answerExtractionPercent = 50;
+
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_pdf`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to extract answers');
+                }
+
+                this.answerExtractionProgress = '✅ Answer extraction complete!';
+                this.answerExtractionPercent = 100;
+
+                this.extractedAnswers = data.answers || [];
+
+                console.log(`✅ Extracted ${this.extractedAnswers.length} answers`);
+
+                // Clear progress after a moment
+                setTimeout(() => {
+                    this.answerExtractionProgress = '';
+                    this.answerExtractionPercent = 0;
+                }, 2000);
+
+            } catch (error) {
+                console.error('❌ Answer extraction failed:', error);
+                alert(`❌ Answer extraction failed: ${error.message}`);
+                this.answerExtractionProgress = '';
+                this.answerExtractionPercent = 0;
+            } finally {
+                this.isExtractingAnswers = false;
+            }
+        },
+
+        preprocessAnswersForDatabase(extractedAnswers) {
+            const groupedAnswers = {};
+
+            // Group answers by main question number
+            for (const answer of extractedAnswers) {
+                const questionNum = answer.question_number;
+
+                // Extract main question number (e.g., "3(a)" -> "3", "1b" -> "1")
+                const mainQuestionMatch = questionNum.match(/^(\d+)/);
+                if (!mainQuestionMatch) {
+                    console.warn(`⚠️ Could not extract main question number from: ${questionNum}`);
+                    continue;
+                }
+
+                const mainQuestionNum = mainQuestionMatch[1];
+
+                // Initialize group if not exists
+                if (!groupedAnswers[mainQuestionNum]) {
+                    groupedAnswers[mainQuestionNum] = {
+                        question_number: mainQuestionNum,
+                        subParts: [],
+                        confidence: answer.confidence || 'medium'
+                    };
+                }
+
+                // Check if this is a sub-question
+                if (/[a-zA-Z\(\)]/.test(questionNum)) {
+                    // Extract sub-part (e.g., "3(a)" -> "(a)", "1b" -> "b")
+                    const subPartMatch = questionNum.match(/\d+([a-zA-Z\(\)]+)/);
+                    const subPart = subPartMatch ? subPartMatch[1] : questionNum.replace(/^\d+/, '');
+
+                    groupedAnswers[mainQuestionNum].subParts.push({
+                        part: subPart.includes('(') ? subPart : `(${subPart})`,
+                        answer: answer.correct_answer
+                    });
+                } else {
+                    // Main question without sub-parts
+                    groupedAnswers[mainQuestionNum].correct_answer = answer.correct_answer;
+                }
+            }
+
+            // Convert grouped answers back to array format
+            const processedAnswers = [];
+            for (const [questionNum, data] of Object.entries(groupedAnswers)) {
+                let finalAnswer = '';
+
+                if (data.subParts.length > 0) {
+                    // Sort sub-parts and combine
+                    data.subParts.sort((a, b) => a.part.localeCompare(b.part));
+                    finalAnswer = data.subParts
+                        .map(sp => `${sp.part} ${sp.answer}`)
+                        .join(', ');
+                } else {
+                    finalAnswer = data.correct_answer || '';
+                }
+
+                processedAnswers.push({
+                    question_number: questionNum, // Now just the main number
+                    correct_answer: finalAnswer,
+                    confidence: data.confidence
+                });
+            }
+
+            return processedAnswers.sort((a, b) =>
+                parseInt(a.question_number) - parseInt(b.question_number)
+            );
+        },
+
+        // Update your existing saveAnswersToDatabase method
+        async saveAnswersToDatabase() {
+            if (!this.selectedPaperForAnswers || this.extractedAnswers.length === 0) {
+                alert('No answers to save or paper not selected.');
+                return;
+            }
+
+            this.isSavingAnswers = true;
+
+            try {
+                // Preprocess answers to group sub-questions
+                const processedAnswers = this.preprocessAnswersForDatabase(this.extractedAnswers);
+
+                console.log('📊 Original answers:', this.extractedAnswers.length);
+                console.log('📊 Processed answers:', processedAnswers.length);
+                console.log('📋 Processed answers preview:', processedAnswers.slice(0, 3));
+
+                const response = await fetch(`${API_BASE_URL}/api/mathpix/update_answer_keys_direct`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paper_name: this.selectedPaperForAnswers,
+                        answers: processedAnswers // Use processed answers
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to save answers');
+                }
+
+                alert(`✅ Successfully updated ${result.updated} questions for ${this.selectedPaperForAnswers}`);
+                console.log('📊 Update details:', result.details);
+
+                // Clear the extracted answers after successful save
+                this.extractedAnswers = [];
+                this.testAnswerKeyFile = null;
+                this.selectedPaperForAnswers = '';
+
+            } catch (error) {
+                console.error('❌ Failed to save answers:', error);
+                alert(`❌ Failed to save answers: ${error.message}`);
+            } finally {
+                this.isSavingAnswers = false;
+            }
+        },
+
+        // File handling methods (existing)
         handleQuestionFileUpload(event) {
             this.questionsFile = event.target.files[0];
             this.questionsPdfPreviewUrl = URL.createObjectURL(this.questionsFile);
@@ -461,8 +715,6 @@ export default {
             }
         },
 
-
-
         async saveEditedMarkdown() {
             this.isSaving = true;
             try {
@@ -489,7 +741,7 @@ export default {
             }
         },
 
-        // Main submission handler (simplified version)
+        // Main submission handler (existing functionality)
         async handleSubmit() {
             // Validate inputs
             if (this.hasSeparateAnswerKey) {
@@ -722,9 +974,8 @@ export default {
 };
 </script>
 
-
 <style scoped>
-/* Keep all existing styles */
+/* Keep all existing styles and add new ones for answer extraction */
 .upload-page {
     padding: 3rem;
     max-width: 1200px;
@@ -732,124 +983,179 @@ export default {
     font-family: Arial, sans-serif;
 }
 
-/* Add styles for LaTeX converter in its new position */
-.latex-converter-section {
-    margin: 2rem 0;
-    padding: 1.5rem;
-    background-color: #f5f5f5;
-    border-radius: 10px;
-    border: 1px solid #ddd;
+/* Answer Extraction Section Styles */
+.answer-extraction-section {
+    margin-bottom: 3rem;
+    padding: 2rem;
+    background-color: #f8fffe;
+    border: 2px solid #66CC99;
+    border-radius: 12px;
 }
 
-.latex-converter {
+.answer-extraction-controls {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
 }
 
 @media (min-width: 768px) {
-    .latex-converter {
+    .answer-extraction-controls {
         flex-direction: row;
-    }
-
-    .converter-input-area {
-        width: 40%;
-    }
-
-    .converter-output-area {
-        width: 60%;
+        align-items: end;
     }
 }
 
-.converter-input {
-    width: 100%;
-    height: 100px;
-    padding: 0.75rem;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    margin-bottom: 0.5rem;
-}
-
-.converter-buttons {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.convert-btn,
-.clear-btn {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.convert-btn {
-    background: #66CC99;
-    color: white;
-}
-
-.clear-btn {
-    background: #f0f0f0;
-    border: 1px solid #ccc;
-}
-
-.converted-output {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.output-column {
+.paper-selection {
     flex: 1;
-    min-width: 200px;
 }
 
-.output-box {
-    position: relative;
-    background: white;
-    border: 1px solid #ddd;
+.paper-select {
+    width: 100%;
     padding: 0.75rem;
-    padding-right: 40px;
-    /* Space for copy button */
-    border-radius: 5px;
-    margin-bottom: 0.5rem;
+    border: 2px solid #66CC99;
+    border-radius: 8px;
+    font-size: 16px;
+    background-color: white;
+    margin-top: 0.5rem;
 }
 
-.output-box pre {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-all;
-    font-family: monospace;
+.answer-key-upload {
+    flex: 1;
 }
 
-.copy-btn {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background: #f0f0f0;
-    border: 1px solid #ccc;
-    padding: 3px 6px;
-    border-radius: 3px;
-    font-size: 12px;
+.answer-file-btn {
+    display: inline-block;
+    background-color: #66CC99;
+    color: white;
+    font-weight: bold;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
     cursor: pointer;
+    margin-top: 0.5rem;
 }
 
-.preview-box {
-    padding: 1rem;
-    background: white;
-    border: 1px solid #eee;
+.uploaded-answer-preview {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background-color: #f0f8f0;
     border-radius: 5px;
-    margin-bottom: 0.5rem;
+    font-size: 14px;
+}
+
+.extract-btn {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
     min-height: 50px;
 }
 
-.latex-preview {
-    font-size: 16px;
+.extract-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.extracted-answers-section {
+    margin-top: 2rem;
+}
+
+.answers-grid {
+    display: grid;
+    gap: 1rem;
+    margin: 1rem 0;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.answer-item {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1rem;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.answer-header {
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.question-num {
+    font-weight: bold;
+    color: #333;
+    font-size: 16px;
+}
+
+.confidence-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.confidence-badge.high {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.confidence-badge.medium {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.confidence-badge.low {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.answer-content {
+    color: #555;
+    word-break: break-word;
+}
+
+.save-answers-section {
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.save-answers-btn {
+    background-color: #28a745;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-size: 18px;
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+.save-answers-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+.save-note {
+    color: #666;
+    font-style: italic;
+}
+
+.extraction-progress {
+    margin-top: 1rem;
+}
+
+.section-separator {
+    margin: 3rem 0;
+    border: none;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #66CC99, transparent);
 }
 
 /* Keep all other existing styles */
@@ -1076,6 +1382,52 @@ export default {
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+.dual-dropzone {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+    .dual-dropzone {
+        grid-template-columns: 1fr;
+    }
+}
+
+.questions-dropzone {
+    border-color: #007bff;
+}
+
+.answers-dropzone {
+    border-color: #28a745;
+}
+
+.separate-answer-toggle {
+    margin-bottom: 1.5rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.uploaded-files-preview {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+    .uploaded-files-preview {
+        grid-template-columns: 1fr;
     }
 }
 </style>
