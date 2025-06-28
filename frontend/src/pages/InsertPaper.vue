@@ -28,7 +28,7 @@
 
             <!-- Answer Extraction Testing Section -->
             <div class="answer-extraction-section">
-                <h2>🧪 Test Answer Extraction</h2>
+                <h2>🧪 Answer Extraction</h2>
                 <p class="subtitle">Test answer key extraction from PDF and save to existing papers</p>
 
                 <div class="answer-extraction-controls">

@@ -1,0 +1,1547 @@
+// === Simulated Markdown OCR Route with Gemini Full Context Extraction + Mathpix + Polling ===
+const express = require("express");
+const router = express.Router();
+const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
+const multer = require("multer");
+const upload = multer({ storage: multer.memoryStorage() });
+const insertJSONPayload = require("../Mathpix/insertPostgresql");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+require("dotenv").config();
+const axios = require("axios");
+const FormData = require("form-data");
+const fs = require("fs-extra");
+const { PDFDocument } = require("pdf-lib");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  port: process.env.DB_PORT,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false,
+  },
+});
+
+const s3 = new S3Client({
+  region: process.env.S3_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// === Upload PDF to Mathpix, then poll until extraction is ready ===
+// === Step 1: Upload PDF to Mathpix and get pdf_id ===
+
+const PDFParser = require("pdf-parse");
+const { json } = require("stream/consumers");
+const {
+  parseLatexSafeJsonResponse,
+  getImprovedQuestionPrompt,
+  getImprovedAnswerPrompt,
+} = require("../../utils/latex-parser");
+
+const { Base64Utils } = require("../../utils/latex-parser");
+// Add this endpoint to mathpix.js
+router.post("/get_pdf_page_count", upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "PDF file required" });
+
+    const dataBuffer = req.file.buffer;
+    const pdfData = await PDFParser(dataBuffer);
+
+    res.json({ pageCount: pdfData.numpages });
+  } catch (err) {
+    console.error("❌ Error getting PDF page count:", err);
+    res.status(500).json({ error: "Failed to get PDF page count" });
+  }
+});
+
+// Test endpoint for PDF page count
+router.post("/test/pdf-page-count", upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No PDF file uploaded" });
+    }
+
+    const PDFParser = require("pdf-parse");
+    const dataBuffer = req.file.buffer;
+
+    console.log("🧪 Testing PDF page count functionality...");
+
+    try {
+      const pdfData = await PDFParser(dataBuffer);
+      const pageCount = pdfData.numpages;
+
+      console.log(`✅ PDF page count test successful: ${pageCount} pages`);
+      return res.json({ success: true, pageCount });
+    } catch (pdfError) {
+      console.error("❌ PDF parse error:", pdfError);
+      return res.status(500).json({
+        error: "Failed to parse PDF",
+        details: pdfError.message,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Test error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Test endpoint for Mathpix API connection (no actual upload)
+router.post("/test/mathpix-connection", async (req, res) => {
+  try {
+    console.log("🧪 Testing Mathpix API connection...");
+
+    // Just check if we can connect to Mathpix API
+    const testResponse = await axios.get(
+      "https://api.mathpix.com/v3/app-info",
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    console.log("✅ Mathpix API connection test successful");
+    return res.json({
+      success: true,
+      apiInfo: testResponse.data,
+      credentials: {
+        app_id_valid: !!process.env.MATHPIX_APP_ID,
+        app_key_valid: !!process.env.MATHPIX_APP_KEY,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Mathpix API connection test failed:", error);
+    return res.status(500).json({
+      error: "Failed to connect to Mathpix API",
+      details: error.message,
+      credentials: {
+        app_id_valid: !!process.env.MATHPIX_APP_ID,
+        app_key_valid: !!process.env.MATHPIX_APP_KEY,
+      },
+    });
+  }
+});
+
+// Test endpoint for batch parameter handling
+router.post("/test/batch-params", upload.single("pdf"), async (req, res) => {
+  try {
+    console.log("🧪 Testing batch parameter handling...");
+
+    const { startPage, endPage, batchSize } = req.body;
+
+    // Validate parameters
+    const parsedStartPage = startPage ? parseInt(startPage) : null;
+    const parsedEndPage = endPage ? parseInt(endPage) : null;
+    const parsedBatchSize = batchSize ? parseInt(batchSize) : 5;
+
+    // If file is provided, get actual page count
+    let actualPageCount = null;
+    if (req.file) {
+      const PDFParser = require("pdf-parse");
+      const dataBuffer = req.file.buffer;
+      const pdfData = await PDFParser(dataBuffer);
+      actualPageCount = pdfData.numpages;
+    }
+
+    // Calculate batches
+    const result = {
+      parsedParams: {
+        startPage: parsedStartPage,
+        endPage: parsedEndPage,
+        batchSize: parsedBatchSize,
+      },
+      actualFile: {
+        provided: !!req.file,
+        pageCount: actualPageCount,
+      },
+      batchCalculations: null,
+    };
+
+    // If we have either actual page count or end page, calculate batches
+    const pageCount = actualPageCount || parsedEndPage;
+    if (pageCount) {
+      const totalBatches = Math.ceil(pageCount / parsedBatchSize);
+      const batches = [];
+
+      for (let i = 0; i < totalBatches; i++) {
+        const batchStart = i * parsedBatchSize + 1;
+        const batchEnd = Math.min((i + 1) * parsedBatchSize, pageCount);
+
+        batches.push({
+          batchNumber: i + 1,
+          startPage: batchStart,
+          endPage: batchEnd,
+          pageCount: batchEnd - batchStart + 1,
+        });
+      }
+
+      result.batchCalculations = {
+        totalPages: pageCount,
+        totalBatches,
+        batches,
+      };
+    }
+
+    console.log("✅ Batch parameter test successful");
+    return res.json(result);
+  } catch (error) {
+    console.error("❌ Batch parameter test failed:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/split_batch", upload.single("pdf"), async (req, res) => {
+  try {
+    const { startPage, endPage } = req.body;
+    const start = parseInt(startPage, 10);
+    const end = parseInt(endPage, 10);
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No PDF uploaded." });
+    }
+
+    const pdfPath = req.file.path;
+    const fullPdfBytes = req.file.buffer;
+    const fullPdfDoc = await PDFDocument.load(fullPdfBytes);
+    const totalPages = fullPdfDoc.getPageCount();
+
+    if (start < 1 || end > totalPages || start > end) {
+      return res.status(400).json({ error: "Invalid page range." });
+    }
+
+    const newPdfDoc = await PDFDocument.create();
+    const copiedPages = await newPdfDoc.copyPages(
+      fullPdfDoc,
+      Array.from({ length: end - start + 1 }, (_, i) => i + start - 1)
+    );
+    copiedPages.forEach((page) => newPdfDoc.addPage(page));
+
+    const newPdfBytes = await newPdfDoc.save();
+    const batchFilename = `split_batch_${uuidv4()}.pdf`;
+    const batchFilePath = path.join("uploads", batchFilename);
+
+    await fs.ensureDir("uploads"); // ✅ makes sure uploads folder exists
+    await fs.writeFile(batchFilePath, newPdfBytes);
+
+    // Respond with path to batch file (you can customize to serve as a downloadable file or pass as a buffer)
+    res.json({ batch_path: batchFilePath });
+  } catch (error) {
+    console.error("❌ Error splitting PDF:", error);
+    res.status(500).json({ error: "Failed to split PDF batch." });
+  } finally {
+    if (req.file?.path) await fs.remove(req.file.path); // clean original upload
+  }
+});
+
+router.post(
+  "/upload_pdf_to_mathpix",
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res.status(400).json({ error: "PDF file required" });
+
+      // Get page range parameters if provided
+      const startPage = req.body.startPage
+        ? parseInt(req.body.startPage)
+        : null;
+      const endPage = req.body.endPage ? parseInt(req.body.endPage) : null;
+
+      const form = new FormData();
+      form.append("file", req.file.buffer, req.file.originalname);
+
+      // Create options object
+      const options = {
+        formats: ["markdown_with_ids", "images"],
+        include_answer_box_crop: true,
+        math_inline_delimiters: ["$", "$"],
+        math_display_delimiters: ["$$", "$$"],
+        sandbox: true,
+      };
+
+      // Add page range if provided
+      if (startPage && endPage) {
+        options.page_range = `${startPage}-${endPage}`;
+        console.log(`🔍 Processing PDF pages ${startPage}-${endPage}`);
+      }
+
+      form.append("options_json", JSON.stringify(options));
+
+      const uploadRes = await axios.post(
+        "https://api.mathpix.com/v3/pdf",
+        form,
+        {
+          headers: {
+            ...form.getHeaders(),
+            app_id: process.env.MATHPIX_APP_ID,
+            app_key: process.env.MATHPIX_APP_KEY,
+          },
+        }
+      );
+
+      res.json({ pdf_id: uploadRes.data.pdf_id });
+    } catch (err) {
+      console.error("❌ Mathpix upload error:", err);
+      res
+        .status(500)
+        .json({ error: "Failed to upload to Mathpix: " + err.message });
+    }
+  }
+);
+
+async function pollMathpixStatus(pdf_id, retries = 10, delay = 4000) {
+  console.log(`⏳ Polling Mathpix status for PDF ID: ${pdf_id}...`);
+
+  for (let i = 0; i < retries; i++) {
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    const status = response.data.status;
+    console.log(`📡 Attempt ${i + 1}: status = ${status}`);
+
+    if (status === "completed") {
+      console.log("✅ Mathpix processing complete.");
+      return response.data;
+    } else if (status === "error") {
+      throw new Error("❌ Mathpix returned an error during processing.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  throw new Error("❌ Mathpix processing timed out after polling.");
+}
+
+router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
+  const { pdf_id } = req.params;
+
+  if (!pdf_id) {
+    return res.status(400).json({ error: "Missing PDF ID" });
+  }
+
+  try {
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    res.setHeader("Content-Type", "text/plain");
+    res.send(response.data); // raw markdown with LaTeX
+  } catch (err) {
+    console.error("❌ Error fetching MMD from Mathpix:", err.message);
+    res.status(500).json({
+      error: "Failed to fetch MMD content",
+      detail: err.message,
+    });
+  }
+});
+
+router.post("/extract_questions_from_mmd", async (req, res) => {
+  try {
+    const {
+      pdf_id,
+      subject,
+      banding,
+      level,
+      paper_name,
+      paper_type,
+      topic_label,
+      startPage,
+      endPage,
+    } = req.body;
+
+    if (!pdf_id || !subject || !banding || !level || !paper_name) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!paper_type || paper_type === "undefined") {
+      return res.status(400).json({
+        error: "Invalid paper_type. Must be 'exam' or 'topical'",
+      });
+    }
+
+    console.log(`🔍 Extracting questions for paper: ${paper_name}`);
+
+    await pollMathpixStatus(pdf_id);
+
+    const [mmdRes, linesRes] = await Promise.all([
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.lines.mmd.json`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+    ]);
+
+    const markdownContent = mmdRes.data;
+    const pageRangeNote =
+      startPage && endPage
+        ? `- Focus only on pages ${startPage} to ${endPage}.`
+        : "";
+
+    // Use improved prompt
+    const prompt = getImprovedQuestionPrompt(
+      markdownContent,
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      pageRangeNote
+    );
+
+    console.log(
+      `📝 Sending ${markdownContent.length} chars to Gemini for question extraction`
+    );
+
+    const result = await model.generateContent([{ text: prompt }]);
+
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    if (!raw) {
+      throw new Error("Gemini returned empty response for question extraction");
+    }
+
+    console.log(`📝 Gemini response length: ${raw.length}`);
+
+    let parsed;
+    try {
+      // Use unified parser with questions mode
+      parsed = await parseLatexSafeJsonResponse(raw, "questions");
+      usesBase64 = parsed.some((q) => q._uses_base64);
+      parsingMethods = [...new Set(parsed.map((q) => q._parsing_method))];
+      console.log(`✅ Successfully parsed ${parsed.length} questions`);
+    } catch (parseError) {
+      console.error("❌ Question parsing failed:", parseError.message);
+
+      // Log the error for debugging
+      try {
+        const logClient = await pool.connect();
+        await logClient.query(
+          `INSERT INTO logs (paper_name, log_type, message)
+           VALUES ($1, 'question_parse_error', $2)`,
+          [
+            paper_name,
+            `Parse error: ${parseError.message}\nRaw response: ${raw.substring(
+              0,
+              1000
+            )}`,
+          ]
+        );
+        logClient.release();
+      } catch (logErr) {
+        console.error(
+          "❌ Failed to write parse error to logs:",
+          logErr.message
+        );
+      }
+
+      return res.status(500).json({
+        error: "Failed to parse questions from Gemini response",
+        details: parseError.message,
+        suggestions: [
+          "Try processing smaller page ranges (2–3 pages at a time)",
+          "Check if PDF contains unusual mathematical notation or tables",
+          "Consider manual question entry for complex content",
+          "Verify PDF quality and text clarity",
+        ],
+        rawPreview: raw.substring(0, 300),
+        debugInfo: {
+          responseLength: raw.length,
+          containsJson: raw.includes("[") && raw.includes("]"),
+          containsLatex: raw.includes("\\"),
+          paperInfo: { paper_name, subject, banding, level, paper_type },
+          parsing_methods_used: parsingMethods,
+          base64_fallback_used: usesBase64,
+        },
+      });
+    }
+
+    // Process images (existing logic)
+    const pages = linesRes.data.pages || [];
+    const orderedImageUrls = [];
+
+    for (const page of pages) {
+      if (
+        startPage &&
+        endPage &&
+        (page.page_num < startPage || page.page_num > endPage)
+      ) {
+        continue;
+      }
+
+      for (const line of page.lines || []) {
+        if (
+          line.text &&
+          line.text.includes("https://cdn.mathpix.com/cropped")
+        ) {
+          const matches = [
+            ...line.text.matchAll(
+              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
+            ),
+          ];
+          for (const match of matches) {
+            orderedImageUrls.push(match[0]);
+          }
+        }
+      }
+    }
+
+    // Map images to questions
+    let imageIndex = 0;
+    const updatedQuestions = parsed.map((q) => {
+      const image_path = [];
+      if (Array.isArray(q.image_path) && q.image_path.length > 0) {
+        for (let i = 0; i < q.image_path.length; i++) {
+          if (orderedImageUrls[imageIndex]) {
+            image_path.push(orderedImageUrls[imageIndex]);
+            imageIndex++;
+          }
+        }
+      }
+
+      if (startPage && endPage) {
+        q.page_range = `${startPage}-${endPage}`;
+      }
+
+      return { ...q, image_path };
+    });
+
+    res.json({
+      questions: updatedQuestions,
+      debug: {
+        totalQuestions: updatedQuestions.length,
+        totalImages: orderedImageUrls.length,
+        pageRange: startPage && endPage ? `${startPage}-${endPage}` : "all",
+        processingMethod: "gemini_unified_parser",
+        parsing_methods_used: parsingMethods,
+        base64_fallback_used: usesBase64,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Extract questions error:", err);
+
+    // Enhanced error logging
+    try {
+      const logClient = await pool.connect();
+      await logClient.query(
+        `INSERT INTO logs (paper_name, log_type, message)
+         VALUES ($1, 'extraction_error', $2)`,
+        [
+          paper_name || "UNKNOWN",
+          `Full error: ${err.message}\nStack: ${err.stack}`,
+        ]
+      );
+      logClient.release();
+    } catch (logErr) {
+      console.error(
+        "❌ Failed to write extraction error to logs:",
+        logErr.message
+      );
+    }
+
+    return res.status(500).json({
+      error: "Question extraction failed",
+      detail: err.message,
+      suggestions: [
+        "Check Mathpix API connectivity",
+        "Verify PDF uploaded successfully",
+        "Try smaller page ranges",
+        "Check system logs for detailed error info",
+      ],
+    });
+  }
+});
+
+// Extract answers from Mathpix MMD
+router.post("/extract_answers_from_mmd", async (req, res) => {
+  try {
+    const { pdf_id, paper_name } = req.body;
+
+    if (!pdf_id) {
+      return res.status(400).json({ error: "PDF ID is required" });
+    }
+
+    console.log(`📝 Extracting answers from Mathpix for PDF ID: ${pdf_id}`);
+
+    // Wait for Mathpix processing to complete
+    await pollMathpixStatus(pdf_id);
+
+    // Get the Mathpix MMD content
+    const mmdRes = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    let mmdText = "";
+    if (mmdRes.data && typeof mmdRes.data === "string") {
+      mmdText = mmdRes.data;
+    } else if (mmdRes.data && mmdRes.data.mmd) {
+      mmdText = mmdRes.data.mmd;
+    }
+
+    if (!mmdText) {
+      console.error("❌ Invalid MMD data structure:", mmdRes.data);
+      return res
+        .status(400)
+        .json({ error: "Failed to extract MMD content from Mathpix" });
+    }
+
+    console.log(`📋 Extracted ${mmdText.length} characters of MMD text`);
+
+    // Use improved prompt
+    const prompt = getImprovedAnswerPrompt(mmdText);
+
+    console.log(
+      `📝 Sending ${mmdText.length} chars to Gemini for answer extraction`
+    );
+
+    // Call Gemini API
+    const geminiResponse = await axios.post(
+      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.8,
+          topK: 16,
+          maxOutputTokens: 8192,
+        },
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY,
+        },
+      }
+    );
+
+    const geminiGeneratedText =
+      geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!geminiGeneratedText) {
+      console.error("❌ Gemini returned empty response for answer extraction");
+      return res.status(500).json({
+        error: "Gemini returned empty response for answer extraction",
+        rawGeminiResponse: geminiResponse.data,
+      });
+    }
+
+    console.log(`💬 Gemini response length: ${geminiGeneratedText.length}`);
+
+    let answersData;
+    let usesBase64 = false;
+    let parsingMethods = [];
+
+    try {
+      // Use unified parser with answers mode
+      answersData = await parseLatexSafeJsonResponse(
+        geminiGeneratedText,
+        "answers"
+      );
+      usesBase64 = answersData.some((a) => a._uses_base64);
+      parsingMethods = [...new Set(answersData.map((a) => a._parsing_method))];
+      console.log(`✅ Successfully parsed ${answersData.length} answers`);
+    } catch (parseError) {
+      console.error("❌ Answer parsing failed:", parseError.message);
+
+      // Log the error for debugging
+      try {
+        const logClient = await pool.connect();
+        await logClient.query(
+          `INSERT INTO logs (paper_name, log_type, message)
+           VALUES ($1, 'answer_parse_error', $2)`,
+          [
+            paper_name,
+            `Parse error: ${
+              parseError.message
+            }\nRaw response: ${geminiGeneratedText.substring(0, 1000)}`,
+          ]
+        );
+        logClient.release();
+      } catch (logErr) {
+        console.error(
+          "❌ Failed to write answer parse error to logs:",
+          logErr.message
+        );
+      }
+
+      return res.status(500).json({
+        error: "Failed to parse answers from Gemini response",
+        details: parseError.message,
+        suggestions: [
+          "Answer key may have unusual formatting",
+          "Try processing smaller sections of the answer key",
+          "Consider manual answer entry for this paper",
+          "Check if answer key contains non-standard notation",
+        ],
+        rawPreview: geminiGeneratedText.substring(0, 300),
+        debugInfo: {
+          responseLength: geminiGeneratedText.length,
+          containsJson:
+            geminiGeneratedText.includes("[") &&
+            geminiGeneratedText.includes("]"),
+          containsLatex: geminiGeneratedText.includes("\\"),
+          paperName: paper_name,
+          parsing_methods_used: parsingMethods,
+          base64_fallback_used: usesBase64,
+        },
+      });
+    }
+
+    // Clean up and standardize the answers
+    const cleanedAnswers = answersData.map((item) => ({
+      question_number: String(item.question_number || "").trim(),
+      correct_answer: (item.correct_answer || "").trim(),
+      confidence: item.confidence || "medium",
+    }));
+
+    // Sort answers by question number
+    cleanedAnswers.sort((a, b) => {
+      const aMatches = a.question_number.match(/^(\d+)([a-z]*)$/i);
+      const bMatches = b.question_number.match(/^(\d+)([a-z]*)$/i);
+
+      if (aMatches && bMatches) {
+        const aNum = parseInt(aMatches[1]);
+        const bNum = parseInt(bMatches[1]);
+        if (aNum !== bNum) return aNum - bNum;
+        return (aMatches[2] || "").localeCompare(bMatches[2] || "");
+      }
+
+      return a.question_number.localeCompare(b.question_number);
+    });
+
+    console.log(
+      `✅ Successfully extracted and cleaned ${cleanedAnswers.length} answers`
+    );
+
+    return res.json({
+      success: true,
+      answers: cleanedAnswers,
+      paper_name: paper_name,
+      debug: {
+        totalAnswers: cleanedAnswers.length,
+        processingMethod: "gemini_unified_parser",
+        highConfidenceCount: cleanedAnswers.filter(
+          (a) => a.confidence === "high"
+        ).length,
+        parsing_methods_used: parsingMethods,
+        base64_fallback_used: usesBase64,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Answer extraction error:", error);
+
+    // Enhanced error logging
+    try {
+      const logClient = await pool.connect();
+      await logClient.query(
+        `INSERT INTO logs (paper_name, log_type, message)
+         VALUES ($1, 'answer_extraction_error', $2)`,
+        [
+          paper_name || "UNKNOWN",
+          `Full error: ${error.message}\nStack: ${error.stack}`,
+        ]
+      );
+      logClient.release();
+    } catch (logErr) {
+      console.error(
+        "❌ Failed to write answer extraction error to logs:",
+        logErr.message
+      );
+    }
+
+    return res.status(500).json({
+      error: "Answer extraction failed: " + error.message,
+      suggestions: [
+        "Check Mathpix API connectivity",
+        "Verify answer key PDF quality",
+        "Try manual answer entry as fallback",
+        "Check system logs for detailed error info",
+      ],
+    });
+  }
+});
+
+router.post("/update_answer_keys_direct", async (req, res) => {
+  try {
+    const { paper_name, answers } = req.body;
+
+    if (!paper_name || !Array.isArray(answers)) {
+      return res
+        .status(400)
+        .json({ error: "Missing paper_name or answers array" });
+    }
+
+    let updated = 0;
+    const grouped_answers = {};
+
+    // Step 1: Group sub-questions under main question numbers
+    for (const item of answers) {
+      const { question_number, correct_answer } = item;
+      if (!question_number) continue;
+
+      // Extract the main question number (e.g., "3(a)" -> "3", "1b" -> "1")
+      const mainQuestionMatch = question_number.match(/^(\d+)/);
+      if (!mainQuestionMatch) {
+        console.warn(
+          `⚠️ Could not extract main question number from: ${question_number}`
+        );
+        continue;
+      }
+
+      const mainQuestionNum = mainQuestionMatch[1];
+
+      // If this is a sub-question (contains letters or parentheses)
+      if (/[a-zA-Z\(\)]/.test(question_number)) {
+        if (!grouped_answers[mainQuestionNum]) {
+          grouped_answers[mainQuestionNum] = [];
+        }
+
+        // Extract sub-part label (e.g., "3(a)" -> "(a)", "1b" -> "b")
+        const subPartMatch = question_number.match(/\d+([a-zA-Z\(\)]+)/);
+        const subPart = subPartMatch
+          ? subPartMatch[1]
+          : question_number.replace(/^\d+/, "");
+
+        grouped_answers[mainQuestionNum].push({
+          subPart,
+          answer: correct_answer || "",
+        });
+      } else {
+        // This is a main question without sub-parts
+        grouped_answers[mainQuestionNum] = correct_answer || "";
+      }
+    }
+
+    // Step 2: Update database with grouped answers
+    for (const [mainQuestionNum, answerData] of Object.entries(
+      grouped_answers
+    )) {
+      try {
+        let finalAnswer;
+
+        if (Array.isArray(answerData)) {
+          // Multiple sub-parts - combine them
+          const subAnswers = answerData
+            .sort((a, b) => a.subPart.localeCompare(b.subPart)) // Sort sub-parts
+            .map((item) => `${item.subPart} ${item.answer}`)
+            .join(", ");
+          finalAnswer = subAnswers;
+        } else {
+          // Single answer
+          finalAnswer = answerData;
+        }
+
+        const answer_key = {
+          question_number: mainQuestionNum,
+          correct_answer: finalAnswer,
+        };
+
+        // Convert mainQuestionNum to integer for database query
+        const questionNumInt = parseInt(mainQuestionNum, 10);
+
+        if (isNaN(questionNumInt)) {
+          console.warn(`⚠️ Invalid question number: ${mainQuestionNum}`);
+          continue;
+        }
+
+        const result = await pool.query(
+          `UPDATE question SET answer_key = $1 WHERE paper_name = $2 AND question_number = $3`,
+          [JSON.stringify(answer_key), paper_name, questionNumInt]
+        );
+
+        if (result.rowCount > 0) {
+          updated++;
+          console.log(`✅ Updated Q${questionNumInt}: ${finalAnswer}`);
+        } else {
+          console.warn(
+            `⚠️ No rows updated for Q${questionNumInt} in paper: ${paper_name}`
+          );
+        }
+      } catch (updateError) {
+        console.error(
+          `❌ Failed to update Q${mainQuestionNum}:`,
+          updateError.message
+        );
+        continue;
+      }
+    }
+
+    console.log(
+      `✅ Successfully updated ${updated} questions for paper: ${paper_name}`
+    );
+    res.json({
+      success: true,
+      updated,
+      processed_questions: Object.keys(grouped_answers).length,
+      details: Object.fromEntries(
+        Object.entries(grouped_answers).map(([num, data]) => [
+          num,
+          Array.isArray(data)
+            ? data.map((d) => d.subPart).join(", ")
+            : "single answer",
+        ])
+      ),
+    });
+  } catch (err) {
+    console.error("❌ Error in update_answer_keys_direct:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to update answers", details: err.message });
+  }
+});
+
+// === Step 2: Upload extracted image paths to your S3 ===
+// === Step 2: Upload extracted image paths to your S3 ===
+router.post("/upload_extracted_images_to_s3", async (req, res) => {
+  try {
+    const {
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions,
+      paper_type,
+      topic_label,
+    } = req.body;
+    if (!questions || !paper_name || !subject || !banding || !level) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const updatedQuestions = await Promise.all(
+      questions.map(async (question) => {
+        // Changed 'q' to 'question' for clarity
+        if (!Array.isArray(question.image_path)) return question;
+
+        const newPaths = await Promise.all(
+          question.image_path.map(async (url, i) => {
+            try {
+              console.log(`📥 Downloading: ${url}`);
+              const response = await axios.get(url, {
+                responseType: "arraybuffer",
+              });
+              const buffer = Buffer.from(response.data, "binary");
+              // Use question instead of q here
+              const fileName = `page-custom_diagram_${question.question_number}_${i}.png`;
+              const key = `${paper_name}/${fileName}`;
+
+              await s3.send(
+                new PutObjectCommand({
+                  Bucket: process.env.S3_BUCKET_NAME,
+                  Key: key,
+                  Body: buffer,
+                  ContentType: "image/png",
+                })
+              );
+
+              return `https://${process.env.S3_BUCKET_NAME}.s3.${
+                process.env.S3_REGION
+              }.amazonaws.com/${encodeURIComponent(paper_name)}/${fileName}`;
+            } catch (err) {
+              console.warn(
+                `⚠️ Failed to upload image for Q${question.question_number}: ${err.message}`
+              );
+              return url;
+            }
+          })
+        );
+
+        return { ...question, image_path: newPaths };
+      })
+    );
+
+    // ✅ Insert into PostgreSQL - include paper_type and topic_label
+    await insertJSONPayload({
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions: updatedQuestions,
+      paper_type, // Include these
+      topic_label, // Include these
+    });
+
+    res.json({
+      message: "✅ Uploaded to S3 and inserted to DB",
+      questions: updatedQuestions,
+    });
+  } catch (err) {
+    console.error("❌ Image upload or DB insert error:", err);
+    res.status(500).json({ error: "Upload/Insert failed: " + err.message });
+  }
+});
+
+// === Direct PDF Answer Extraction Route ===
+// Add this to your existing mathpix.js router
+
+router.post(
+  "/extract_answers_from_pdf",
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      const { paper_name, subject, level, banding } = req.body;
+
+      if (!req.file) {
+        return res.status(400).json({ error: "PDF file required" });
+      }
+
+      if (!paper_name) {
+        return res.status(400).json({ error: "Paper name is required" });
+      }
+
+      console.log(`🔍 Extracting answers directly from PDF for: ${paper_name}`);
+
+      // Extract text from PDF using pdf-parse
+      const dataBuffer = req.file.buffer;
+      let pdfText = "";
+
+      try {
+        const pdfData = await PDFParser(dataBuffer);
+        pdfText = pdfData.text;
+        console.log(`📄 Extracted ${pdfText.length} characters from PDF`);
+      } catch (pdfError) {
+        console.error("❌ PDF parsing failed:", pdfError);
+        return res.status(500).json({
+          error: "Failed to parse PDF",
+          details: pdfError.message,
+        });
+      }
+
+      if (!pdfText || pdfText.trim().length < 50) {
+        return res.status(400).json({
+          error:
+            "PDF appears to be empty or contains mostly images. Consider using OCR.",
+          suggestion:
+            "Try uploading through Mathpix first for better OCR results",
+        });
+      }
+
+      // Enhanced prompt for answer extraction from answer key PDFs
+      const prompt = `
+You are an expert at extracting answer keys from educational documents. I will provide you with text from an answer key/marking scheme PDF.
+
+Your task is to extract ALL answers and convert them to a structured JSON format.
+
+EXTRACTION RULES:
+1. Look for question numbers (1, 2, 3, Q1, Q2, etc.) and their corresponding answers
+2. Handle sub-questions like 1(a), 1(b), 2(i), 2(ii), etc.
+3. Extract the FINAL ANSWER, not the working steps
+4. For multiple choice questions, extract the correct option letter/number
+5. For numerical answers, include units if present
+6. For algebraic answers, preserve mathematical notation
+7. Ignore marking schemes like [M1], [A1], [B2] - focus on actual answers
+8. If an answer has multiple acceptable forms, choose the most standard one
+
+RESPONSE FORMAT:
+Return a JSON array where each object has:
+{
+  "question_number": "1" or "1a" or "2(i)" etc.,
+  "correct_answer": "the actual answer",
+  "confidence": "high|medium|low",
+  "answer_type": "multiple_choice|numerical|algebraic|text"
+}
+
+EXAMPLE OUTPUT:
+[
+  {
+    "question_number": "1a",
+    "correct_answer": "8y²/x",
+    "confidence": "high",
+    "answer_type": "algebraic"
+  },
+  {
+    "question_number": "1b", 
+    "correct_answer": "2q/(1-pq)",
+    "confidence": "high",
+    "answer_type": "algebraic"
+  },
+  {
+    "question_number": "2a",
+    "correct_answer": "1/(x+3)",
+    "confidence": "high", 
+    "answer_type": "algebraic"
+  }
+]
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown formatting or explanations
+- Extract answers in the order they appear
+- Be conservative with confidence - use "medium" or "low" if unsure
+- For complex expressions, preserve mathematical notation exactly
+
+PDF CONTENT:
+${pdfText}
+`;
+
+      console.log(
+        `📝 Sending ${pdfText.length} chars to Gemini for answer extraction`
+      );
+
+      // Call Gemini API
+      const result = await model.generateContent([{ text: prompt }]);
+      const raw =
+        result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      if (!raw) {
+        throw new Error("Gemini returned empty response for answer extraction");
+      }
+
+      console.log(`💬 Gemini response length: ${raw.length}`);
+
+      let answersData;
+      try {
+        // Use unified parser with answers mode
+        answersData = await parseLatexSafeJsonResponse(raw, "answers");
+        const usesBase64 = answersData.some((a) => a._uses_base64);
+        const parsingMethods = [
+          ...new Set(answersData.map((a) => a._parsing_method)),
+        ];
+        console.log(`✅ Successfully parsed ${answersData.length} answers`);
+      } catch (parseError) {
+        console.error("❌ Answer parsing failed:", parseError.message);
+
+        // Log the error for debugging
+        try {
+          const logClient = await pool.connect();
+          await logClient.query(
+            `INSERT INTO logs (paper_name, log_type, message)
+           VALUES ($1, 'direct_pdf_parse_error', $2)`,
+            [
+              paper_name,
+              `Parse error: ${
+                parseError.message
+              }\nRaw response: ${raw.substring(0, 1000)}`,
+            ]
+          );
+          logClient.release();
+        } catch (logErr) {
+          console.error(
+            "❌ Failed to write parse error to logs:",
+            logErr.message
+          );
+        }
+
+        return res.status(500).json({
+          error: "Failed to parse answers from Gemini response",
+          details: parseError.message,
+          suggestions: [
+            "PDF may contain complex formatting or images",
+            "Try using Mathpix OCR first for better text extraction",
+            "Consider manual answer entry for this paper",
+            "Check if PDF is a scanned document requiring OCR",
+          ],
+          rawPreview: raw.substring(0, 300),
+          debugInfo: {
+            responseLength: raw.length,
+            containsJson: raw.includes("[") && raw.includes("]"),
+            pdfTextLength: pdfText.length,
+            paperName: paper_name,
+            parsing_methods_used: parsingMethods,
+            base64_fallback_used: usesBase64,
+          },
+        });
+      }
+
+      // Clean up and standardize the answers
+      const cleanedAnswers = answersData.map((item) => ({
+        question_number: String(item.question_number || "").trim(),
+        correct_answer: (item.correct_answer || "").trim(),
+        confidence: item.confidence || "medium",
+        answer_type: item.answer_type || "text",
+      }));
+
+      // Sort answers by question number
+      cleanedAnswers.sort((a, b) => {
+        const aMatches = a.question_number.match(/^(\d+)([a-z\(\)i]*)$/i);
+        const bMatches = b.question_number.match(/^(\d+)([a-z\(\)i]*)$/i);
+
+        if (aMatches && bMatches) {
+          const aNum = parseInt(aMatches[1]);
+          const bNum = parseInt(bMatches[1]);
+          if (aNum !== bNum) return aNum - bNum;
+          return (aMatches[2] || "").localeCompare(bMatches[2] || "");
+        }
+
+        return a.question_number.localeCompare(b.question_number);
+      });
+
+      console.log(
+        `✅ Successfully extracted and cleaned ${cleanedAnswers.length} answers`
+      );
+
+      return res.json({
+        success: true,
+        answers: cleanedAnswers,
+        paper_name: paper_name,
+        debug: {
+          totalAnswers: cleanedAnswers.length,
+          processingMethod: "direct_pdf_gemini",
+          pdfTextLength: pdfText.length,
+          highConfidenceCount: cleanedAnswers.filter(
+            (a) => a.confidence === "high"
+          ).length,
+          mediumConfidenceCount: cleanedAnswers.filter(
+            (a) => a.confidence === "medium"
+          ).length,
+          lowConfidenceCount: cleanedAnswers.filter(
+            (a) => a.confidence === "low"
+          ).length,
+          answerTypes: {
+            algebraic: cleanedAnswers.filter(
+              (a) => a.answer_type === "algebraic"
+            ).length,
+            numerical: cleanedAnswers.filter(
+              (a) => a.answer_type === "numerical"
+            ).length,
+            multiple_choice: cleanedAnswers.filter(
+              (a) => a.answer_type === "multiple_choice"
+            ).length,
+            text: cleanedAnswers.filter((a) => a.answer_type === "text").length,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("❌ Direct PDF answer extraction error:", error);
+
+      // Enhanced error logging
+      try {
+        const logClient = await pool.connect();
+        await logClient.query(
+          `INSERT INTO logs (paper_name, log_type, message)
+         VALUES ($1, 'direct_pdf_extraction_error', $2)`,
+          [
+            paper_name || "UNKNOWN",
+            `Full error: ${error.message}\nStack: ${error.stack}`,
+          ]
+        );
+        logClient.release();
+      } catch (logErr) {
+        console.error(
+          "❌ Failed to write extraction error to logs:",
+          logErr.message
+        );
+      }
+
+      return res.status(500).json({
+        error: "Direct PDF answer extraction failed: " + error.message,
+        suggestions: [
+          "Ensure PDF contains readable text (not just images)",
+          "Try using Mathpix OCR route for scanned documents",
+          "Check PDF file integrity",
+          "Consider manual answer entry as fallback",
+          "Check system logs for detailed error info",
+        ],
+      });
+    }
+  }
+);
+
+// Enhanced route that can handle both PDF text extraction AND OCR via Mathpix
+router.post(
+  "/extract_answers_smart",
+  upload.single("pdf"),
+  async (req, res) => {
+    try {
+      const { paper_name, force_ocr } = req.body;
+
+      if (!req.file || !paper_name) {
+        return res
+          .status(400)
+          .json({ error: "PDF file and paper name required" });
+      }
+
+      console.log(`🤖 Smart answer extraction for: ${paper_name}`);
+
+      let textContent = "";
+      let extractionMethod = "";
+
+      // First, try direct PDF text extraction
+      if (!force_ocr) {
+        try {
+          const pdfData = await PDFParser(req.file.buffer);
+          textContent = pdfData.text;
+
+          if (textContent && textContent.trim().length > 100) {
+            extractionMethod = "direct_pdf_text";
+            console.log(
+              `✅ Direct PDF text extraction successful: ${textContent.length} chars`
+            );
+          }
+        } catch (pdfError) {
+          console.log(
+            `⚠️ Direct PDF extraction failed, will try OCR: ${pdfError.message}`
+          );
+        }
+      }
+
+      // Now extract answers using Gemini (reuse the same logic from above)
+      const prompt = getImprovedAnswerPrompt(textContent);
+
+      const result = await model.generateContent([{ text: prompt }]);
+      const raw =
+        result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      if (!raw) {
+        throw new Error("Gemini returned empty response");
+      }
+
+      answersData = await parseLatexSafeJsonResponse(raw, "answers");
+      const usesBase64 = answersData.some((a) => a._uses_base64);
+      const parsingMethods = [
+        ...new Set(answersData.map((a) => a._parsing_method)),
+      ];
+      const cleanedAnswers = answersData.map((item) => ({
+        question_number: String(item.question_number || "").trim(),
+        correct_answer: (item.correct_answer || "").trim(),
+        confidence: item.confidence || "medium",
+        answer_type: item.answer_type || "text",
+      }));
+
+      return res.json({
+        success: true,
+        answers: cleanedAnswers,
+        paper_name: paper_name,
+        extraction_method: extractionMethod,
+        debug: {
+          totalAnswers: cleanedAnswers.length,
+          textLength: textContent.length,
+          extractionMethod: extractionMethod,
+          parsing_methods_used: parsingMethods,
+          base64_fallback_used: usesBase64,
+        },
+      });
+    } catch (error) {
+      console.error("❌ Smart extraction error:", error);
+      return res.status(500).json({
+        error: "Smart answer extraction failed: " + error.message,
+      });
+    }
+  }
+);
+
+router.get("/markdown/:pdf_id", async (req, res) => {
+  try {
+    const { pdf_id } = req.params;
+
+    if (!pdf_id) {
+      return res.status(400).json({ error: "Missing PDF ID" });
+    }
+
+    const response = await axios.get(
+      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
+      {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }
+    );
+
+    res.setHeader("Content-Type", "text/plain");
+    res.send(response.data);
+  } catch (err) {
+    console.error("❌ Error fetching MMD from Mathpix:", err.message);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch MMD content", detail: err.message });
+  }
+});
+
+router.post("/image_to_s3", upload.single("image"), async (req, res) => {
+  try {
+    const file = req.file;
+    const { paper_name, question_number } = req.body;
+
+    if (!file || !paper_name) {
+      return res
+        .status(400)
+        .json({ error: "Missing required image or paper_name" });
+    }
+
+    const extension = path.extname(file.originalname) || ".png";
+    const cleanName = file.originalname.replace(/\s+/g, "_");
+
+    const keyParts = [paper_name];
+    if (question_number) keyParts.push(`Q${question_number}`);
+    keyParts.push(`${uuidv4()}_${cleanName}`);
+
+    const s3Key = keyParts.join("/");
+
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: s3Key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      })
+    );
+
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
+      process.env.S3_REGION
+    }.amazonaws.com/${encodeURIComponent(s3Key)}`;
+
+    res.json({ imageUrl });
+  } catch (err) {
+    console.error("❌ Failed to upload image to S3:", err);
+    res.status(500).json({ error: "Upload to S3 failed", detail: err.message });
+  }
+});
+
+router.post("/gemini/split-question-parts", async (req, res) => {
+  const { question_text, answer_key_text } = req.body;
+  console.log("🔍 Gemini question splitting request received");
+
+  if (!question_text || !answer_key_text) {
+    return res
+      .status(400)
+      .json({ error: "Missing question_text or answer_key_text" });
+  }
+
+  try {
+    const prompt = `
+You are helping to parse a mathematics question and its answer key into structured sub-questions.
+
+RULES:
+- Split the full question into logical parts, e.g., (a), (b), (a)(i), (ii), etc.
+- Each sub-part must have:
+  - "part_label" like "(a)", "(i)", "(b)", etc.
+  - "text": the actual question text for that part.
+  - "answer": match this part with the corresponding portion of the answer_key_text.
+- If a part is a "show that", "prove that", or similar (where the student is expected to derive a result), DO NOT include an answer field.
+- The answer_key_text may include answers for parts (a), (b), (c), etc. Match accurately.
+
+Return a JSON array like:
+[
+  {
+    "part_label": "(a)",
+    "text": "...",
+    "answer": "..."
+  },
+  {
+    "part_label": "(b)",
+    "text": "...",
+    "answer": "..."
+  },
+  {
+    "part_label": "(c)(i)",
+    "text": "Show that ...",
+    "answer": null
+  }
+]
+
+QUESTION:
+${question_text}
+
+ANSWER KEY:
+${answer_key_text}
+
+Return only valid JSON, no markdown, no extra commentary.
+`;
+
+    const result = await model.generateContent([{ text: prompt }]);
+    console.log(result);
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    // Strip possible code block markers
+    const cleaned = raw.replace(/^```json\s*|```\s*$/g, "").trim();
+
+    const parsed = JSON.parse(cleaned);
+    return res.json({ parts: parsed });
+  } catch (err) {
+    console.error("❌ Gemini question splitting error:", err.message);
+    return res
+      .status(500)
+      .json({ error: "Failed to process with Gemini", detail: err.message });
+  }
+});
+
+router.post("/gemini/check-answer-similarity", async (req, res) => {
+  const { user_answer, correct_answer, question_context } = req.body;
+
+  if (!user_answer || !correct_answer) {
+    return res
+      .status(400)
+      .json({ error: "Missing user_answer or correct_answer" });
+  }
+
+  const prompt = `Compare the student's answer with the correct answer in a math context.
+- Ignore superficial differences like whitespace or formatting.
+- Focus on whether the student logically gave the correct final result.
+- Be tolerant of equivalent expressions.
+- Use the question context to disambiguate notation if needed.
+
+Respond in JSON format:
+{
+  "is_correct": true/false,
+  "similarity": 0.0 to 1.0,
+  "explanation": "short reason"
+}
+
+QUESTION: ${question_context || "N/A"}
+STUDENT ANSWER: ${user_answer}
+CORRECT ANSWER: ${correct_answer}`;
+
+  try {
+    const result = await model.generateContent([{ text: prompt }]);
+    const output =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    const jsonMatch = output.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No valid JSON block found in Gemini response.");
+    }
+    const json = JSON.parse(jsonMatch[0]);
+
+    res.json({
+      is_correct: json.is_correct,
+      similarity: json.similarity,
+      explanation: json.explanation,
+    });
+  } catch (err) {
+    console.error("❌ Gemini similarity check failed:", err);
+    res.status(500).json({
+      error: "Failed to evaluate answer similarity",
+      details: err.message,
+    });
+  }
+});
+
+module.exports = router;

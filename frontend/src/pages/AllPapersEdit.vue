@@ -137,14 +137,42 @@
                     <h3>Preview</h3>
                     <div v-for="(q, index) in parsedQuestions" :key="index" class="question-block">
                         <h4>Q{{ q.number }} ({{ q.topic || 'Topic' }})</h4>
-                        <div v-html="q.text"></div>
+                        <!-- Display question content with images inline -->
+                        <div v-html="q.compiledText" class="question-content"></div>
 
-                        <div v-for="(img, i) in q.images" :key="i" class="image-row">
-                            <img :src="img.url" class="preview-img" />
-                            <button class="action-btn" @click="toggleImageLabel(img.globalIndex)"
-                                :class="{ marked: img.isAnswer }">
-                                {{ img.isAnswer ? '✅ Marked as Answer Key' : 'Mark as Answer Key' }}
-                            </button>
+                        <!-- Only show answer key images separately at the bottom -->
+                        <div v-if="q.answerKeyImages.length > 0" class="answer-key-images-section">
+                            <h5 class="answer-key-header">📋 Answer Key Images:</h5>
+                            <div v-for="(img, i) in q.answerKeyImages" :key="i" class="image-row">
+                                <div class="image-container">
+                                    <img :src="img.url" class="preview-img answer-key-img" />
+                                    <div class="image-label">Q{{ q.number }}_answer_key_{{ i + 1 }}
+                                        <span class="image-type answer-key">(Answer Key)</span>
+                                    </div>
+                                </div>
+                                <button class="action-btn marked" @click="toggleImageLabel(img.globalIndex)">
+                                    ✅ Answer Key
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Show additional images from image_paths only if markdown doesn't contain any images -->
+                        <div v-if="q.answerKeyImages.length === 0 && !hasInlineImages(q) && originalQuestionData[q.number]?.image_paths?.length > 0" 
+                             class="legacy-images-section">
+                            <p class="legacy-images-note">📌 Original images (not yet in markdown):</p>
+                            <div v-for="(imgPath, i) in originalQuestionData[q.number].image_paths" :key="i" class="image-row">
+                                <div class="image-container">
+                                    <img :src="getImageUrl(imgPath)" class="preview-img legacy-image" />
+                                    <div class="image-label">Q{{ q.number }}_legacy_image{{ i + 1 }}
+                                        <span class="image-type legacy">
+                                            (Legacy - {{ getImageType(imgPath) }})
+                                        </span>
+                                    </div>
+                                </div>
+                                <button class="action-btn legacy-btn" @click="addImageToMarkdown(q.number, imgPath, i)">
+                                    ➕ Add to Markdown
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -210,6 +238,7 @@ export default {
             itemsPerPage: 12,
             selectedQuestionNumber: '',
             allImagesInMarkdown: [],
+            originalQuestionData: {}, // Store original question data including image_paths
             showAddQuestionModal: false,
             nextQuestionNumber: 1,
             form: {
@@ -224,30 +253,39 @@ export default {
         parsedQuestions() {
             const blocks = this.markdownContent.split(/### Q(\d+) \((.*?)\)/g);
             const questions = [];
-            let globalImageIndex = 0;
+            let globalAnswerImageIndex = 0;
 
             for (let i = 1; i < blocks.length; i += 3) {
                 const number = blocks[i];
                 const topic = blocks[i + 1];
                 const content = blocks[i + 2];
-                const images = [];
+                const answerKeyImages = [];
 
-                const textOnly = content.replace(/!\[(.*?)\]\((.*?)\)/g, (match, label, url) => {
+                // Extract only answer key images for separate display
+                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
+                let match;
+                const textWithAnswerImagesRemoved = content.replace(imageRegex, (fullMatch, label, url) => {
                     const isAnswer = label.toLowerCase().includes('answer');
-                    images.push({
-                        url,
-                        label,
-                        isAnswer,
-                        globalIndex: globalImageIndex++
-                    });
-                    return ''; // strip image from text
+                    if (isAnswer) {
+                        answerKeyImages.push({
+                            url,
+                            label,
+                            isAnswer: true,
+                            globalIndex: globalAnswerImageIndex++
+                        });
+                        return ''; // Remove answer key images from text content
+                    }
+                    return fullMatch; // Keep non-answer images in the text
                 });
+
+                // Compile the text with question images intact, answer images removed
+                const compiledText = marked.parse(textWithAnswerImagesRemoved);
 
                 questions.push({
                     number,
                     topic,
-                    text: marked.parse(textOnly),
-                    images
+                    compiledText,
+                    answerKeyImages // Only answer key images for separate display
                 });
             }
             return questions;
@@ -300,25 +338,27 @@ export default {
     },
     watch: {
         markdownContent(newContent) {
-            // 🔍 Reset the array
+            // Update the images array when markdown changes - only track answer key images
             this.allImagesInMarkdown = [];
-
-            // 🔍 Split markdown into question sections using ### Q<number>
-            const questionBlocks = newContent.split(/### Q(\d+)/g); // ['pre', '1', 'Q1 content', '2', 'Q2 content', ...]
+            const questionBlocks = newContent.split(/### Q(\d+)/g);
 
             for (let i = 1; i < questionBlocks.length; i += 2) {
-                const qNum = questionBlocks[i];            // e.g. '1'
-                const content = questionBlocks[i + 1];     // content after ### Q1
+                const qNum = questionBlocks[i];
+                const content = questionBlocks[i + 1];
 
                 const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
                 let match;
                 while ((match = imageRegex.exec(content)) !== null) {
-                    this.allImagesInMarkdown.push({
-                        questionNumber: qNum,
-                        label: match[1],
-                        url: match[2],
-                        isAnswer: match[1].toLowerCase().includes('answer'),
-                    });
+                    const isAnswer = match[1].toLowerCase().includes('answer');
+                    // Only track answer key images for separate display
+                    if (isAnswer) {
+                        this.allImagesInMarkdown.push({
+                            questionNumber: qNum,
+                            label: match[1],
+                            url: match[2],
+                            isAnswer: true,
+                        });
+                    }
                 }
             }
         },
@@ -392,6 +432,16 @@ export default {
 
                 this.currentPaperName = paperName;
 
+                // Store original question data for legacy image handling
+                this.originalQuestionData = {};
+                data.questions.forEach(q => {
+                    this.originalQuestionData[q.question_number] = {
+                        image_paths: q.image_paths || [],
+                        answer_key: q.answer_key,
+                        topic_label: q.topic_label
+                    };
+                });
+
                 // Extract metadata from first question
                 if (data.questions.length > 0) {
                     const first = data.questions[0];
@@ -415,12 +465,8 @@ export default {
                     answer_options: q.answer_options || [],
                     image_paths: q.image_paths || [],
                     answer_key: q.answer_key || null,
-                    topic_label: q.topic_label || '' // existing topic_label if present
+                    topic_label: q.topic_label || ''
                 }));
-
-                console.log('Original questions:', data.questions);
-                console.log('Prepared questions:', labeledQuestions);
-                console.log('Needs labeling:', needsLabeling);
 
                 // Step 2: Add topic labels (only if exam type and needs labeling)
                 if (this.form.uploadType === 'exam' && needsLabeling) {
@@ -444,7 +490,6 @@ export default {
 
                         const labelData = await labelRes.json();
                         if (!labelRes.ok) throw new Error(labelData.error);
-                        console.log('Label data:', labelData);
 
                         // Merge new topic_label into existing labeledQuestions
                         labeledQuestions = labeledQuestions.map(q => {
@@ -476,21 +521,27 @@ export default {
                     }
                 }
 
-                // Step 4: Generate markdown using the (possibly updated) questions
+                // Step 4: Generate markdown - check if images are already in question_text
                 this.markdownContent = labeledQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
 
-                    const images = (q.image_paths || [])
-                        .map((imgObj) => {
-                            const img = typeof imgObj === 'string' ? imgObj : imgObj.url;
-                            const isAnswer = typeof imgObj === 'object' && imgObj.is_answer;
-                            return isAnswer
-                                ? `![AnswerKey](${img})`
-                                : `![Diagram](${img})`;
-                        })
-                        .join('\n');
+                    // Check if question_text already contains images
+                    const hasImagesInText = /!\[.*?\]\(.*?\)/.test(q.question_text);
+                    
+                    let images = '';
+                    if (!hasImagesInText && q.image_paths && q.image_paths.length > 0) {
+                        // Only add images if question_text doesn't already have them
+                        images = q.image_paths
+                            .map((imgObj, index) => {
+                                const img = typeof imgObj === 'string' ? imgObj : imgObj.url;
+                                const isAnswer = typeof imgObj === 'object' && imgObj.is_answer;
+                                const label = isAnswer ? 'AnswerKey' : `Diagram`;
+                                return `![${label}](${img})`;
+                            })
+                            .join('\n');
+                    }
 
                     let answer = '';
                     if (q.answer_key) {
@@ -526,6 +577,48 @@ export default {
             }
         },
 
+        // Helper methods for image handling
+        hasInlineImages(question) {
+            // Check if the compiled HTML contains any images
+            return question.compiledText.includes('<img');
+        },
+
+        getImageUrl(imgPath) {
+            if (typeof imgPath === 'string') {
+                return imgPath;
+            }
+            return imgPath.url || imgPath.image_url || imgPath;
+        },
+
+        getImageType(imgPath) {
+            if (typeof imgPath === 'object' && imgPath.is_answer) {
+                return 'Answer Key';
+            }
+            return 'Diagram';
+        },
+
+        addImageToMarkdown(questionNumber, imgPath, imageIndex) {
+            const imageUrl = this.getImageUrl(imgPath);
+            const imageType = this.getImageType(imgPath);
+            const imageLabel = imageType === 'Answer Key' ? 'AnswerKey' : 'Diagram';
+            const imageMarkdown = `![${imageLabel}](${imageUrl})`;
+
+            // Find the question in markdown and add the image
+            const questionMarker = `### Q${questionNumber}`;
+            const parts = this.markdownContent.split(questionMarker);
+            
+            if (parts.length >= 2) {
+                // Add image after the question header
+                const beforeAnswer = parts[1].split('**Answer:**')[0];
+                const afterAnswer = parts[1].includes('**Answer:**') ? '**Answer:**' + parts[1].split('**Answer:**')[1] : '';
+                
+                parts[1] = beforeAnswer + '\n\n' + imageMarkdown + '\n' + afterAnswer;
+                this.markdownContent = parts.join(questionMarker);
+                
+                console.log(`✅ Added image to Q${questionNumber}`);
+            }
+        },
+
         viewQuiz(paperName) {
             this.$router.push({
                 name: 'QuizView',
@@ -549,6 +642,7 @@ export default {
         closeEditor() {
             this.markdownContent = '';
             this.currentPaperName = '';
+            this.originalQuestionData = {};
         },
 
         handleInsertMarkdown(markdownImage) {
@@ -894,6 +988,39 @@ export default {
     object-fit: contain;
 }
 
+.question-content {
+    margin-bottom: 2rem;
+}
+
+.question-content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    border: 2px solid #66CC99;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.answer-key-images-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #f0f8f0;
+    border: 2px solid #28a745;
+    border-radius: 8px;
+}
+
+.answer-key-header {
+    color: #28a745;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    font-size: 16px;
+}
+
+.answer-key-img {
+    border-color: #28a745 !important;
+}
+
 .markdown-editor {
     width: 100%;
     min-height: 600px;
@@ -974,17 +1101,107 @@ export default {
     border-color: #66CC99;
 }
 
+.question-block {
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #eee;
+}
+
+.question-block:last-child {
+    border-bottom: none;
+}
+
+.question-block h4 {
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border-left: 4px solid #66CC99;
+    border-radius: 4px;
+}
+
 .image-row {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background-color: #fafafa;
+}
+
+.image-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .preview-img {
     max-width: 300px;
     border: 2px solid #ccc;
     border-radius: 8px;
+}
+
+.legacy-image {
+    border-color: #ffc107;
+    opacity: 0.8;
+}
+
+.image-label {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+    text-align: center;
+    padding: 0.25rem 0.5rem;
+    background-color: #fff;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.image-type {
+    display: block;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+.image-type.answer-key {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.image-type.legacy {
+    color: #ffc107;
+    font-weight: 600;
+}
+
+.legacy-images-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border: 2px dashed #ffc107;
+    border-radius: 8px;
+    background-color: #fff9e6;
+}
+
+.legacy-images-note {
+    color: #856404;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    font-size: 14px;
+}
+
+.legacy-btn {
+    background-color: #ffc107;
+    color: #212529;
+    border-color: #ffc107;
+}
+
+.legacy-btn:hover {
+    background-color: #e0a800;
+    border-color: #d39e00;
 }
 
 .marked {
