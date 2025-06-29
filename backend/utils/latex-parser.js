@@ -388,7 +388,7 @@ SAFE NOTATION RULES:
 
 EXTRACTION RULES:
 - Extract each question's number and full text
-- Group sub-parts under main numbers
+- !!! Group sub-parts under main numbers so for example 1(a) and 1(b) or 1(a)(i)/1(a)(ii) become one entry for question "1"
 - Extract answer options if present
 - Return valid JSON array without markdown blocks
 ${pageRangeNote}

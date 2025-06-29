@@ -188,17 +188,17 @@
             <!-- LaTeX Converter - now using component -->
             <LatexConverter v-if="markdownContent" />
 
-            <!-- markdown editor and preview section -->
-            <div v-if="markdownContent" class="output-wrapper">
-                <div class="editor">
-                    <h3>Markdown Editor</h3>
-                    <textarea v-model="markdownContent" class="markdown-editor" />
-                </div>
-                <div class="preview">
-                    <h3>Preview</h3>
-                    <div :key="compiledMarkdown" v-html="compiledMarkdown"></div>
-                </div>
-            </div>
+            <!-- REPLACED: markdown editor and preview section with component -->
+            <MarkdownEditorPreview
+                v-if="markdownContent"
+                v-model="markdownContent"
+                :editor-title="`Preview: ${paperName || 'Document'}`"
+                :original-question-data="{}"
+                :allow-image-toggle="false"
+                :allow-image-management="false"
+                :show-close-button="false"
+                placeholder="Generated markdown will appear here after processing..."
+            />
 
             <div v-if="markdownContent" class="save-section">
                 <button class="save-btn" @click="saveEditedMarkdown">💾 Save Markdown</button>
@@ -211,7 +211,7 @@
 import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
-import { marked } from 'marked';
+import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // NEW IMPORT
 import * as pdfjsLib from 'pdfjs-dist';
 import API_BASE_URL from '../config/api.js';
 
@@ -220,7 +220,8 @@ export default {
     components: {
         Navbar,
         PaperDetails,
-        LatexConverter
+        LatexConverter,
+        MarkdownEditorPreview // NEW COMPONENT
     },
     data() {
         return {
@@ -261,12 +262,7 @@ export default {
             answerExtractionPercent: 0,
         };
     },
-    computed: {
-        compiledMarkdown() {
-            const safeContent = this.escapeLatexInMarkdown(this.markdownContent || '');
-            return marked(safeContent);
-        }
-    },
+    // REMOVED: compiledMarkdown computed property (now handled by component)
     async mounted() {
         try {
             const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
@@ -276,51 +272,14 @@ export default {
             // Load PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-            // Configure MathJax
-            this.configureMathJax();
+            // REMOVED: configureMathJax() call (now handled by component)
         } catch (err) {
             console.error('❌ Failed to fetch recent papers:', err);
         }
     },
-    watch: {
-        compiledMarkdown() {
-            this.$nextTick(() => {
-                if (window.MathJax && window.MathJax.typesetPromise) {
-                    window.MathJax.typesetPromise()
-                        .then(() => {
-                            console.log('✅ MathJax rendering complete');
-                        })
-                        .catch(err => {
-                            console.error('❌ MathJax error:', err);
-                        });
-                }
-            });
-        }
-    },
+    // REMOVED: compiledMarkdown watcher (now handled by component)
     methods: {
-        // Configure MathJax for LaTeX rendering
-        escapeLatexInMarkdown(md) {
-            return md.replace(/\\(?!\\)/g, '\\\\');
-        },
-        configureMathJax() {
-            window.MathJax = {
-                tex: {
-                    inlineMath: [['$', '$'], ['\\(', '\\)']],
-                    displayMath: [['$$', '$$'], ['\\[', '\\]']],
-                    processEscapes: true
-                },
-                options: {
-                    enableMenu: false
-                }
-            };
-
-            if (!window.MathJax || !window.MathJax.typesetPromise) {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
-                script.async = true;
-                document.head.appendChild(script);
-            }
-        },
+        // REMOVED: escapeLatexInMarkdown and configureMathJax methods (now handled by component)
 
         // Answer extraction testing methods
         handleAnswerKeyForTesting(event) {
@@ -975,7 +934,8 @@ export default {
 </script>
 
 <style scoped>
-/* Keep all existing styles and add new ones for answer extraction */
+/* REMOVED: All markdown editor/preview related styles (now in component) */
+
 .upload-page {
     padding: 3rem;
     max-width: 1200px;
@@ -1271,55 +1231,6 @@ export default {
     height: 100%;
     background-color: #66CC99;
     transition: width 0.3s ease-in-out;
-}
-
-.output-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    margin-top: 2rem;
-}
-
-@media (min-width: 1024px) {
-    .output-wrapper {
-        flex-direction: row;
-    }
-}
-
-.editor,
-.preview {
-    flex: 1;
-    width: 100%;
-    padding: 2rem;
-    font-size: 16px;
-    border: 1px solid #ddd;
-    border-radius: 12px;
-    background-color: #fff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    overflow: auto;
-    max-height: 900px;
-}
-
-.preview img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-    margin: 1rem auto;
-    object-fit: contain;
-}
-
-.markdown-editor {
-    width: 100%;
-    min-height: 600px;
-    height: auto;
-    padding: 1.5rem;
-    font-family: 'Courier New', monospace;
-    font-size: 16px;
-    line-height: 1.6;
-    background: #fefefe;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    resize: vertical;
 }
 
 .save-section {
