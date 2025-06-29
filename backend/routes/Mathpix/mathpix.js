@@ -585,214 +585,254 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
 });
 
 // Extract answers from Mathpix MMD
-router.post("/extract_answers_from_mmd", async (req, res) => {
+router.post("/extract_questions_from_mmd", async (req, res) => {
   try {
-    const { pdf_id, paper_name } = req.body;
+    const {
+      pdf_id,
+      subject,
+      banding,
+      level,
+      paper_name,
+      paper_type,
+      topic_label,
+      startPage,
+      endPage,
+    } = req.body;
 
-    if (!pdf_id) {
-      return res.status(400).json({ error: "PDF ID is required" });
+    if (!pdf_id || !subject || !banding || !level || !paper_name) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
-    console.log(`📝 Extracting answers from Mathpix for PDF ID: ${pdf_id}`);
+    if (!paper_type || paper_type === "undefined") {
+      return res.status(400).json({
+        error: "Invalid paper_type. Must be 'exam' or 'topical'",
+      });
+    }
 
-    // Wait for Mathpix processing to complete
+    console.log(`🔍 Extracting questions for paper: ${paper_name}`);
+
     await pollMathpixStatus(pdf_id);
 
-    // Get the Mathpix MMD content
-    const mmdRes = await axios.get(
-      `https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`,
-      {
+    const [mmdRes, linesRes] = await Promise.all([
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.mmd`, {
         headers: {
           app_id: process.env.MATHPIX_APP_ID,
           app_key: process.env.MATHPIX_APP_KEY,
         },
-      }
-    );
+      }),
+      axios.get(`https://api.mathpix.com/v3/pdf/${pdf_id}.lines.mmd.json`, {
+        headers: {
+          app_id: process.env.MATHPIX_APP_ID,
+          app_key: process.env.MATHPIX_APP_KEY,
+        },
+      }),
+    ]);
 
-    let mmdText = "";
-    if (mmdRes.data && typeof mmdRes.data === "string") {
-      mmdText = mmdRes.data;
-    } else if (mmdRes.data && mmdRes.data.mmd) {
-      mmdText = mmdRes.data.mmd;
-    }
-
-    if (!mmdText) {
-      console.error("❌ Invalid MMD data structure:", mmdRes.data);
-      return res
-        .status(400)
-        .json({ error: "Failed to extract MMD content from Mathpix" });
-    }
-
-    console.log(`📋 Extracted ${mmdText.length} characters of MMD text`);
+    const markdownContent = mmdRes.data;
+    const pageRangeNote =
+      startPage && endPage
+        ? `- Focus only on pages ${startPage} to ${endPage}.`
+        : "";
 
     // Use improved prompt
-    const prompt = getImprovedAnswerPrompt(mmdText);
+    const prompt = getImprovedQuestionPrompt(
+      markdownContent,
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      pageRangeNote
+    );
 
     console.log(
-      `📝 Sending ${mmdText.length} chars to Gemini for answer extraction`
+      `📝 Sending ${markdownContent.length} chars to Gemini for question extraction`
     );
 
-    // Call Gemini API
-    const geminiResponse = await axios.post(
-      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
-      {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          topP: 0.8,
-          topK: 16,
-          maxOutputTokens: 8192,
-        },
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY,
-        },
-      }
-    );
+    const result = await model.generateContent([{ text: prompt }]);
 
-    const geminiGeneratedText =
-      geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    if (!geminiGeneratedText) {
-      console.error("❌ Gemini returned empty response for answer extraction");
-      return res.status(500).json({
-        error: "Gemini returned empty response for answer extraction",
-        rawGeminiResponse: geminiResponse.data,
-      });
+    if (!raw) {
+      throw new Error("Gemini returned empty response for question extraction");
     }
 
-    console.log(`💬 Gemini response length: ${geminiGeneratedText.length}`);
+    console.log(`📝 Gemini response length: ${raw.length}`);
 
-    let answersData;
-    let usesBase64 = false;
-    let parsingMethods = [];
+    let parsed;
+    let usesBase64, parsingMethods;
 
     try {
-      // Use unified parser with answers mode
-      answersData = await parseLatexSafeJsonResponse(
-        geminiGeneratedText,
-        "answers"
-      );
-      usesBase64 = answersData.some((a) => a._uses_base64);
-      parsingMethods = [...new Set(answersData.map((a) => a._parsing_method))];
-      console.log(`✅ Successfully parsed ${answersData.length} answers`);
+      // Use unified parser with questions mode
+      parsed = await parseLatexSafeJsonResponse(raw, "questions");
+      usesBase64 = parsed.some((q) => q._uses_base64);
+      parsingMethods = [...new Set(parsed.map((q) => q._parsing_method))];
+      console.log(`✅ Successfully parsed ${parsed.length} questions`);
     } catch (parseError) {
-      console.error("❌ Answer parsing failed:", parseError.message);
+      console.error("❌ Question parsing failed:", parseError.message);
 
       // Log the error for debugging
       try {
         const logClient = await pool.connect();
         await logClient.query(
           `INSERT INTO logs (paper_name, log_type, message)
-           VALUES ($1, 'answer_parse_error', $2)`,
+           VALUES ($1, 'question_parse_error', $2)`,
           [
             paper_name,
-            `Parse error: ${
-              parseError.message
-            }\nRaw response: ${geminiGeneratedText.substring(0, 1000)}`,
+            `Parse error: ${parseError.message}\nRaw response: ${raw.substring(
+              0,
+              1000
+            )}`,
           ]
         );
         logClient.release();
       } catch (logErr) {
         console.error(
-          "❌ Failed to write answer parse error to logs:",
+          "❌ Failed to write parse error to logs:",
           logErr.message
         );
       }
 
       return res.status(500).json({
-        error: "Failed to parse answers from Gemini response",
+        error: "Failed to parse questions from Gemini response",
         details: parseError.message,
         suggestions: [
-          "Answer key may have unusual formatting",
-          "Try processing smaller sections of the answer key",
-          "Consider manual answer entry for this paper",
-          "Check if answer key contains non-standard notation",
+          "Try processing smaller page ranges (2–3 pages at a time)",
+          "Check if PDF contains unusual mathematical notation or tables",
+          "Consider manual question entry for complex content",
+          "Verify PDF quality and text clarity",
         ],
-        rawPreview: geminiGeneratedText.substring(0, 300),
+        rawPreview: raw.substring(0, 300),
         debugInfo: {
-          responseLength: geminiGeneratedText.length,
-          containsJson:
-            geminiGeneratedText.includes("[") &&
-            geminiGeneratedText.includes("]"),
-          containsLatex: geminiGeneratedText.includes("\\"),
-          paperName: paper_name,
+          responseLength: raw.length,
+          containsJson: raw.includes("[") && raw.includes("]"),
+          containsLatex: raw.includes("\\"),
+          paperInfo: { paper_name, subject, banding, level, paper_type },
           parsing_methods_used: parsingMethods,
           base64_fallback_used: usesBase64,
         },
       });
     }
 
-    // Clean up and standardize the answers
-    const cleanedAnswers = answersData.map((item) => ({
-      question_number: String(item.question_number || "").trim(),
-      correct_answer: (item.correct_answer || "").trim(),
-      confidence: item.confidence || "medium",
-    }));
+    // ✅ FIXED: Preserve image URLs from Gemini extraction instead of replacing them
+    // Extract all available image URLs from Mathpix lines data as backup
+    const pages = linesRes.data.pages || [];
+    const allMathpixImageUrls = [];
 
-    // Sort answers by question number
-    cleanedAnswers.sort((a, b) => {
-      const aMatches = a.question_number.match(/^(\d+)([a-z]*)$/i);
-      const bMatches = b.question_number.match(/^(\d+)([a-z]*)$/i);
-
-      if (aMatches && bMatches) {
-        const aNum = parseInt(aMatches[1]);
-        const bNum = parseInt(bMatches[1]);
-        if (aNum !== bNum) return aNum - bNum;
-        return (aMatches[2] || "").localeCompare(bMatches[2] || "");
+    for (const page of pages) {
+      if (
+        startPage &&
+        endPage &&
+        (page.page_num < startPage || page.page_num > endPage)
+      ) {
+        continue;
       }
 
-      return a.question_number.localeCompare(b.question_number);
+      for (const line of page.lines || []) {
+        if (
+          line.text &&
+          line.text.includes("https://cdn.mathpix.com/cropped")
+        ) {
+          const matches = [
+            ...line.text.matchAll(
+              /https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+/g
+            ),
+          ];
+          for (const match of matches) {
+            allMathpixImageUrls.push(match[0]);
+          }
+        }
+      }
+    }
+
+    // ✅ NEW LOGIC: Trust Gemini's image extraction, but validate and supplement if needed
+    const updatedQuestions = parsed.map((q, questionIndex) => {
+      let finalImagePaths = [];
+
+      // First, try to extract image URLs directly from the question_text
+      const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      const imagesInText = [];
+      let match;
+
+      while ((match = imageRegex.exec(q.question_text)) !== null) {
+        imagesInText.push(match[2]);
+      }
+
+      if (imagesInText.length > 0) {
+        // Use images found in question_text (most reliable)
+        finalImagePaths = imagesInText;
+        console.log(
+          `✅ Q${q.question_number}: Found ${imagesInText.length} images in question_text`
+        );
+      } else if (Array.isArray(q.image_path) && q.image_path.length > 0) {
+        // Fallback to Gemini's extracted image_path
+        finalImagePaths = q.image_path;
+        console.log(
+          `⚠️ Q${q.question_number}: Using Gemini's image_path (${q.image_path.length} images)`
+        );
+      } else if (allMathpixImageUrls.length > questionIndex) {
+        // Last resort: use Mathpix images sequentially
+        finalImagePaths = [allMathpixImageUrls[questionIndex]];
+        console.log(`🔄 Q${q.question_number}: Using Mathpix fallback image`);
+      }
+
+      // Add page range info if applicable
+      const questionData = { ...q, image_path: finalImagePaths };
+      if (startPage && endPage) {
+        questionData.page_range = `${startPage}-${endPage}`;
+      }
+
+      return questionData;
     });
 
     console.log(
-      `✅ Successfully extracted and cleaned ${cleanedAnswers.length} answers`
+      `✅ Processed ${updatedQuestions.length} questions with preserved image URLs`
     );
 
-    return res.json({
-      success: true,
-      answers: cleanedAnswers,
-      paper_name: paper_name,
+    res.json({
+      questions: updatedQuestions,
       debug: {
-        totalAnswers: cleanedAnswers.length,
-        processingMethod: "gemini_unified_parser",
-        highConfidenceCount: cleanedAnswers.filter(
-          (a) => a.confidence === "high"
+        totalQuestions: updatedQuestions.length,
+        totalMathpixImages: allMathpixImageUrls.length,
+        questionsWithImages: updatedQuestions.filter(
+          (q) => q.image_path && q.image_path.length > 0
         ).length,
+        pageRange: startPage && endPage ? `${startPage}-${endPage}` : "all",
+        processingMethod: "gemini_unified_parser_with_preserved_images",
         parsing_methods_used: parsingMethods,
         base64_fallback_used: usesBase64,
       },
     });
-  } catch (error) {
-    console.error("❌ Answer extraction error:", error);
+  } catch (err) {
+    console.error("❌ Extract questions error:", err);
 
     // Enhanced error logging
     try {
       const logClient = await pool.connect();
       await logClient.query(
         `INSERT INTO logs (paper_name, log_type, message)
-         VALUES ($1, 'answer_extraction_error', $2)`,
+         VALUES ($1, 'extraction_error', $2)`,
         [
           paper_name || "UNKNOWN",
-          `Full error: ${error.message}\nStack: ${error.stack}`,
+          `Full error: ${err.message}\nStack: ${err.stack}`,
         ]
       );
       logClient.release();
     } catch (logErr) {
       console.error(
-        "❌ Failed to write answer extraction error to logs:",
+        "❌ Failed to write extraction error to logs:",
         logErr.message
       );
     }
 
     return res.status(500).json({
-      error: "Answer extraction failed: " + error.message,
+      error: "Question extraction failed",
+      detail: err.message,
       suggestions: [
         "Check Mathpix API connectivity",
-        "Verify answer key PDF quality",
-        "Try manual answer entry as fallback",
+        "Verify PDF uploaded successfully",
+        "Try smaller page ranges",
         "Check system logs for detailed error info",
       ],
     });
@@ -929,7 +969,7 @@ router.post("/update_answer_keys_direct", async (req, res) => {
 });
 
 // === Step 2: Upload extracted image paths to your S3 ===
-// === Step 2: Upload extracted image paths to your S3 ===
+// Updated upload_extracted_images_to_s3 function with question_text URL replacement
 router.post("/upload_extracted_images_to_s3", async (req, res) => {
   try {
     const {
@@ -941,24 +981,78 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
       paper_type,
       topic_label,
     } = req.body;
+
     if (!questions || !paper_name || !subject || !banding || !level) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     const updatedQuestions = await Promise.all(
       questions.map(async (question) => {
-        // Changed 'q' to 'question' for clarity
-        if (!Array.isArray(question.image_path)) return question;
+        if (
+          !Array.isArray(question.image_path) ||
+          question.image_path.length === 0
+        ) {
+          return question;
+        }
+
+        console.log(
+          `\n🔄 Processing Q${question.question_number} with ${question.image_path.length} images`
+        );
+
+        // 🔍 DEBUG: Log original URLs in image_path
+        console.log(`📋 Original image_path URLs:`);
+        question.image_path.forEach((url, i) => {
+          console.log(`   [${i}] ${url}`);
+        });
+
+        // 🔍 DEBUG: Extract and log URLs from question_text
+        const imageRegexDebug = /!\[([^\]]*)\]\(([^)]+)\)/g;
+        const urlsInText = [];
+        let matchDebug;
+        while (
+          (matchDebug = imageRegexDebug.exec(question.question_text)) !== null
+        ) {
+          urlsInText.push(matchDebug[2]);
+        }
+        console.log(`📝 URLs found in question_text:`);
+        urlsInText.forEach((url, i) => {
+          console.log(`   [${i}] ${url}`);
+        });
+
+        // 🔍 DEBUG: Check if URLs match
+        console.log(`🔍 URL Matching Analysis:`);
+        question.image_path.forEach((pathUrl, i) => {
+          const foundInText = urlsInText.includes(pathUrl);
+          console.log(
+            `   image_path[${i}] found in question_text: ${foundInText}`
+          );
+          if (!foundInText) {
+            console.log(`   ❌ MISMATCH: ${pathUrl}`);
+            // Try to find similar URLs
+            urlsInText.forEach((textUrl, j) => {
+              if (
+                textUrl.includes("mathpix.com") &&
+                pathUrl.includes("mathpix.com")
+              ) {
+                console.log(`   🔍 Similar URL in text[${j}]: ${textUrl}`);
+              }
+            });
+          }
+        });
+
+        // Track URL mappings for replacement in question_text
+        const urlMappings = new Map();
 
         const newPaths = await Promise.all(
           question.image_path.map(async (url, i) => {
             try {
-              console.log(`📥 Downloading: ${url}`);
+              console.log(`📥 Downloading image ${i + 1}: ${url}`);
               const response = await axios.get(url, {
                 responseType: "arraybuffer",
+                timeout: 30000,
               });
               const buffer = Buffer.from(response.data, "binary");
-              // Use question instead of q here
+
               const fileName = `page-custom_diagram_${question.question_number}_${i}.png`;
               const key = `${paper_name}/${fileName}`;
 
@@ -971,9 +1065,16 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
                 })
               );
 
-              return `https://${process.env.S3_BUCKET_NAME}.s3.${
+              const s3Url = `https://${process.env.S3_BUCKET_NAME}.s3.${
                 process.env.S3_REGION
               }.amazonaws.com/${encodeURIComponent(paper_name)}/${fileName}`;
+
+              // Store the mapping for question_text replacement
+              urlMappings.set(url, s3Url);
+
+              console.log(`✅ Uploaded to S3: ${fileName}`);
+              console.log(`   Mapping: ${url} -> ${s3Url}`);
+              return s3Url;
             } catch (err) {
               console.warn(
                 `⚠️ Failed to upload image for Q${question.question_number}: ${err.message}`
@@ -983,28 +1084,296 @@ router.post("/upload_extracted_images_to_s3", async (req, res) => {
           })
         );
 
-        return { ...question, image_path: newPaths };
+        // 🔍 DEBUG: Log the mappings we created
+        console.log(`\n🗺️ URL Mappings created:`);
+        for (const [originalUrl, s3Url] of urlMappings.entries()) {
+          console.log(`   ${originalUrl} -> ${s3Url}`);
+        }
+
+        // ✅ ENHANCED: Replace ALL image URLs in question_text, not just those in mappings
+        let updatedQuestionText = question.question_text;
+
+        console.log(`\n🔧 Starting URL replacement in question_text...`);
+        console.log(`📏 Original text length: ${updatedQuestionText.length}`);
+
+        // Method 1: Replace using exact mappings
+        let replacementsMade = 0;
+        for (const [originalUrl, s3Url] of urlMappings.entries()) {
+          const escapedOriginalUrl = originalUrl.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          );
+          const imageMarkdownRegex = new RegExp(
+            `!\\[([^\\]]*)\\]\\(${escapedOriginalUrl}\\)`,
+            "g"
+          );
+
+          const beforeCount = (
+            updatedQuestionText.match(imageMarkdownRegex) || []
+          ).length;
+          updatedQuestionText = updatedQuestionText.replace(
+            imageMarkdownRegex,
+            `![$1](${s3Url})`
+          );
+          const afterMatch = new RegExp(
+            `!\\[([^\\]]*)\\]\\(${escapedOriginalUrl}\\)`,
+            "g"
+          );
+          const afterCount = (updatedQuestionText.match(afterMatch) || [])
+            .length;
+
+          if (beforeCount > 0) {
+            replacementsMade += beforeCount;
+            console.log(
+              `✅ Replaced ${beforeCount} occurrences of: ${originalUrl.substring(
+                0,
+                60
+              )}...`
+            );
+          }
+        }
+
+        // Method 2: If no replacements were made using mappings, try to replace by index
+        if (replacementsMade === 0) {
+          console.log(
+            `⚠️ No exact URL matches found, trying index-based replacement...`
+          );
+
+          // Extract all image URLs from question_text again
+          const imageRegexForReplacement = /!\[([^\]]*)\]\(([^)]+)\)/g;
+          let replacementIndex = 0;
+
+          updatedQuestionText = updatedQuestionText.replace(
+            imageRegexForReplacement,
+            (match, altText, imageUrl) => {
+              if (
+                imageUrl.includes("cdn.mathpix.com") &&
+                replacementIndex < newPaths.length
+              ) {
+                const s3Url = newPaths[replacementIndex];
+                replacementIndex++;
+                console.log(
+                  `🔄 Index-based replacement [${replacementIndex - 1}]:`
+                );
+                console.log(`   From: ${imageUrl}`);
+                console.log(`   To:   ${s3Url}`);
+                return `![${altText}](${s3Url})`;
+              }
+              return match;
+            }
+          );
+
+          console.log(`✅ Made ${replacementIndex} index-based replacements`);
+        }
+
+        console.log(`📏 Updated text length: ${updatedQuestionText.length}`);
+
+        // 🔍 DEBUG: Final verification
+        const remainingCdnUrls =
+          updatedQuestionText.match(/https:\/\/cdn\.mathpix\.com\/[^)]+/g) ||
+          [];
+        const s3UrlsInText =
+          updatedQuestionText.match(/amazonaws\.com\/[^)]+/g) || [];
+
+        console.log(`\n📊 Q${question.question_number} final verification:`);
+        console.log(`   - Remaining CDN URLs: ${remainingCdnUrls.length}`);
+        console.log(`   - S3 URLs in text: ${s3UrlsInText.length}`);
+        console.log(`   - Expected S3 URLs: ${newPaths.length}`);
+
+        if (remainingCdnUrls.length > 0) {
+          console.log(`❌ Still has CDN URLs:`);
+          remainingCdnUrls.forEach((url, i) => {
+            console.log(`   [${i}] ${url}`);
+          });
+        }
+
+        return {
+          ...question,
+          image_path: newPaths,
+          question_text: updatedQuestionText,
+        };
       })
     );
 
-    // ✅ Insert into PostgreSQL - include paper_type and topic_label
+    // Insert into PostgreSQL with updated question texts
     await insertJSONPayload({
       paper_name,
       subject,
       banding,
       level,
       questions: updatedQuestions,
-      paper_type, // Include these
-      topic_label, // Include these
+      paper_type,
+      topic_label,
     });
 
+    console.log(
+      `✅ Processed ${updatedQuestions.length} questions with S3 image replacements`
+    );
+
     res.json({
-      message: "✅ Uploaded to S3 and inserted to DB",
+      message: "✅ Uploaded to S3 and inserted to DB with updated image URLs",
       questions: updatedQuestions,
+      debug: {
+        totalQuestions: updatedQuestions.length,
+        questionsWithImages: updatedQuestions.filter(
+          (q) => q.image_path && q.image_path.length > 0
+        ).length,
+        totalImages: updatedQuestions.reduce(
+          (sum, q) => sum + (q.image_path ? q.image_path.length : 0),
+          0
+        ),
+      },
     });
   } catch (err) {
     console.error("❌ Image upload or DB insert error:", err);
     res.status(500).json({ error: "Upload/Insert failed: " + err.message });
+  }
+});
+
+// Helper function to update existing papers with S3 image replacements
+router.post("/update_paper_image_urls", async (req, res) => {
+  try {
+    const { paper_name } = req.body;
+
+    if (!paper_name) {
+      return res.status(400).json({ error: "Paper name is required" });
+    }
+
+    console.log(`🔄 Updating image URLs for paper: ${paper_name}`);
+
+    // Get all questions for this paper
+    const questionsResult = await pool.query(
+      "SELECT * FROM question WHERE paper_name = $1 ORDER BY question_number",
+      [paper_name]
+    );
+
+    if (questionsResult.rows.length === 0) {
+      return res.status(404).json({ error: "Paper not found" });
+    }
+
+    let updatedCount = 0;
+
+    for (const question of questionsResult.rows) {
+      let questionText = question.question_text;
+      let hasUpdates = false;
+      const imagePaths = question.image_paths || [];
+
+      // Find CDN URLs in question text and replace with S3 URLs if available
+      const imageRegex = /!\[([^\]]*)\]\(https:\/\/cdn\.mathpix\.com\/[^)]+\)/g;
+
+      questionText = questionText.replace(
+        imageRegex,
+        (match, altText, offset, string) => {
+          // Extract the CDN URL
+          const urlMatch = match.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+          if (!urlMatch) return match;
+
+          const cdnUrl = urlMatch[2];
+
+          // Look for corresponding S3 URL in image_paths
+          const s3Url = imagePaths.find(
+            (path) =>
+              typeof path === "string" &&
+              path.includes(process.env.S3_BUCKET_NAME)
+          );
+
+          if (s3Url) {
+            hasUpdates = true;
+            console.log(
+              `🔄 Replacing CDN URL with S3 URL in Q${question.question_number}`
+            );
+            return `![${altText}](${s3Url})`;
+          }
+
+          return match; // Keep original if no S3 URL found
+        }
+      );
+
+      // Update the database if changes were made
+      if (hasUpdates) {
+        await pool.query(
+          "UPDATE question SET question_text = $1 WHERE id = $2",
+          [questionText, question.id]
+        );
+        updatedCount++;
+        console.log(`✅ Updated Q${question.question_number}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Updated ${updatedCount} questions with S3 image URLs`,
+      paper_name,
+      updated_questions: updatedCount,
+      total_questions: questionsResult.rows.length,
+    });
+  } catch (error) {
+    console.error("❌ Error updating paper image URLs:", error);
+    res.status(500).json({
+      error: "Failed to update image URLs",
+      details: error.message,
+    });
+  }
+});
+
+// Utility function to extract and validate image URLs from question text
+function extractImageUrlsFromText(text) {
+  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const urls = [];
+  let match;
+
+  while ((match = imageRegex.exec(text)) !== null) {
+    urls.push({
+      altText: match[1],
+      url: match[2],
+      isS3: match[2].includes(process.env.S3_BUCKET_NAME || "amazonaws.com"),
+      isCDN: match[2].includes("cdn.mathpix.com"),
+    });
+  }
+
+  return urls;
+}
+
+// Debug endpoint to check image URL status for a paper
+router.get("/debug/paper_image_urls/:paper_name", async (req, res) => {
+  try {
+    const { paper_name } = req.params;
+
+    const questionsResult = await pool.query(
+      "SELECT question_number, question_text, image_paths FROM question WHERE paper_name = $1 ORDER BY question_number",
+      [paper_name]
+    );
+
+    const analysis = questionsResult.rows.map((question) => {
+      const textUrls = extractImageUrlsFromText(question.question_text);
+      const storedPaths = question.image_paths || [];
+
+      return {
+        question_number: question.question_number,
+        text_images: textUrls,
+        stored_image_paths: storedPaths,
+        has_cdn_in_text: textUrls.some((img) => img.isCDN),
+        has_s3_in_text: textUrls.some((img) => img.isS3),
+        needs_update:
+          textUrls.some((img) => img.isCDN) &&
+          storedPaths.some(
+            (path) =>
+              typeof path === "string" &&
+              path.includes(process.env.S3_BUCKET_NAME || "amazonaws.com")
+          ),
+      };
+    });
+
+    res.json({
+      paper_name,
+      total_questions: questionsResult.rows.length,
+      questions_with_cdn_urls: analysis.filter((q) => q.has_cdn_in_text).length,
+      questions_needing_update: analysis.filter((q) => q.needs_update).length,
+      analysis,
+    });
+  } catch (error) {
+    console.error("❌ Error analyzing paper image URLs:", error);
+    res.status(500).json({ error: "Analysis failed", details: error.message });
   }
 });
 

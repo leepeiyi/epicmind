@@ -23,54 +23,37 @@
                 />
             </div>
 
-            <!-- Preview + Images -->
+            <!-- Preview -->
             <div class="preview" ref="previewContainer">
                 <h3>Preview</h3>
-                <div v-for="(q, index) in parsedQuestions" :key="index" class="question-block">
-                    <h4>Q{{ q.number }} ({{ q.topic || 'Topic' }})</h4>
-                    <!-- Display question content with images inline -->
-                    <div v-html="q.compiledText" class="question-content"></div>
+                <!-- Simple approach: render the entire markdown as-is with all images inline -->
+                <div v-html="compiledMarkdown" class="markdown-content"></div>
 
-                    <!-- Only show answer key images separately at the bottom -->
-                    <div v-if="q.answerKeyImages.length > 0" class="answer-key-images-section">
-                        <h5 class="answer-key-header">📋 Answer Key Images:</h5>
-                        <div v-for="(img, i) in q.answerKeyImages" :key="i" class="image-row">
-                            <div class="image-container">
-                                <img :src="img.url" class="preview-img answer-key-img" />
-                                <div class="image-label">Q{{ q.number }}_answer_key_{{ i + 1 }}
-                                    <span class="image-type answer-key">(Answer Key)</span>
+                <!-- Optional: Show additional legacy images if they're not already in markdown -->
+                <div v-if="Object.keys(originalQuestionData).length > 0" class="legacy-images-section">
+                    <h4>📌 Additional Images Available</h4>
+                    <p class="legacy-note">These images from the original data are not yet included in the markdown above:</p>
+                    
+                    <div v-for="(questionData, questionNumber) in originalQuestionData" :key="questionNumber" class="legacy-question-block">
+                        <div v-if="getUnusedImages(questionNumber).length > 0">
+                            <h5>Q{{ questionNumber }} - Unused Images:</h5>
+                            <div v-for="(imgPath, i) in getUnusedImages(questionNumber)" :key="i" class="image-row">
+                                <div class="image-container">
+                                    <img :src="getImageUrl(imgPath)" class="preview-img legacy-image" />
+                                    <div class="image-label">Q{{ questionNumber }}_image_{{ i + 1 }}
+                                        <span class="image-type legacy">
+                                            ({{ getImageType(imgPath) }})
+                                        </span>
+                                    </div>
                                 </div>
+                                <button 
+                                    v-if="allowImageManagement"
+                                    class="action-btn legacy-btn" 
+                                    @click="addImageToMarkdown(questionNumber, imgPath, i)"
+                                >
+                                    ➕ Add to Markdown
+                                </button>
                             </div>
-                            <button 
-                                v-if="allowImageToggle"
-                                class="action-btn marked" 
-                                @click="toggleImageLabel(img.globalIndex)"
-                            >
-                                ✅ Answer Key
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Show additional images from originalQuestionData only if markdown doesn't contain any images -->
-                    <div v-if="q.answerKeyImages.length === 0 && !hasInlineImages(q) && originalQuestionData[q.number]?.image_paths?.length > 0" 
-                         class="legacy-images-section">
-                        <p class="legacy-images-note">📌 Original images (not yet in markdown):</p>
-                        <div v-for="(imgPath, i) in originalQuestionData[q.number].image_paths" :key="i" class="image-row">
-                            <div class="image-container">
-                                <img :src="getImageUrl(imgPath)" class="preview-img legacy-image" />
-                                <div class="image-label">Q{{ q.number }}_legacy_image{{ i + 1 }}
-                                    <span class="image-type legacy">
-                                        (Legacy - {{ getImageType(imgPath) }})
-                                    </span>
-                                </div>
-                            </div>
-                            <button 
-                                v-if="allowImageManagement"
-                                class="action-btn legacy-btn" 
-                                @click="addImageToMarkdown(q.number, imgPath, i)"
-                            >
-                                ➕ Add to Markdown
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -115,89 +98,51 @@ export default {
         },
         showDebug: {
             type: Boolean,
-            default: false // Set to true for debugging
+            default: false
         }
     },
     emits: ['update:modelValue', 'close', 'image-toggled', 'image-added'],
     data() {
         return {
-            allImagesInMarkdown: [],
             mathJaxStatus: 'Loading...',
             mathJaxTimeout: null,
             mathJaxReady: false
         };
     },
     computed: {
-        parsedQuestions() {
-            const blocks = this.modelValue.split(/### Q(\d+) \((.*?)\)/g);
-            const questions = [];
-            let globalAnswerImageIndex = 0;
-
-            for (let i = 1; i < blocks.length; i += 3) {
-                const number = blocks[i];
-                const topic = blocks[i + 1];
-                const content = blocks[i + 2];
-                const answerKeyImages = [];
-
-                // Extract only answer key images for separate display
-                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
-                let match;
-                const textWithAnswerImagesRemoved = content.replace(imageRegex, (fullMatch, label, url) => {
-                    const isAnswer = label.toLowerCase().includes('answer');
-                    if (isAnswer) {
-                        answerKeyImages.push({
-                            url,
-                            label,
-                            isAnswer: true,
-                            globalIndex: globalAnswerImageIndex++
-                        });
-                        return ''; // Remove answer key images from text content
-                    }
-                    return fullMatch; // Keep non-answer images in the text
-                });
-
-                // Compile the text with question images intact, answer images removed
-                const compiledText = marked.parse(textWithAnswerImagesRemoved);
-
-                questions.push({
-                    number,
-                    topic,
-                    compiledText,
-                    answerKeyImages // Only answer key images for separate display
-                });
-            }
-            return questions;
-        },
         compiledMarkdown() {
-            return marked(this.modelValue || '');
+            // Configure marked to handle images properly
+            const renderer = new marked.Renderer();
+            
+            // Custom image renderer to add styling
+            renderer.image = function(href, title, text) {
+                const titleAttr = title ? ` title="${title}"` : '';
+                return `<img src="${href}" alt="${text}"${titleAttr} class="inline-markdown-image" />`;
+            };
+
+            marked.setOptions({
+                renderer: renderer,
+                breaks: true,
+                gfm: true
+            });
+
+            return marked.parse(this.modelValue || '');
+        },
+
+        // Extract all image URLs currently in markdown for comparison
+        imagesInMarkdown() {
+            const imageRegex = /!\[.*?\]\((.*?)\)/g;
+            const images = [];
+            let match;
+            
+            while ((match = imageRegex.exec(this.modelValue)) !== null) {
+                images.push(match[1]);
+            }
+            
+            return images;
         }
     },
     watch: {
-        modelValue(newContent) {
-            // Update the images array when markdown changes - only track answer key images
-            this.allImagesInMarkdown = [];
-            const questionBlocks = newContent.split(/### Q(\d+)/g);
-
-            for (let i = 1; i < questionBlocks.length; i += 2) {
-                const qNum = questionBlocks[i];
-                const content = questionBlocks[i + 1];
-
-                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
-                let match;
-                while ((match = imageRegex.exec(content)) !== null) {
-                    const isAnswer = match[1].toLowerCase().includes('answer');
-                    // Only track answer key images for separate display
-                    if (isAnswer) {
-                        this.allImagesInMarkdown.push({
-                            questionNumber: qNum,
-                            label: match[1],
-                            url: match[2],
-                            isAnswer: true,
-                        });
-                    }
-                }
-            }
-        },
         compiledMarkdown() {
             // Debounce MathJax rendering to avoid excessive calls
             clearTimeout(this.mathJaxTimeout);
@@ -227,7 +172,6 @@ export default {
             console.log('🔧 Initializing MathJax...');
             this.mathJaxStatus = 'Initializing...';
 
-            // Wait for DOM to be ready
             await this.$nextTick();
 
             if (window.MathJax) {
@@ -260,7 +204,6 @@ export default {
                         window.MathJax.startup.defaultReady();
                         this.mathJaxReady = true;
                         this.mathJaxStatus = 'Ready';
-                        // Initial render after startup
                         setTimeout(() => {
                             this.renderMathJax();
                         }, 100);
@@ -268,7 +211,6 @@ export default {
                 }
             };
 
-            // Load MathJax script
             this.mathJaxStatus = 'Loading script...';
             await this.loadMathJaxScript();
         },
@@ -335,10 +277,18 @@ export default {
             this.renderMathJax();
         },
 
-        // Helper methods for image handling
-        hasInlineImages(question) {
-            // Check if the compiled HTML contains any images
-            return question.compiledText.includes('<img');
+        // Get images from originalQuestionData that are not already in markdown
+        getUnusedImages(questionNumber) {
+            const questionData = this.originalQuestionData[questionNumber];
+            if (!questionData || !questionData.image_paths) {
+                return [];
+            }
+
+            // Filter out images that are already in the markdown
+            return questionData.image_paths.filter(imgPath => {
+                const imgUrl = this.getImageUrl(imgPath);
+                return !this.imagesInMarkdown.includes(imgUrl);
+            });
         },
 
         getImageUrl(imgPath) {
@@ -349,8 +299,10 @@ export default {
         },
 
         getImageType(imgPath) {
-            if (typeof imgPath === 'object' && imgPath.is_answer) {
-                return 'Answer Key';
+            if (typeof imgPath === 'object') {
+                if (imgPath.is_answer || imgPath.type === 'answer') {
+                    return 'Answer Key';
+                }
             }
             return 'Diagram';
         },
@@ -366,9 +318,9 @@ export default {
             const parts = this.modelValue.split(questionMarker);
             
             if (parts.length >= 2) {
-                // Add image after the question header
+                // Add image after the question header but before the answer
                 const beforeAnswer = parts[1].split('**Answer:**')[0];
-                const afterAnswer = parts[1].includes('**Answer:**') ? '**Answer:**' + parts[1].split('**Answer:**')[1] : '';
+                const afterAnswer = parts[1].includes('**Answer:**') ? '\n\n**Answer:**' + parts[1].split('**Answer:**')[1] : '';
                 
                 parts[1] = beforeAnswer + '\n\n' + imageMarkdown + '\n' + afterAnswer;
                 const newContent = parts.join(questionMarker);
@@ -383,31 +335,6 @@ export default {
                 
                 console.log(`✅ Added image to Q${questionNumber}`);
             }
-        },
-
-        toggleImageLabel(index) {
-            const img = this.allImagesInMarkdown[index];
-            const newLabel = img.isAnswer ? 'Diagram' : 'AnswerKey';
-
-            // Replace using RegExp to allow whitespace flexibility in original label
-            const escapedUrl = img.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(`!\\[.*?\\]\\(${escapedUrl}\\)`, 'g');
-            const newMarkdown = `![${newLabel}](${img.url})`;
-
-            // Replace in markdown
-            const newContent = this.modelValue.replace(regex, newMarkdown);
-            this.$emit('update:modelValue', newContent);
-
-            // Update the UI label toggle
-            this.allImagesInMarkdown[index].label = newLabel;
-            this.allImagesInMarkdown[index].isAnswer = !img.isAnswer;
-
-            this.$emit('image-toggled', {
-                index,
-                newLabel,
-                isAnswer: !img.isAnswer,
-                url: img.url
-            });
         }
     }
 };
@@ -511,19 +438,28 @@ export default {
     resize: vertical;
 }
 
-.preview img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-    margin: 1rem auto;
-    object-fit: contain;
+/* Styles for rendered markdown content */
+.markdown-content {
+    line-height: 1.6;
 }
 
-.question-content {
-    margin-bottom: 2rem;
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    color: #333;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border-left: 4px solid #66CC99;
+    border-radius: 4px;
 }
 
-.question-content img {
+/* Inline images from markdown - these will appear at their original positions */
+.markdown-content .inline-markdown-image {
     max-width: 100%;
     height: auto;
     display: block;
@@ -533,59 +469,37 @@ export default {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.question-block {
-    margin-bottom: 3rem;
-    padding-bottom: 2rem;
-    border-bottom: 1px solid #eee;
+.markdown-content hr {
+    border: none;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #ccc, transparent);
+    margin: 2rem 0;
 }
 
-.question-block:last-child {
-    border-bottom: none;
-}
-
-.question-block h4 {
-    color: #333;
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    padding: 0.5rem 1rem;
-    background-color: #f8f9fa;
-    border-left: 4px solid #66CC99;
-    border-radius: 4px;
-}
-
-.answer-key-images-section {
-    margin-top: 2rem;
-    padding: 1.5rem;
-    background-color: #f0f8f0;
-    border: 2px solid #28a745;
-    border-radius: 8px;
-}
-
-.answer-key-header {
-    color: #28a745;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    font-size: 16px;
-}
-
-.answer-key-img {
-    border-color: #28a745 !important;
-}
-
+/* Legacy images section */
 .legacy-images-section {
-    margin-top: 2rem;
-    padding: 1rem;
+    margin-top: 3rem;
+    padding: 1.5rem;
     border: 2px dashed #ffc107;
     border-radius: 8px;
     background-color: #fff9e6;
 }
 
-.legacy-images-note {
+.legacy-note {
     color: #856404;
-    font-weight: 500;
-    margin-bottom: 1rem;
     font-size: 14px;
+    margin-bottom: 1rem;
+    font-style: italic;
+}
+
+.legacy-question-block {
+    margin-bottom: 2rem;
+}
+
+.legacy-question-block h5 {
+    color: #856404;
+    font-weight: 600;
+    margin-bottom: 1rem;
 }
 
 .image-row {
@@ -634,11 +548,6 @@ export default {
     margin-top: 2px;
 }
 
-.image-type.answer-key {
-    color: #28a745;
-    font-weight: 600;
-}
-
 .image-type.legacy {
     color: #ffc107;
     font-weight: 600;
@@ -668,10 +577,5 @@ export default {
 .legacy-btn:hover {
     background-color: #e0a800;
     border-color: #d39e00;
-}
-
-.marked {
-    background-color: #e3fcef;
-    border-color: #66CC99;
 }
 </style>

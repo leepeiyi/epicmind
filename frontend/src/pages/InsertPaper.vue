@@ -111,7 +111,7 @@
                 </label>
             </div>
 
-            <!-- Single upload area (existing) -->
+            <!-- Single upload area -->
             <div v-if="uploadType && !hasSeparateAnswerKey" class="dropzone" @dragover.prevent
                 @drop.prevent="handleFileDrop">
                 <p><strong>Drag & drop files</strong></p>
@@ -122,7 +122,7 @@
                 </label>
             </div>
 
-            <!-- Dual upload areas (existing) -->
+            <!-- Dual upload areas -->
             <div v-if="uploadType && hasSeparateAnswerKey" class="dual-dropzone">
                 <div class="dropzone questions-dropzone" @dragover.prevent @drop.prevent="handleQuestionFileDrop">
                     <p><strong>Questions File</strong></p>
@@ -145,7 +145,7 @@
                 </div>
             </div>
 
-            <!-- File previews (existing) -->
+            <!-- File previews -->
             <div v-if="hasSeparateAnswerKey" class="uploaded-files-preview">
                 <div v-if="questionsFile" class="uploaded-file">
                     <p><strong>Questions File:</strong> {{ questionsFile.name }}</p>
@@ -179,16 +179,12 @@
                     <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }"></div>
                 </div>
                 <p>{{ progressMessage }} ({{ progressPercent }}%)</p>
-                <p v-if="batchProcessing">
-                    Processing batch {{ currentBatch }}/{{ totalBatches }} (pages {{ currentBatchStart }}-{{
-                        currentBatchEnd }})
-                </p>
             </div>
 
-            <!-- LaTeX Converter - now using component -->
+            <!-- LaTeX Converter -->
             <LatexConverter v-if="markdownContent" />
 
-            <!-- REPLACED: markdown editor and preview section with component -->
+            <!-- Markdown Editor and Preview -->
             <MarkdownEditorPreview
                 v-if="markdownContent"
                 v-model="markdownContent"
@@ -211,7 +207,7 @@
 import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
-import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // NEW IMPORT
+import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue';
 import * as pdfjsLib from 'pdfjs-dist';
 import API_BASE_URL from '../config/api.js';
 
@@ -221,7 +217,7 @@ export default {
         Navbar,
         PaperDetails,
         LatexConverter,
-        MarkdownEditorPreview // NEW COMPONENT
+        MarkdownEditorPreview
     },
     data() {
         return {
@@ -236,13 +232,7 @@ export default {
             progressPercent: 0,
             recentPapers: [],
             pdfPageCount: 0,
-            batchProcessing: false,
-            batchSize: 3,
-            currentBatch: 0,
-            totalBatches: 0,
-            currentBatchStart: 0,
-            currentBatchEnd: 0,
-            allProcessedQuestions: [],
+            processedQuestions: [],
             isSaving: false,
             hasSeparateAnswerKey: false,
             questionsFile: null,
@@ -262,7 +252,6 @@ export default {
             answerExtractionPercent: 0,
         };
     },
-    // REMOVED: compiledMarkdown computed property (now handled by component)
     async mounted() {
         try {
             const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
@@ -271,16 +260,11 @@ export default {
 
             // Load PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-
-            // REMOVED: configureMathJax() call (now handled by component)
         } catch (err) {
             console.error('❌ Failed to fetch recent papers:', err);
         }
     },
-    // REMOVED: compiledMarkdown watcher (now handled by component)
     methods: {
-        // REMOVED: escapeLatexInMarkdown and configureMathJax methods (now handled by component)
-
         // Answer extraction testing methods
         handleAnswerKeyForTesting(event) {
             this.testAnswerKeyFile = event.target.files[0];
@@ -407,7 +391,6 @@ export default {
             );
         },
 
-        // Update your existing saveAnswersToDatabase method
         async saveAnswersToDatabase() {
             if (!this.selectedPaperForAnswers || this.extractedAnswers.length === 0) {
                 alert('No answers to save or paper not selected.');
@@ -455,7 +438,7 @@ export default {
             }
         },
 
-        // File handling methods (existing)
+        // File handling methods
         handleQuestionFileUpload(event) {
             this.questionsFile = event.target.files[0];
             this.questionsPdfPreviewUrl = URL.createObjectURL(this.questionsFile);
@@ -497,7 +480,6 @@ export default {
 
                 const data = await response.json();
                 this.questionsPdfPageCount = data.pageCount || 0;
-                this.totalBatches = Math.ceil(this.questionsPdfPageCount / this.batchSize);
             } catch (error) {
                 console.error('❌ Failed to get questions PDF page count:', error);
                 this.questionsPdfPageCount = 0;
@@ -533,7 +515,6 @@ export default {
 
                 const data = await response.json();
                 this.pdfPageCount = data.pageCount || 0;
-                this.totalBatches = Math.ceil(this.pdfPageCount / this.batchSize);
             } catch (error) {
                 console.error('❌ Failed to get PDF page count:', error);
                 this.pdfPageCount = 0;
@@ -585,19 +566,15 @@ export default {
                     !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === ''
                 );
 
-                // 🧠 Step 1: Add topic labels (only if exam type)
+                // Add topic labels (only if exam type)
                 let labeledQuestions = data.questions.map(q => ({
                     question_number: q.question_number,
                     question_text: q.question_text,
                     answer_options: q.answer_options || [],
                     image_paths: q.image_paths || [],
                     answer_key: q.answer_key || null,
-                    topic_label: q.topic_label || '' // existing topic_label if present
+                    topic_label: q.topic_label || ''
                 }));
-
-                console.log(data.questions);
-                console.log(labeledQuestions);
-                console.log('Needs labeling:', needsLabeling);
 
                 if (this.form.uploadType === 'exam' && needsLabeling) {
                     const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
@@ -617,7 +594,6 @@ export default {
 
                     const labelData = await labelRes.json();
                     if (!labelRes.ok) throw new Error(labelData.error);
-                    console.log('labelData', labelData);
 
                     // Merge new topic_label into existing labeledQuestions
                     labeledQuestions = labeledQuestions.map(q => {
@@ -628,7 +604,7 @@ export default {
                         };
                     });
 
-                    // ✅ Step 2: Save to DB
+                    // Save to DB
                     await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -641,7 +617,7 @@ export default {
                     });
                 }
 
-                // ✏️ Step 3: Convert labeled questions to markdown
+                // Convert labeled questions to markdown
                 this.markdownContent = labeledQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
@@ -700,7 +676,7 @@ export default {
             }
         },
 
-        // Main submission handler (existing functionality)
+        // Simplified submission handler - NO BATCH PROCESSING
         async handleSubmit() {
             // Validate inputs
             if (this.hasSeparateAnswerKey) {
@@ -742,31 +718,67 @@ export default {
                     return;
                 }
 
-                // Process questions with batch processing
-                this.allProcessedQuestions = [];
-                this.totalBatches = Math.ceil((this.hasSeparateAnswerKey ? this.questionsPdfPageCount : this.pdfPageCount) / this.batchSize);
-                this.batchProcessing = this.totalBatches > 1;
+                // Step 1: Upload PDF to Mathpix
+                this.progressMessage = "📤 Uploading PDF to Mathpix...";
+                this.progressPercent = 20;
 
-                // Process questions in batches
-                for (let i = 0; i < this.totalBatches; i++) {
-                    this.currentBatch = i + 1;
-                    const startPage = i * this.batchSize + 1;
-                    const endPage = Math.min((i + 1) * this.batchSize,
-                        this.hasSeparateAnswerKey ? this.questionsPdfPageCount : this.pdfPageCount);
+                const formData = new FormData();
+                formData.append("pdf", fileToProcess);
 
-                    this.progressMessage = `📤 Processing questions batch ${this.currentBatch}/${this.totalBatches}...`;
-                    this.progressPercent = 20 + (i / this.totalBatches) * 40;
+                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
+                    method: "POST",
+                    body: formData,
+                });
+                const { pdf_id } = await uploadRes.json();
+                if (!pdf_id) throw new Error("Failed to get PDF ID");
 
-                    const batchQuestions = await this.processBatch(startPage, endPage, fileToProcess);
-                    this.allProcessedQuestions = [...this.allProcessedQuestions, ...batchQuestions];
-                }
+                // Step 2: Extract questions from Mathpix Markdown
+                this.progressMessage = "🔍 Extracting questions with AI...";
+                this.progressPercent = 40;
 
-                // Generate markdown preview
-                this.progressMessage = "📄 Generating markdown preview...";
-                // Step 3: Extract answer key (if separate file is uploaded)
+                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        pdf_id,
+                        paper_name: this.paperName,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                    }),
+                });
+
+                const extractData = await extractRes.json();
+                const questions = extractData.questions || [];
+                if (!questions.length) throw new Error("No questions extracted");
+
+                // Step 3: Upload images to S3
+                this.progressMessage = "📦 Uploading diagrams to S3...";
+                this.progressPercent = 60;
+
+                const uploadImagesRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        paper_name: this.paperName,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        questions,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                    }),
+                });
+
+                const finalData = await uploadImagesRes.json();
+                this.processedQuestions = finalData.questions || [];
+
+                // Step 4: Extract answer key (if separate file is uploaded)
                 if (this.hasSeparateAnswerKey && this.answerKeyFile) {
-                    this.progressMessage = "📥 Uploading and matching answer key...";
-                    this.progressPercent = 95;
+                    this.progressMessage = "📥 Processing separate answer key...";
+                    this.progressPercent = 80;
 
                     const answerFormData = new FormData();
                     answerFormData.append("pdf", this.answerKeyFile);
@@ -794,29 +806,29 @@ export default {
 
                     const matchData = await matchRes.json();
 
-                    if (!Array.isArray(matchData.answers)) {
-                        throw new Error("❌ Answer extraction failed or returned invalid format.");
+                    if (Array.isArray(matchData.answers)) {
+                        // Update each question's answer_key if match found
+                        this.processedQuestions = this.processedQuestions.map(q => {
+                            const matched = matchData.answers.find(a => a.question_number === String(q.question_number));
+                            if (matched && matched.correct_answer) {
+                                return {
+                                    ...q,
+                                    answer_key: {
+                                        question_number: q.question_number,
+                                        correct_answer: matched.correct_answer
+                                    }
+                                };
+                            }
+                            return q;
+                        });
                     }
-
-                    // Update each question's answer_key if match found
-                    this.allProcessedQuestions = this.allProcessedQuestions.map(q => {
-                        const matched = matchData.answers.find(a => a.question_number === String(q.question_number));
-                        if (matched && matched.correct_answer) {
-                            return {
-                                ...q,
-                                answer_key: {
-                                    question_number: q.question_number,
-                                    correct_answer: matched.correct_answer
-                                }
-                            };
-                        }
-                        return q;
-                    });
                 }
 
+                // Step 5: Generate markdown preview
+                this.progressMessage = "📝 Generating markdown preview...";
                 this.progressPercent = 90;
 
-                this.markdownContent = this.allProcessedQuestions.map((q) => {
+                this.markdownContent = this.processedQuestions.map((q) => {
                     const options = (q.answer_options || [])
                         .map((opt) => `- **${opt.option}** ${opt.text}`)
                         .join('\n');
@@ -850,83 +862,6 @@ export default {
                 alert("❌ Something went wrong: " + error.message);
                 this.progressMessage = "";
                 this.progressPercent = 0;
-                this.batchProcessing = false;
-            }
-        },
-
-        async processBatch(startPage, endPage, file = null) {
-            try {
-                const fileToUse = file || this.uploadedFile;
-
-                // Split PDF batch
-                const splitFormData = new FormData();
-                splitFormData.append("pdf", fileToUse);
-                splitFormData.append("startPage", startPage);
-                splitFormData.append("endPage", endPage);
-
-                const splitRes = await fetch(`${API_BASE_URL}/api/mathpix/split_batch`, {
-                    method: "POST",
-                    body: splitFormData,
-                });
-                const splitData = await splitRes.json();
-
-                if (!splitData.batch_path) throw new Error("Failed to split PDF batch.");
-
-                // Fetch split file and send to Mathpix
-                const batchFileRes = await fetch(`${API_BASE_URL}/${splitData.batch_path}`);
-                const batchBlob = await batchFileRes.blob();
-
-                const uploadFormData = new FormData();
-                uploadFormData.append("pdf", batchBlob, `batch_${startPage}_to_${endPage}.pdf`);
-
-                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
-                    method: "POST",
-                    body: uploadFormData,
-                });
-                const { pdf_id } = await uploadRes.json();
-                if (!pdf_id) throw new Error("Failed to upload batch to Mathpix");
-
-                // Extract questions
-                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        pdf_id,
-                        paper_name: this.paperName,
-                        subject: this.form.subject,
-                        banding: this.form.banding,
-                        level: this.form.level,
-                        paper_type: this.uploadType,
-                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                        startPage,
-                        endPage,
-                    }),
-                });
-
-                const extractData = await extractRes.json();
-                const questions = extractData.questions || [];
-                if (!questions.length) return [];
-
-                // Upload images to S3
-                const uploadImagesRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        paper_name: this.paperName,
-                        subject: this.form.subject,
-                        banding: this.form.banding,
-                        level: this.form.level,
-                        paper_type: this.uploadType,
-                        questions,
-                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
-                    }),
-                });
-
-                const finalData = await uploadImagesRes.json();
-                return finalData.questions || [];
-            } catch (error) {
-                console.error(`❌ Error processing batch ${startPage}-${endPage}:`, error);
-                return [];
             }
         }
     }
@@ -934,8 +869,6 @@ export default {
 </script>
 
 <style scoped>
-/* REMOVED: All markdown editor/preview related styles (now in component) */
-
 .upload-page {
     padding: 3rem;
     max-width: 1200px;
