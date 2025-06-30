@@ -42,9 +42,15 @@ router.get("/all-papers", async (req, res) => {
     const result = await client.query(`
       SELECT 
         paper_name,
+        COUNT(*) AS question_count,
         MAX(created_at) AS last_uploaded,
         MAX(topic_label) AS topic_label,
-        MAX(paper_type) AS paper_type
+        MAX(paper_type) AS paper_type,
+        MAX(subject) AS subject,
+        MAX(banding) AS banding,
+        MAX(level) AS level,
+        MAX(year) AS year,
+        BOOL_OR(vetted) AS vetted  -- This will work now
       FROM question
       GROUP BY paper_name
       ORDER BY last_uploaded DESC;
@@ -299,6 +305,49 @@ router.post("/update-question-metadata", async (req, res) => {
     });
   } finally {
     client.release();
+  }
+});
+
+// FIXED: Remove the updated_at column reference
+
+router.post("/revert-paper", async (req, res) => {
+  try {
+    const { paper_name } = req.body;
+
+    if (!paper_name) {
+      return res.status(400).json({ 
+        error: "paper_name is required" 
+      });
+    }
+
+    const client = await pool.connect();
+
+    // Set vetted = false for all questions in this paper
+    // REMOVED: updated_at = CURRENT_TIMESTAMP since column doesn't exist
+    const result = await client.query(
+      `UPDATE question 
+       SET vetted = false 
+       WHERE paper_name = $1`,
+      [paper_name]
+    );
+
+    client.release();
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ 
+        error: "Paper not found" 
+      });
+    }
+
+    res.json({ 
+      success: true,
+      message: `Paper "${paper_name}" has been reverted to vetting`,
+      updated_questions: result.rowCount
+    });
+
+  } catch (err) {
+    console.error("❌ Failed to revert paper:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -571,14 +620,15 @@ router.post("/add-manual-question", async (req, res) => {
     subject,
     banding,
     level,
-    paper_type
+    paper_type,
   } = req.body;
 
   // Validation
   if (!paper_name || !question_number || !question_text) {
     return res.status(400).json({
       success: false,
-      error: "Missing required fields: paper_name, question_number, and question_text"
+      error:
+        "Missing required fields: paper_name, question_number, and question_text",
     });
   }
 
@@ -595,7 +645,7 @@ router.post("/add-manual-question", async (req, res) => {
     if (existingQuestion.rows.length > 0) {
       return res.status(400).json({
         success: false,
-        error: `Question ${question_number} already exists for paper ${paper_name}`
+        error: `Question ${question_number} already exists for paper ${paper_name}`,
       });
     }
 
@@ -622,10 +672,10 @@ router.post("/add-manual-question", async (req, res) => {
         finalPaperType = finalPaperType || existing.paper_type;
       } else {
         // Default values if no existing questions
-        finalSubject = finalSubject || 'Math';
-        finalBanding = finalBanding || 'Express';
-        finalLevel = finalLevel || 'Sec 4';
-        finalPaperType = finalPaperType || 'exam';
+        finalSubject = finalSubject || "Math";
+        finalBanding = finalBanding || "Express";
+        finalLevel = finalLevel || "Sec 4";
+        finalPaperType = finalPaperType || "exam";
       }
     }
 
@@ -653,7 +703,7 @@ router.post("/add-manual-question", async (req, res) => {
       paper_name,
       question_number,
       question_text,
-      topic_label || 'Manual Addition',
+      topic_label || "Manual Addition",
       JSON.stringify(answer_options || []),
       JSON.stringify(image_paths || []),
       answer_key ? JSON.stringify(answer_key) : null,
@@ -661,13 +711,15 @@ router.post("/add-manual-question", async (req, res) => {
       finalBanding,
       finalLevel,
       finalPaperType,
-      'Medium', // Default difficulty
-      false // Not vetted by default
+      "Medium", // Default difficulty
+      false, // Not vetted by default
     ]);
 
     const insertedQuestion = result.rows[0];
 
-    console.log(`✅ Manual question added: Q${question_number} for paper ${paper_name}`);
+    console.log(
+      `✅ Manual question added: Q${question_number} for paper ${paper_name}`
+    );
 
     // Log the addition
     try {
@@ -676,12 +728,15 @@ router.post("/add-manual-question", async (req, res) => {
          VALUES ($1, $2, $3, NOW())`,
         [
           paper_name,
-          'MANUAL_QUESTION_ADDED',
-          `Question ${question_number} manually added by user`
+          "MANUAL_QUESTION_ADDED",
+          `Question ${question_number} manually added by user`,
         ]
       );
     } catch (logError) {
-      console.warn('⚠️ Failed to log manual question addition:', logError.message);
+      console.warn(
+        "⚠️ Failed to log manual question addition:",
+        logError.message
+      );
     }
 
     res.json({
@@ -691,15 +746,14 @@ router.post("/add-manual-question", async (req, res) => {
         id: insertedQuestion.id,
         question_number: insertedQuestion.question_number,
         paper_name,
-        topic_label: topic_label || 'Manual Addition'
-      }
+        topic_label: topic_label || "Manual Addition",
+      },
     });
-
   } catch (err) {
     console.error("❌ Error adding manual question:", err.message);
     res.status(500).json({
       success: false,
-      error: `Failed to add question: ${err.message}`
+      error: `Failed to add question: ${err.message}`,
     });
   } finally {
     client.release();
@@ -725,14 +779,13 @@ router.get("/next-question-number/:paper_name", async (req, res) => {
     res.json({
       success: true,
       next_question_number: nextQuestionNumber,
-      current_max: maxQuestionNumber
+      current_max: maxQuestionNumber,
     });
-
   } catch (err) {
     console.error("❌ Error getting next question number:", err.message);
     res.status(500).json({
       success: false,
-      error: "Failed to get next question number"
+      error: "Failed to get next question number",
     });
   } finally {
     client.release();
