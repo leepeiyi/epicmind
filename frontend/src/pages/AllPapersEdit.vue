@@ -20,7 +20,7 @@
             <!-- Search and Filter Section -->
             <div class="search-filter-section">
                 <div class="search-bar">
-                    <input v-model="searchQuery" type="text" placeholder="Search papers by name, subject, or topic..."
+                    <input v-model="searchQuery" type="text" placeholder="Search papers by name, subject, topic, or type..."
                         class="search-input" />
                 </div>
                 <div class="filter-controls">
@@ -52,7 +52,8 @@
                     <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card">
                         <div class="paper-card-header">
                             <span class="paper-name">{{ paper.paper_name }}</span>
-                            <span v-if="paper.topic_label" class="paper-topic">{{ paper.topic_label }}</span>
+                            <span v-if="paper.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
+                            <span v-else-if="paper.topic_label" class="paper-topic">{{ paper.topic_label }}</span>
                         </div>
                         <div class="paper-details">
                             <span class="paper-meta">{{ paper.subject }} • {{ paper.banding }} • {{ paper.level
@@ -119,7 +120,7 @@
                     @insert-markdown="handleInsertMarkdown" />
             </div>
 
-            <!-- Markdown Editor and Preview Section - REPLACED WITH COMPONENT -->
+            <!-- REPLACED: Use the MarkdownEditorPreview component instead of inline editor/preview -->
             <MarkdownEditorPreview
                 v-if="markdownContent"
                 v-model="markdownContent"
@@ -164,7 +165,7 @@ import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
 import PrintView from '../components/PrintView.vue';
 import ManualQuestionModal from '../components/ManualQuestionModal.vue';
-import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // NEW IMPORT
+import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // IMPORT THE COMPONENT
 import API_BASE_URL from '../config/api.js';
 
 export default {
@@ -175,7 +176,7 @@ export default {
         ImageUploader,
         PrintView,
         ManualQuestionModal,
-        MarkdownEditorPreview // NEW COMPONENT
+        MarkdownEditorPreview // ADD THE COMPONENT
     },
     data() {
         return {
@@ -204,7 +205,7 @@ export default {
         };
     },
     computed: {
-        // REMOVED: parsedQuestions and compiledMarkdown (now handled by component)
+        // REMOVED: parsedQuestions, compiledMarkdown, allImagesInMarkdown - now handled by component
         availableSubjects() {
             return [...new Set(this.allPapers.map(p => p.subject).filter(Boolean))].sort();
         },
@@ -219,7 +220,8 @@ export default {
                 const matchesSearch = !this.searchQuery ||
                     paper.paper_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                     (paper.subject && paper.subject.toLowerCase().includes(this.searchQuery.toLowerCase())) ||
-                    (paper.topic_label && paper.topic_label.toLowerCase().includes(this.searchQuery.toLowerCase()));
+                    (paper.topic_label && paper.topic_label.toLowerCase().includes(this.searchQuery.toLowerCase())) ||
+                    (paper.paper_type && paper.paper_type.toLowerCase().includes(this.searchQuery.toLowerCase()));
 
                 const matchesSubject = !this.filterSubject || paper.subject === this.filterSubject;
                 const matchesBanding = !this.filterBanding || paper.banding === this.filterBanding;
@@ -243,13 +245,13 @@ export default {
     async mounted() {
         try {
             await this.loadAllPapers();
-            // MathJax configuration is now handled by the MarkdownEditorPreview component
+            // REMOVED: configureMathJax() - now handled by component
         } catch (err) {
             console.error('❌ Failed to load papers:', err);
         }
     },
     watch: {
-        // REMOVED: markdownContent and compiledMarkdown watchers (now handled by component)
+        // REMOVED: markdownContent and compiledMarkdown watchers - now handled by component
         searchQuery() {
             this.currentPage = 1;
         },
@@ -265,7 +267,7 @@ export default {
     },
     methods: {
         // REMOVED: configureMathJax, hasInlineImages, getImageUrl, getImageType, 
-        // addImageToMarkdown, toggleImageLabel (now handled by component)
+        // addImageToMarkdown, toggleImageLabel - now handled by component
 
         async loadAllPapers() {
             try {
@@ -420,7 +422,7 @@ export default {
                 // Get next available question number
                 await this.getNextQuestionNumber();
 
-                // Scroll to editor
+                // Scroll to editor - updated selector
                 this.$nextTick(() => {
                     const editorElement = document.querySelector('.markdown-editor-preview');
                     if (editorElement) {
@@ -643,6 +645,12 @@ export default {
     display: inline-block;
 }
 
+.paper-type-exam {
+    background-color: rgba(74, 144, 226, 0.1);
+    color: #4A90E2;
+    font-weight: 600;
+}
+
 .paper-details {
     margin-bottom: 0.75rem;
     display: flex;
@@ -730,7 +738,7 @@ export default {
     gap: 1rem;
 }
 
-/* REMOVED: All markdown editor/preview styles (now in component) */
+/* REMOVED: All the inline editor/preview styles since they're now in the component */
 
 .save-section {
     margin-top: 2rem;

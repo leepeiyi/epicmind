@@ -19,7 +19,8 @@
                         @click.prevent="loadRecentPaper(p.paper_name)">
                         <div class="recent-item-row">
                             <span class="paper-name">{{ p.paper_name }}</span>
-                            <span v-if="p.topic_label" class="paper-topic">{{ p.topic_label }}</span>
+                            <span v-if="p.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
+                            <span v-else-if="p.topic_label" class="paper-topic">{{ p.topic_label }}</span>
                             <span class="upload-time">– uploaded {{ new Date(p.last_uploaded).toLocaleString() }}</span>
                         </div>
                     </li>
@@ -1087,6 +1088,22 @@ export default {
     color: #888;
 }
 
+.paper-topic {
+    color: #66CC99;
+    font-weight: 500;
+    margin-left: 0.5rem;
+    background-color: rgba(102, 204, 153, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.paper-type-exam {
+    background-color: rgba(74, 144, 226, 0.1);
+    color: #4A90E2;
+    font-weight: 600;
+}
+
 .type-toggle {
     display: flex;
     gap: 1.5rem;
@@ -1187,12 +1204,6 @@ export default {
 
 .save-btn:hover {
     background-color: #4CAF50;
-}
-
-.paper-topic {
-    color: #66CC99;
-    font-weight: 500;
-    margin-left: 0.5rem;
 }
 
 .overlay-spinner {
