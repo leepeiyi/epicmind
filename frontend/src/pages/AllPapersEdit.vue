@@ -20,8 +20,8 @@
             <!-- Search and Filter Section -->
             <div class="search-filter-section">
                 <div class="search-bar">
-                    <input v-model="searchQuery" type="text" placeholder="Search papers by name, subject, topic, or type..."
-                        class="search-input" />
+                    <input v-model="searchQuery" type="text"
+                        placeholder="Search papers by name, subject, topic, or type..." class="search-input" />
                 </div>
                 <div class="filter-controls">
                     <select v-model="filterSubject" class="filter-select">
@@ -61,13 +61,22 @@
                             <span v-if="paper.year" class="paper-year">{{ paper.year }}</span>
                         </div>
                         <div class="paper-stats">
-                            <span class="question-count">{{ paper.question_count || 0 }} questions</span>
+                            <!-- Enhanced question count display with debugging info -->
+                            <span class="question-count">
+                                {{ paper.question_count || 0 }} questions
+                                <!-- Add this temporarily to see what's in the data -->
+                                <small v-if="!paper.question_count" style="color: red; font-size: 10px;">
+                                    (count missing)
+                                </small>
+                            </span>
                             <span class="upload-time">{{ new Date(paper.last_uploaded).toLocaleDateString() }}</span>
                         </div>
                         <div class="paper-actions"
                             style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                             <button @click="loadPaper(paper.paper_name)" class="action-btn">✏️ Edit</button>
                             <button @click="printQuiz(paper)" class="action-btn">🖨️ Print</button>
+                            <!-- Add debug button temporarily -->
+                            <button @click="debugPaper(paper)" class="action-btn" style="font-size: 10px;">🐛</button>
                         </div>
                     </div>
                 </div>
@@ -121,17 +130,10 @@
             </div>
 
             <!-- REPLACED: Use the MarkdownEditorPreview component instead of inline editor/preview -->
-            <MarkdownEditorPreview
-                v-if="markdownContent"
-                v-model="markdownContent"
-                :editor-title="`Editing: ${currentPaperName}`"
-                :original-question-data="originalQuestionData"
-                :allow-image-toggle="true"
-                :allow-image-management="true"
-                @close="closeEditor"
-                @image-toggled="onImageToggled"
-                @image-added="onImageAdded"
-            />
+            <MarkdownEditorPreview v-if="markdownContent" v-model="markdownContent"
+                :editor-title="`Editing: ${currentPaperName}`" :original-question-data="originalQuestionData"
+                :allow-image-toggle="true" :allow-image-management="true" @close="closeEditor"
+                @image-toggled="onImageToggled" @image-added="onImageAdded" />
 
             <!-- Save Section -->
             <div v-if="markdownContent" class="save-section">
@@ -388,7 +390,7 @@ export default {
 
                     // Check if question_text already contains images
                     const hasImagesInText = /!\[.*?\]\(.*?\)/.test(q.question_text);
-                    
+
                     let images = '';
                     if (!hasImagesInText && q.image_paths && q.image_paths.length > 0) {
                         // Only add images if question_text doesn't already have them
