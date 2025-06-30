@@ -26,10 +26,58 @@
             <!-- Preview -->
             <div class="preview" ref="previewContainer">
                 <h3>Preview</h3>
-                <!-- Simple approach: render the entire markdown as-is with all images inline -->
-                <div v-html="compiledMarkdown" class="markdown-content"></div>
+                
+                <!-- Render questions using the original parsing logic -->
+                <div v-for="(q, index) in parsedQuestions" :key="index" class="question-block">
+                    <h4>Q{{ q.number }} ({{ q.topic || 'Topic' }})</h4>
+                    <!-- Display question content with images inline (answer key images removed) -->
+                    <div v-html="q.compiledText" class="question-content"></div>
 
-                <!-- Optional: Show additional legacy images if they're not already in markdown -->
+                    <!-- Show answer key images separately at the bottom -->
+                    <div v-if="q.answerKeyImages.length > 0" class="answer-key-images-section">
+                        <h5 class="answer-key-header">📋 Answer Key Images:</h5>
+                        <div v-for="(img, i) in q.answerKeyImages" :key="i" class="image-row">
+                            <div class="image-container">
+                                <img :src="img.url" class="preview-img answer-key-img" />
+                                <div class="image-label">Q{{ q.number }}_answer_key_{{ i + 1 }}
+                                    <span class="image-type answer-key">(Answer Key)</span>
+                                </div>
+                            </div>
+                            <button 
+                                v-if="allowImageToggle"
+                                class="action-btn marked" 
+                                @click="toggleImageLabel(img.globalIndex)"
+                            >
+                                ✅ Answer Key
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Show additional images from originalQuestionData only if markdown doesn't contain any images -->
+                    <div v-if="q.answerKeyImages.length === 0 && !hasInlineImages(q) && originalQuestionData[q.number]?.image_paths?.length > 0" 
+                         class="legacy-images-section">
+                        <p class="legacy-images-note">📌 Original images (not yet in markdown):</p>
+                        <div v-for="(imgPath, i) in originalQuestionData[q.number].image_paths" :key="i" class="image-row">
+                            <div class="image-container">
+                                <img :src="getImageUrl(imgPath)" class="preview-img legacy-image" />
+                                <div class="image-label">Q{{ q.number }}_legacy_image{{ i + 1 }}
+                                    <span class="image-type legacy">
+                                        (Legacy - {{ getImageType(imgPath) }})
+                                    </span>
+                                </div>
+                            </div>
+                            <button 
+                                v-if="allowImageManagement"
+                                class="action-btn legacy-btn" 
+                                @click="addImageToMarkdown(q.number, imgPath, i)"
+                            >
+                                ➕ Add to Markdown
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Show unused images from originalQuestionData -->
                 <div v-if="Object.keys(originalQuestionData).length > 0" class="legacy-images-section">
                     <h4>📌 Additional Images Available</h4>
                     <p class="legacy-note">These images from the original data are not yet included in the markdown above:</p>
@@ -106,27 +154,51 @@ export default {
         return {
             mathJaxStatus: 'Loading...',
             mathJaxTimeout: null,
-            mathJaxReady: false
+            mathJaxReady: false,
+            allImagesInMarkdown: []
         };
     },
     computed: {
-        compiledMarkdown() {
-            // Configure marked to handle images properly
-            const renderer = new marked.Renderer();
-            
-            // Custom image renderer to add styling
-            renderer.image = function(href, title, text) {
-                const titleAttr = title ? ` title="${title}"` : '';
-                return `<img src="${href}" alt="${text}"${titleAttr} class="inline-markdown-image" />`;
-            };
+        // Replicate the original parsedQuestions logic
+        parsedQuestions() {
+            const blocks = this.modelValue.split(/### Q(\d+) \((.*?)\)/g);
+            const questions = [];
+            let globalAnswerImageIndex = 0;
 
-            marked.setOptions({
-                renderer: renderer,
-                breaks: true,
-                gfm: true
-            });
+            for (let i = 1; i < blocks.length; i += 3) {
+                const number = blocks[i];
+                const topic = blocks[i + 1];
+                const content = blocks[i + 2];
+                const answerKeyImages = [];
 
-            return marked.parse(this.modelValue || '');
+                // Extract only answer key images for separate display
+                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
+                let match;
+                const textWithAnswerImagesRemoved = content.replace(imageRegex, (fullMatch, label, url) => {
+                    const isAnswer = label.toLowerCase().includes('answer');
+                    if (isAnswer) {
+                        answerKeyImages.push({
+                            url,
+                            label,
+                            isAnswer: true,
+                            globalIndex: globalAnswerImageIndex++
+                        });
+                        return ''; // Remove answer key images from text content
+                    }
+                    return fullMatch; // Keep non-answer images in the text
+                });
+
+                // Compile the text with question images intact, answer images removed
+                const compiledText = marked.parse(textWithAnswerImagesRemoved);
+
+                questions.push({
+                    number,
+                    topic,
+                    compiledText,
+                    answerKeyImages // Only answer key images for separate display
+                });
+            }
+            return questions;
         },
 
         // Extract all image URLs currently in markdown for comparison
@@ -143,7 +215,33 @@ export default {
         }
     },
     watch: {
-        compiledMarkdown() {
+        modelValue(newContent) {
+            // Update the images array when markdown changes - only track answer key images
+            this.allImagesInMarkdown = [];
+            const questionBlocks = newContent.split(/### Q(\d+)/g);
+
+            for (let i = 1; i < questionBlocks.length; i += 2) {
+                const qNum = questionBlocks[i];
+                const content = questionBlocks[i + 1];
+
+                const imageRegex = /!\[(.*?)\]\((.*?)\)/g;
+                let match;
+                while ((match = imageRegex.exec(content)) !== null) {
+                    const isAnswer = match[1].toLowerCase().includes('answer');
+                    // Only track answer key images for separate display
+                    if (isAnswer) {
+                        this.allImagesInMarkdown.push({
+                            questionNumber: qNum,
+                            label: match[1],
+                            url: match[2],
+                            isAnswer: true,
+                        });
+                    }
+                }
+            }
+        },
+
+        parsedQuestions() {
             // Debounce MathJax rendering to avoid excessive calls
             clearTimeout(this.mathJaxTimeout);
             this.mathJaxTimeout = setTimeout(() => {
@@ -277,6 +375,12 @@ export default {
             this.renderMathJax();
         },
 
+        // Helper methods for image handling (replicated from original)
+        hasInlineImages(question) {
+            // Check if the compiled HTML contains any images
+            return question.compiledText.includes('<img');
+        },
+
         // Get images from originalQuestionData that are not already in markdown
         getUnusedImages(questionNumber) {
             const questionData = this.originalQuestionData[questionNumber];
@@ -335,6 +439,32 @@ export default {
                 
                 console.log(`✅ Added image to Q${questionNumber}`);
             }
+        },
+
+        toggleImageLabel(index) {
+            const img = this.allImagesInMarkdown[index];
+            if (!img) return;
+
+            const newLabel = img.isAnswer ? 'Diagram' : 'AnswerKey';
+
+            // Replace using RegExp to allow whitespace flexibility in original label
+            const escapedUrl = img.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`!\\[.*?\\]\\(${escapedUrl}\\)`, 'g');
+            const newMarkdown = `![${newLabel}](${img.url})`;
+
+            // Replace in markdown
+            const newContent = this.modelValue.replace(regex, newMarkdown);
+            this.$emit('update:modelValue', newContent);
+
+            // Update the UI label toggle
+            this.allImagesInMarkdown[index].label = newLabel;
+            this.allImagesInMarkdown[index].isAnswer = !img.isAnswer;
+
+            this.$emit('image-toggled', {
+                index,
+                newLabel,
+                isAnswer: !img.isAnswer
+            });
         }
     }
 };
@@ -438,28 +568,19 @@ export default {
     resize: vertical;
 }
 
-/* Styles for rendered markdown content */
-.markdown-content {
-    line-height: 1.6;
+.preview img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    object-fit: contain;
 }
 
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3,
-.markdown-content h4,
-.markdown-content h5,
-.markdown-content h6 {
-    color: #333;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-    padding: 0.5rem 1rem;
-    background-color: #f8f9fa;
-    border-left: 4px solid #66CC99;
-    border-radius: 4px;
+.question-content {
+    margin-bottom: 2rem;
 }
 
-/* Inline images from markdown - these will appear at their original positions */
-.markdown-content .inline-markdown-image {
+.question-content img {
     max-width: 100%;
     height: auto;
     display: block;
@@ -469,37 +590,44 @@ export default {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.markdown-content hr {
-    border: none;
-    height: 2px;
-    background: linear-gradient(to right, transparent, #ccc, transparent);
-    margin: 2rem 0;
-}
-
-/* Legacy images section */
-.legacy-images-section {
-    margin-top: 3rem;
+.answer-key-images-section {
+    margin-top: 2rem;
     padding: 1.5rem;
-    border: 2px dashed #ffc107;
+    background-color: #f0f8f0;
+    border: 2px solid #28a745;
     border-radius: 8px;
-    background-color: #fff9e6;
 }
 
-.legacy-note {
-    color: #856404;
-    font-size: 14px;
-    margin-bottom: 1rem;
-    font-style: italic;
-}
-
-.legacy-question-block {
-    margin-bottom: 2rem;
-}
-
-.legacy-question-block h5 {
-    color: #856404;
+.answer-key-header {
+    color: #28a745;
     font-weight: 600;
     margin-bottom: 1rem;
+    font-size: 16px;
+}
+
+.answer-key-img {
+    border-color: #28a745 !important;
+}
+
+.question-block {
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #eee;
+}
+
+.question-block:last-child {
+    border-bottom: none;
+}
+
+.question-block h4 {
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border-left: 4px solid #66CC99;
+    border-radius: 4px;
 }
 
 .image-row {
@@ -548,9 +676,46 @@ export default {
     margin-top: 2px;
 }
 
+.image-type.answer-key {
+    color: #28a745;
+    font-weight: 600;
+}
+
 .image-type.legacy {
     color: #ffc107;
     font-weight: 600;
+}
+
+.legacy-images-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border: 2px dashed #ffc107;
+    border-radius: 8px;
+    background-color: #fff9e6;
+}
+
+.legacy-images-note {
+    color: #856404;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    font-size: 14px;
+}
+
+.legacy-note {
+    color: #856404;
+    font-size: 14px;
+    margin-bottom: 1rem;
+    font-style: italic;
+}
+
+.legacy-question-block {
+    margin-bottom: 2rem;
+}
+
+.legacy-question-block h5 {
+    color: #856404;
+    font-weight: 600;
+    margin-bottom: 1rem;
 }
 
 .action-btn {
@@ -577,5 +742,10 @@ export default {
 .legacy-btn:hover {
     background-color: #e0a800;
     border-color: #d39e00;
+}
+
+.marked {
+    background-color: #e3fcef;
+    border-color: #66CC99;
 }
 </style>
