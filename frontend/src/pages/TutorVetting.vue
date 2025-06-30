@@ -91,9 +91,7 @@
                     </span>
                 </div>
 
-                <!-- Debug buttons -->
-                <button @click="debugLatex(q.question_text)" class="debug-btn">Debug LaTeX</button>
-                <button @click="debugImages(q)" class="debug-btn" style="margin-left: 0.5rem;">Debug Images</button>
+             
             </div>
 
             <button @click="saveUpdates" class="save-btn">💾 Save Changes & Approve</button>
@@ -292,35 +290,6 @@ export default {
                 originalData: originalImg,
                 finalUrl: event.target.src
             });
-        },
-
-        // Debug methods
-        debugImages(question) {
-            console.log('🖼️ Image Debug for Q' + question.question_number + ':', {
-                hasImagePaths: !!question.image_paths,
-                imagePathsType: typeof question.image_paths,
-                imagePathsLength: question.image_paths?.length,
-                imagePathsContent: question.image_paths,
-                sampleProcessedUrl: question.image_paths?.length > 0 ? this.getImageUrl(question.image_paths[0]) : 'N/A'
-            });
-
-            alert('Image debug info logged to console');
-        },
-
-        debugLatex(text) {
-            console.log('🔍 LaTeX Debug:');
-            console.log('Original:', text);
-            console.log('Has \\\\(: ', text.includes('\\\\('));
-            console.log('Has \\\\): ', text.includes('\\\\)'));
-            console.log('Has \\(: ', text.includes('\\('));
-            console.log('Has \\): ', text.includes('\\)'));
-            console.log('Has $: ', text.includes('$'));
-
-            const escapedDelimiters = text.match(/\\\\(\(|\))/g);
-            console.log('Escaped delimiters found:', escapedDelimiters);
-            console.log('Will render as:', this.prepareMathContent(text));
-
-            alert('LaTeX debug info logged to console');
         },
 
         // Paper management methods
