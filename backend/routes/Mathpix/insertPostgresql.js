@@ -17,18 +17,18 @@ const pool = new Pool({
 const escapeLatex = (text) => {
   // Handle null/undefined
   if (!text) return text;
-  
+
   // Handle arrays - convert to string first
   if (Array.isArray(text)) {
     // Join array elements with a delimiter (e.g., comma and space)
-    text = text.join(', ');
+    text = text.join(", ");
   }
-  
+
   // Handle non-string types
-  if (typeof text !== 'string') {
+  if (typeof text !== "string") {
     text = String(text);
   }
-  
+
   // Now safely apply string replacements
   return text.replace(/\\/g, "\\\\") || "";
 };
@@ -45,7 +45,7 @@ const insertJSONPayload = async (parsedJSON) => {
     for (const original of questions) {
       const item = {
         ...original,
-        question_text: escapeLatex(original.question_text),
+        question_text: original.question_text, // ✅ don't re-escape
         answer_key:
           typeof original.answer_key === "object" &&
           original.answer_key !== null
@@ -97,6 +97,5 @@ const insertJSONPayload = async (parsedJSON) => {
     console.log("🔌 Client released");
   }
 };
-
 
 module.exports = insertJSONPayload;
