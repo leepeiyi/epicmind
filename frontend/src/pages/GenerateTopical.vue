@@ -41,7 +41,9 @@
                         <label>Topic</label>
                         <select v-model="form.topic" :disabled="!topics.length">
                             <option value="" disabled>Select Topic</option>
-                            <option v-for="topic in topics" :key="topic" :value="topic">{{ topic.label }}</option>
+                            <option v-for="topic in topics" :key="topic" :value="topic">{{ topic.label }}
+                             
+                            </option>
                         </select>
                     </div>
                 </div>
@@ -135,7 +137,7 @@
                 <h2>Quiz Preview</h2>
                 <div class="preview-container">
                     <div class="preview-content">
-                        <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item">
+                        <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item" v-if="!showSegmentedPreview">
                             <h3>Question {{ index + 1 }}</h3>
                             <div class="question-text" v-html="sanitizeLatex(question.text)"></div>
 
@@ -158,10 +160,62 @@
                                 <span v-if="question.source" class="question-source">{{ question.source }}</span>
                             </div>
                         </div>
+                        
+                        <!-- Segmented Questions Preview -->
+                        <div v-if="showSegmentedPreview">
+                            <div v-for="(question, index) in generatedQuiz" :key="`seg-${index}`" class="question-item">
+                                <h3>Question {{ index + 1 }}</h3>
+                                
+                                <!-- Single-part question -->
+                                <div v-if="!segmentedQuestions[question.id] || !segmentedQuestions[question.id].questionParts || segmentedQuestions[question.id].questionParts.length === 0">
+                                    <div class="question-text" v-html="sanitizeLatex(question.text)"></div>
+                                    <div v-if="question.image_url" class="question-image">
+                                        <img :src="question.image_url" alt="Question diagram" />
+                                    </div>
+                                    <div v-if="question.options && question.options.length" class="options-list">
+                                        <div v-for="option in question.options" :key="option.id" class="option-item">
+                                            <strong>{{ option.option }}.</strong> <span v-html="sanitizeLatex(option.text)"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Multi-part question -->
+                                <div v-else>
+                                    <div class="question-text" v-html="sanitizeLatex(segmentedQuestions[question.id].originalQuestionText || question.text)"></div>
+                                    <div v-if="question.image_url" class="question-image">
+                                        <img :src="question.image_url" alt="Question diagram" />
+                                    </div>
+                                    
+                                    <div class="question-parts">
+                                        <div v-for="(part, partIndex) in segmentedQuestions[question.id].questionParts" 
+                                             :key="`part-${partIndex}`" 
+                                             class="question-part-preview">
+                                            <h4>{{ part.part_label }}</h4>
+                                            <div class="part-text">{{ part.text }}</div>
+                                            <div v-if="part.answer" class="part-answer">
+                                                <strong>Answer:</strong> {{ part.answer }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="question-meta">
+                                    <span class="question-topic">{{ question.topic }}</span>
+                                    <span class="question-difficulty">{{ question.difficulty }}</span>
+                                    <span v-if="question.source" class="question-source">{{ question.source }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="save-section">
+                    <button class="preview-btn" @click="previewSegmentedQuestions" v-if="!showSegmentedPreview">
+                        👁️ Preview Question Parts
+                    </button>
+                    <button class="preview-btn" @click="showSegmentedPreview = false" v-else>
+                        📄 Show Original
+                    </button>
                     <button class="save-btn" @click="saveQuiz">💾 Save Quiz</button>
                     <button class="regenerate-btn" @click="generateQuiz">🔄 Regenerate</button>
                 </div>
@@ -206,6 +260,8 @@ export default {
             subTopics: [],
             generatedQuiz: [],
             favoritedQuestions: [],
+            segmentedQuestions: {}, // Store pre-segmented questions
+            showSegmentedPreview: false, // Toggle preview mode
 
         };
     },
@@ -429,6 +485,54 @@ export default {
             }
         }
         ,
+        async previewSegmentedQuestions() {
+            if (this.generatedQuiz.length === 0) {
+                alert('No quiz to preview. Please generate a quiz first.');
+                return;
+            }
+
+            try {
+                this.loading = true;
+                this.loadingMessage = 'Segmenting questions...';
+                this.progressPercent = 30;
+
+                // Prepare questions for segmentation
+                const questionsToSegment = this.generatedQuiz.map(q => ({
+                    id: q.id,
+                    question_text: q.text,
+                    answer_key: q.answer || ''
+                }));
+
+                const response = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        questions: questionsToSegment
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.segmentedQuestions = result.segmentedQuestions || {};
+                    this.showSegmentedPreview = true;
+                    this.progressPercent = 100;
+                    this.loadingMessage = 'Questions segmented!';
+                    
+                    setTimeout(() => {
+                        this.loading = false;
+                    }, 500);
+                } else {
+                    throw new Error('Failed to segment questions');
+                }
+            } catch (error) {
+                console.error('Failed to segment questions:', error);
+                this.loading = false;
+                alert('Failed to segment questions: ' + error.message);
+            }
+        },
+
         async saveQuiz() {
             if (this.generatedQuiz.length === 0) {
                 alert('No quiz to save. Please generate a quiz first.');
@@ -448,6 +552,35 @@ export default {
 
             try {
                 this.loading = true;
+                
+                // Check if questions have been segmented, if not, segment them first
+                if (Object.keys(this.segmentedQuestions).length === 0) {
+                    this.loadingMessage = 'Segmenting questions...';
+                    this.progressPercent = 30;
+                    
+                    // Prepare questions for segmentation
+                    const questionsToSegment = this.generatedQuiz.map(q => ({
+                        id: q.id,
+                        question_text: q.text,
+                        answer_key: q.answer || ''
+                    }));
+
+                    const segmentResponse = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            questions: questionsToSegment
+                        })
+                    });
+
+                    if (segmentResponse.ok) {
+                        const segmentResult = await segmentResponse.json();
+                        this.segmentedQuestions = segmentResult.segmentedQuestions || {};
+                    }
+                }
+                
                 this.loadingMessage = 'Saving quiz...';
                 this.progressPercent = 50;
 
@@ -463,7 +596,8 @@ export default {
                         level: this.form.level,
                         topic: this.form.topic,
                         teacher_id: this.form.teacherId,
-                        questions: this.generatedQuiz
+                        questions: this.generatedQuiz,
+                        segmented_questions: this.segmentedQuestions // Include pre-segmented data
                     })
                 });
 
@@ -810,7 +944,8 @@ h1 {
 }
 
 .save-btn,
-.regenerate-btn {
+.regenerate-btn,
+.preview-btn {
     padding: 1rem 1.5rem;
     border: none;
     border-radius: 8px;
@@ -832,12 +967,53 @@ h1 {
     flex: 1;
 }
 
+.preview-btn {
+    background-color: #4A90E2;
+    color: white;
+    flex: 1;
+}
+
 .save-btn:hover {
     background-color: #55bb88;
 }
 
 .regenerate-btn:hover {
     background-color: #e5e5e5;
+}
+
+.preview-btn:hover {
+    background-color: #357ABD;
+}
+
+/* Segmented question preview styles */
+.question-parts {
+    margin-top: 1rem;
+    padding-left: 1.5rem;
+}
+
+.question-part-preview {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border-left: 3px solid #4A90E2;
+}
+
+.question-part-preview h4 {
+    color: #4A90E2;
+    margin-bottom: 0.5rem;
+}
+
+.part-text {
+    margin-bottom: 0.5rem;
+}
+
+.part-answer {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background-color: #e8f5e9;
+    border-radius: 4px;
+    font-size: 0.9em;
 }
 
 @media (max-width: 768px) {

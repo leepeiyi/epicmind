@@ -75,9 +75,9 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
   const client = await pool.connect();
 
   try {
-    // Step 1: Fetch question_ids from folder
+    // Step 1: Fetch question_ids and segmented_questions from folder
     const folderRes = await client.query(
-      `SELECT question_ids FROM quiz_folders WHERE id = $1`,
+      `SELECT question_ids, segmented_questions FROM quiz_folders WHERE id = $1`,
       [folderIdInt]
     );
 
@@ -86,7 +86,9 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
     }
 
     const questionIds = folderRes.rows[0].question_ids;
+    const segmentedQuestions = folderRes.rows[0].segmented_questions;
     console.log("✅ Question IDs:", questionIds);
+    console.log("✅ Has segmented questions:", !!segmentedQuestions);
 
     if (!Array.isArray(questionIds) || questionIds.length === 0) {
       return res.status(200).json([]); // Return empty list if no questions
@@ -100,7 +102,19 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
       [questionIds]
     );
 
-    res.status(200).json(questionRes.rows);
+    // Step 3: Merge segmented data if available
+    const questionsWithSegments = questionRes.rows.map(question => {
+      if (segmentedQuestions && segmentedQuestions[question.id]) {
+        const segmentData = segmentedQuestions[question.id];
+        return {
+          ...question,
+          questionParts: segmentData.questionParts
+        };
+      }
+      return question;
+    });
+
+    res.status(200).json(questionsWithSegments);
   } catch (error) {
     console.error("❌ Error retrieving questions:", error);
     res.status(500).json({
