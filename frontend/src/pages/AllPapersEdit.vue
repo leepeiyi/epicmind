@@ -53,11 +53,12 @@
                         <div class="paper-card-header">
                             <span class="paper-name">{{ paper.paper_name }}</span>
                             <span v-if="paper.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
-                            <span v-else-if="paper.topic_label" class="paper-topic">{{ paper.topic_label }}</span>
+                            <span v-else class="paper-topic">{{ paper.topic_label || 'Topical' }}</span>
+
                         </div>
                         <div class="paper-details">
                             <span class="paper-meta">{{ paper.subject }} • {{ paper.banding }} • {{ paper.level
-                                }}</span>
+                            }}</span>
                             <span v-if="paper.year" class="paper-year">{{ paper.year }}</span>
                         </div>
                         <div class="paper-stats">
@@ -277,6 +278,7 @@ export default {
                 const res = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
                 const data = await res.json();
                 this.allPapers = data.papers || [];
+                console.log("📝 Loaded Papers:", JSON.parse(JSON.stringify(this.allPapers)));
             } catch (err) {
                 console.error('❌ Failed to fetch all papers:', err);
                 alert('Failed to load papers. Please try again.');
