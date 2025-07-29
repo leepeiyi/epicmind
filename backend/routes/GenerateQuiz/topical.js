@@ -394,6 +394,7 @@ router.post("/save", async (req, res) => {
       topic,
       questions,
       teacher_id, // 👈 added field
+      segmented_questions, // 👈 pre-segmented questions data
     } = req.body;
 
     // Validation
@@ -413,7 +414,7 @@ router.post("/save", async (req, res) => {
     // Extract question IDs from the questions array
     const questionIds = questions.map((q) => q.id);
 
-    // Insert quiz with the teacher_id
+    // Insert quiz with the teacher_id and segmented questions
     const quizInsertResult = await pool.query(
       `INSERT INTO quiz_folders (
                 name, 
@@ -422,10 +423,11 @@ router.post("/save", async (req, res) => {
                 level, 
                 topic,
                 question_ids,
-                teacher_id, -- 👈 added column
+                teacher_id,
+                segmented_questions,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING id`,
-      [quizName, subject, banding, level, topic, questionIds, teacher_id] // 👈 added value
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) RETURNING id`,
+      [quizName, subject, banding, level, topic, questionIds, teacher_id, segmented_questions ? JSON.stringify(segmented_questions) : null]
     );
 
     const quizId = quizInsertResult.rows[0].id;

@@ -551,12 +551,34 @@ export default {
         },
 
         async autoSplitAllQuestions() {
-            console.log('🔄 Auto-splitting all questions...');
+            console.log('🔄 Checking for pre-segmented questions...');
 
             const updatedQuestions = [...this.questions];
+            let needsSplitting = false;
+
+            // Check if any questions need splitting
+            for (const question of updatedQuestions) {
+                if (!question.questionParts) {
+                    needsSplitting = true;
+                    break;
+                }
+            }
+
+            if (!needsSplitting) {
+                console.log('✅ All questions already segmented, skipping API calls');
+                return;
+            }
+
+            console.log('🔄 Some questions need splitting...');
 
             for (let i = 0; i < updatedQuestions.length; i++) {
                 const question = updatedQuestions[i];
+
+                // Skip if already has parts
+                if (question.questionParts) {
+                    console.log(`ℹ️ Question ${i + 1} already segmented`);
+                    continue;
+                }
 
                 try {
                     const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
@@ -593,7 +615,7 @@ export default {
 
             // Update the reactive questions array
             this.questions = updatedQuestions;
-            console.log('✅ Finished auto-splitting questions');
+            console.log('✅ Finished processing questions');
         },
 
         async checkAnswerWithGemini(userAnswer, correctAnswer, questionText = '') {

@@ -303,7 +303,8 @@ export default {
                 banding: '',
                 level: '',
                 topic: ''
-            }
+            },
+            segmentedQuestions: {} // Store pre-segmented questions
         };
     },
     computed: {
@@ -576,6 +577,28 @@ export default {
                     teacher_id: this.quizForm.teacher_id
                 });
 
+                // Segment questions before saving
+                const questionsToSegment = this.finalQuizQuestions.map(q => ({
+                    id: q.id,
+                    question_text: q.question_text,
+                    answer_key: q.answer_key || ''
+                }));
+
+                const segmentResponse = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        questions: questionsToSegment
+                    })
+                });
+
+                if (segmentResponse.ok) {
+                    const segmentResult = await segmentResponse.json();
+                    this.segmentedQuestions = segmentResult.segmentedQuestions || {};
+                }
+
                 const response = await fetch(`${API_BASE_URL}/api/quiz/save`, {
                     method: 'POST',
                     headers: {
@@ -588,7 +611,8 @@ export default {
                         level: this.quizForm.level,
                         topic: this.quizForm.topic,
                         questions: this.finalQuizQuestions,
-                        teacher_id: this.quizForm.teacher_id
+                        teacher_id: this.quizForm.teacher_id,
+                        segmented_questions: this.segmentedQuestions // Include pre-segmented data
                     })
                 });
 

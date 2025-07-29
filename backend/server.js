@@ -80,6 +80,9 @@ app.use("/api/paper", paperRoutes);
 const generateRoutes = require("./routes/GenerateQuiz/topical");
 app.use("/api/quiz", generateRoutes);
 
+const segmentRoutes = require("./routes/GenerateQuiz/segmentQuestions");
+app.use("/api/quiz", segmentRoutes);
+
 const quizRoutes = require("./routes/QuizFolder/getQuiz");
 app.use("/api/quiz", quizRoutes);
 
