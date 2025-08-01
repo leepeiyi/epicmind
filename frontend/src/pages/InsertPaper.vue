@@ -35,13 +35,23 @@
                 <div class="answer-extraction-controls">
                     <!-- Paper Selection -->
                     <div class="paper-selection">
-                        <label for="paperSelect"><strong>Select Paper to Update:</strong></label>
+                        <label for="paperSearch"><strong>Select Paper to Update:</strong></label>
+                        <input 
+                            id="paperSearch"
+                            v-model="paperSearchQuery" 
+                            type="text" 
+                            placeholder="Search papers (try 'no answers' to find papers missing answer keys)..." 
+                            class="paper-search"
+                        />
                         <select id="paperSelect" v-model="selectedPaperForAnswers" class="paper-select">
-                            <option value="">-- Choose a paper --</option>
-                            <option v-for="paper in recentPapers" :key="paper.paper_name" :value="paper.paper_name">
-                                {{ paper.paper_name }}
+                            <option value="">-- Choose a paper ({{ filteredPapers.length }} available) --</option>
+                            <option v-for="paper in filteredPapers" :key="paper.paper_name" :value="paper.paper_name">
+                                {{ paper.has_answer_key === false ? '⚠️ ' : '' }}{{ paper.paper_name }} ({{ paper.question_count }} questions{{ paper.has_answer_key === false ? ', no answers' : '' }})
                             </option>
                         </select>
+                        <small class="warning-legend" v-if="filteredPapers.some(p => !p.has_answer_key)">
+                            ⚠️ = Paper has no answer keys
+                        </small>
                     </div>
 
                     <!-- Answer Key Upload -->
@@ -232,6 +242,8 @@ export default {
             progressMessage: '',
             progressPercent: 0,
             recentPapers: [],
+            allPapers: [],
+            paperSearchQuery: '',
             pdfPageCount: 0,
             processedQuestions: [],
             isSaving: false,
@@ -255,14 +267,39 @@ export default {
     },
     async mounted() {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
-            const data = await res.json();
-            this.recentPapers = data.recent || [];
+            // Fetch recent papers for the recent uploads section
+            const recentRes = await fetch(`${API_BASE_URL}/api/paper/recent`);
+            const recentData = await recentRes.json();
+            this.recentPapers = recentData.recent || [];
+            
+            // Fetch all papers for the answer extraction dropdown
+            const allRes = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
+            const allData = await allRes.json();
+            this.allPapers = allData.papers || [];
 
             // Load PDF.js worker
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
         } catch (err) {
-            console.error('❌ Failed to fetch recent papers:', err);
+            console.error('❌ Failed to fetch papers:', err);
+        }
+    },
+    computed: {
+        filteredPapers() {
+            if (!this.paperSearchQuery) {
+                return this.allPapers;
+            }
+            const query = this.paperSearchQuery.toLowerCase();
+            return this.allPapers.filter(paper => {
+                // Special filter for papers without answer keys
+                if (query === 'no answers' || query === 'no answer' || query === 'missing answers') {
+                    return !paper.has_answer_key;
+                }
+                
+                // Regular search
+                return paper.paper_name.toLowerCase().includes(query) ||
+                    (paper.subject && paper.subject.toLowerCase().includes(query)) ||
+                    (paper.level && paper.level.toLowerCase().includes(query));
+            });
         }
     },
     methods: {
@@ -904,14 +941,41 @@ export default {
     flex: 1;
 }
 
+.paper-search {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #66CC99;
+    border-radius: 8px;
+    font-size: 16px;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.paper-search:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 3px rgba(102, 204, 153, 0.2);
+}
+
 .paper-select {
     width: 100%;
     padding: 0.75rem;
     border: 2px solid #66CC99;
     border-radius: 8px;
     font-size: 16px;
+    max-height: 300px;
     background-color: white;
-    margin-top: 0.5rem;
+}
+
+.paper-select option {
+    padding: 0.5rem;
+}
+
+.warning-legend {
+    display: block;
+    margin-top: 0.25rem;
+    color: #ff6b6b;
+    font-size: 0.85rem;
 }
 
 .answer-key-upload {

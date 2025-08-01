@@ -114,6 +114,11 @@
 
         <!-- Main Quiz Interface -->
         <div v-else class="quiz-container">
+            <!-- API Limit Notification -->
+            <div v-if="apiLimitReached" class="api-notification">
+                <p>⚠️ API limit reached. Quiz will work normally but without automatic question segmentation.</p>
+            </div>
+            
             <div class="quiz-header">
                 <button @click="backToModeSelection" class="back-btn">← Back to Mode Selection</button>
                 <div class="quiz-meta">
@@ -378,7 +383,10 @@ export default {
             partMathEditors: {},
             // Answer checking results
             currentAnswerResult: null,
-            partResults: []
+            partResults: [],
+            // API availability tracking
+            apiLimitReached: false,
+            usingFallback: false
         };
     },
     watch: {
@@ -525,9 +533,18 @@ export default {
 
                 const questionsData = await questionsResponse.json();
                 this.questions = questionsData || [];
-
-                // Auto-split all questions into parts
-                await this.autoSplitAllQuestions();
+                
+                // Debug: Check if questions already have segmentation
+                console.log('📊 Questions loaded:', this.questions.length);
+                const segmentedCount = this.questions.filter(q => q.questionParts).length;
+                console.log(`📊 Already segmented: ${segmentedCount}/${this.questions.length}`);
+                
+                // Only auto-split if needed
+                if (segmentedCount < this.questions.length) {
+                    await this.autoSplitAllQuestions();
+                } else {
+                    console.log('✅ All questions already segmented, skipping API calls completely');
+                }
 
                 // Calculate timer
                 const timePerQuestion = metaData.time_per_question_minutes || 1;
@@ -571,6 +588,10 @@ export default {
 
             console.log('🔄 Some questions need splitting...');
 
+            // Track if we've had API failures
+            let apiFailureCount = 0;
+            const maxFailures = 3;
+
             for (let i = 0; i < updatedQuestions.length; i++) {
                 const question = updatedQuestions[i];
 
@@ -578,6 +599,13 @@ export default {
                 if (question.questionParts) {
                     console.log(`ℹ️ Question ${i + 1} already segmented`);
                     continue;
+                }
+
+                // If we've had too many API failures, skip remaining questions
+                if (apiFailureCount >= maxFailures) {
+                    console.warn('⚠️ Too many API failures, skipping remaining question splitting');
+                    this.apiLimitReached = true;
+                    break;
                 }
 
                 try {
@@ -606,16 +634,90 @@ export default {
                             console.log(`ℹ️ Question ${i + 1} is single-part`);
                         }
                     } else {
-                        console.warn(`⚠️ Failed to split question ${i + 1}`);
+                        console.warn(`⚠️ Failed to split question ${i + 1} - Status: ${response.status}`);
+                        apiFailureCount++;
+                        
+                        // If it's a server error or API limit, we can use fallback
+                        if (response.status >= 500 || response.status === 429) {
+                            if (response.status === 429) {
+                                this.apiLimitReached = true;
+                            }
+                            console.log('🔄 Using local fallback for question splitting');
+                            const fallbackParts = this.localQuestionSplitter(question);
+                            if (fallbackParts && fallbackParts.length > 1) {
+                                updatedQuestions[i] = {
+                                    ...updatedQuestions[i],
+                                    questionParts: fallbackParts
+                                };
+                                console.log(`✅ Question ${i + 1} split locally into ${fallbackParts.length} parts`);
+                            }
+                        }
                     }
                 } catch (error) {
                     console.error(`❌ Error splitting question ${i + 1}:`, error);
+                    apiFailureCount++;
+                    
+                    // Use local fallback on network errors
+                    console.log('🔄 Using local fallback due to network error');
+                    const fallbackParts = this.localQuestionSplitter(question);
+                    if (fallbackParts && fallbackParts.length > 1) {
+                        updatedQuestions[i] = {
+                            ...updatedQuestions[i],
+                            questionParts: fallbackParts
+                        };
+                        console.log(`✅ Question ${i + 1} split locally into ${fallbackParts.length} parts`);
+                    }
                 }
             }
 
             // Update the reactive questions array
             this.questions = updatedQuestions;
             console.log('✅ Finished processing questions');
+            
+            // Save segmented questions back to database if any were processed
+            if (needsSplitting) {
+                await this.saveSegmentedQuestions();
+            }
+        },
+        
+        async saveSegmentedQuestions() {
+            console.log('💾 Saving segmented questions to database...');
+            
+            // Create a map of question ID to segmented data
+            const segmentedData = {};
+            for (const question of this.questions) {
+                if (question.questionParts && question.questionParts.length > 1) {
+                    segmentedData[question.id] = {
+                        questionParts: question.questionParts
+                    };
+                }
+            }
+            
+            if (Object.keys(segmentedData).length === 0) {
+                console.log('ℹ️ No segmented questions to save');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/quiz/folders/saveSegmentedQuestions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        folderId: parseInt(this.quizId, 10),
+                        segmentedQuestions: segmentedData
+                    })
+                });
+                
+                if (response.ok) {
+                    console.log('✅ Segmented questions saved successfully');
+                } else {
+                    console.warn('⚠️ Failed to save segmented questions');
+                }
+            } catch (error) {
+                console.error('❌ Error saving segmented questions:', error);
+            }
         },
 
         async checkAnswerWithGemini(userAnswer, correctAnswer, questionText = '') {
@@ -691,8 +793,6 @@ export default {
         },
 
         initializePartAnswers() {
-            const questionIndex = this.currentQuestionIndex;
-
             if (this.currentQuestion.questionParts) {
                 const newPartAnswers = {};
                 const newPartMathInputs = {};
@@ -955,6 +1055,80 @@ export default {
                 clearInterval(this.timerInterval);
             }
             this.$router.push('/quiz-folder');
+        },
+
+        localQuestionSplitter(question) {
+            // Local fallback for splitting questions when API is unavailable
+            console.log('🔧 Attempting local question splitting');
+            
+            if (!question.question_text) return null;
+            
+            const parts = [];
+            const text = question.question_text;
+            
+            // Common patterns for sub-questions
+            const patterns = [
+                /\(([a-z])\)/gi,  // (a), (b), (c)
+                /\b([a-z])\)/gi,  // a), b), c)
+                /\(([ivx]+)\)/gi, // (i), (ii), (iii)
+                /\b([ivx]+)\)/gi, // i), ii), iii)
+            ];
+            
+            // Try to find sub-parts in the question
+            let foundParts = [];
+            for (const pattern of patterns) {
+                const matches = [...text.matchAll(pattern)];
+                if (matches.length > 1) {
+                    foundParts = matches;
+                    break;
+                }
+            }
+            
+            if (foundParts.length > 1) {
+                // Split the question into parts based on found patterns
+                for (let i = 0; i < foundParts.length; i++) {
+                    const match = foundParts[i];
+                    const label = match[0];
+                    const startIndex = match.index;
+                    const endIndex = i < foundParts.length - 1 ? foundParts[i + 1].index : text.length;
+                    
+                    const partText = text.substring(startIndex + label.length, endIndex).trim();
+                    
+                    // Try to extract answer from answer_key if available
+                    let answer = null;
+                    if (question.answer_key) {
+                        try {
+                            const answerKey = typeof question.answer_key === 'string' 
+                                ? JSON.parse(question.answer_key) 
+                                : question.answer_key;
+                            
+                            // Look for matching part in answer
+                            const answerText = answerKey.correct_answer || '';
+                            const answerPattern = new RegExp(`${label}\\s*([^,\\n]+)`, 'i');
+                            const answerMatch = answerText.match(answerPattern);
+                            
+                            if (answerMatch) {
+                                answer = answerMatch[1].trim();
+                            }
+                        } catch (e) {
+                            console.warn('Could not parse answer key:', e);
+                        }
+                    }
+                    
+                    parts.push({
+                        part_label: label,
+                        text: partText,
+                        answer: answer
+                    });
+                }
+                
+                console.log(`✅ Locally split into ${parts.length} parts`);
+                return parts;
+            }
+            
+            // If no multi-part structure found, return null (will be treated as single question)
+            console.log('ℹ️ No multi-part structure detected locally');
+            return null;
         }
     }
 };
@@ -964,6 +1138,22 @@ export default {
 .quiz-view-page {
     font-family: Arial, sans-serif;
     min-height: 100vh;
+}
+
+/* API Notification */
+.api-notification {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.api-notification p {
+    margin: 0;
+    color: #856404;
+    font-size: 0.9rem;
 }
 
 /* Part Question Text Styling */

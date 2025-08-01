@@ -36,7 +36,7 @@ const s3 = new S3Client({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // === Upload PDF to Mathpix, then poll until extraction is ready ===
 // === Step 1: Upload PDF to Mathpix and get pdf_id ===

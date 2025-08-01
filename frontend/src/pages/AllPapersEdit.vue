@@ -21,7 +21,7 @@
             <div class="search-filter-section">
                 <div class="search-bar">
                     <input v-model="searchQuery" type="text"
-                        placeholder="Search papers by name, subject, topic, or type..." class="search-input" />
+                        placeholder="Search papers (try 'no answers' to find papers missing answer keys)..." class="search-input" />
                 </div>
                 <div class="filter-controls">
                     <select v-model="filterSubject" class="filter-select">
@@ -48,10 +48,16 @@
             <!-- Papers List -->
             <div v-if="filteredPapers.length" class="all-papers">
                 <h3>📚 All Papers ({{ filteredPapers.length }})</h3>
+                <div v-if="filteredPapers.some(p => !p.has_answer_key)" class="warning-legend">
+                    <span class="no-answer-warning">⚠️</span> = Paper has no answer keys
+                </div>
                 <div class="papers-grid">
                     <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card">
                         <div class="paper-card-header">
-                            <span class="paper-name">{{ paper.paper_name }}</span>
+                            <span class="paper-name" :title="paper.paper_name">
+                                <span v-if="paper.has_answer_key === false" class="no-answer-warning">⚠️</span>
+                                {{ paper.paper_name }}
+                            </span>
                             <span v-if="paper.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
                             <span v-else class="paper-topic">{{ paper.topic_label || 'Topical' }}</span>
 
@@ -76,8 +82,7 @@
                             style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                             <button @click="loadPaper(paper.paper_name)" class="action-btn">✏️ Edit</button>
                             <button @click="printQuiz(paper)" class="action-btn">🖨️ Print</button>
-                            <!-- Add debug button temporarily -->
-                            <button @click="debugPaper(paper)" class="action-btn" style="font-size: 10px;">🐛</button>
+                            <button @click="deletePaper(paper)" class="action-btn delete-btn">🗑️ Delete</button>
                         </div>
                     </div>
                 </div>
@@ -220,6 +225,15 @@ export default {
         },
         filteredPapers() {
             return this.allPapers.filter(paper => {
+                // Special filter for papers without answer keys
+                const query = this.searchQuery.toLowerCase();
+                if (query === 'no answers' || query === 'no answer' || query === 'missing answers') {
+                    const matchesSubject = !this.filterSubject || paper.subject === this.filterSubject;
+                    const matchesBanding = !this.filterBanding || paper.banding === this.filterBanding;
+                    const matchesLevel = !this.filterLevel || paper.level === this.filterLevel;
+                    return !paper.has_answer_key && matchesSubject && matchesBanding && matchesLevel;
+                }
+                
                 const matchesSearch = !this.searchQuery ||
                     paper.paper_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                     (paper.subject && paper.subject.toLowerCase().includes(this.searchQuery.toLowerCase())) ||
@@ -279,6 +293,9 @@ export default {
                 const data = await res.json();
                 this.allPapers = data.papers || [];
                 console.log("📝 Loaded Papers:", JSON.parse(JSON.stringify(this.allPapers)));
+                // Debug: Check papers without answer keys
+                const papersWithoutAnswers = this.allPapers.filter(p => p.has_answer_key === false);
+                console.log(`⚠️ Papers without answer keys: ${papersWithoutAnswers.length}`, papersWithoutAnswers.map(p => p.paper_name));
             } catch (err) {
                 console.error('❌ Failed to fetch all papers:', err);
                 alert('Failed to load papers. Please try again.');
@@ -538,6 +555,57 @@ export default {
 
             // Reload the paper to show the new question
             await this.loadPaper(this.currentPaperName);
+        },
+
+        printQuiz(paper) {
+            // Open print view in a new window
+            const printWindow = window.open(`#/print?paper_name=${encodeURIComponent(paper.paper_name)}`, '_blank');
+            if (!printWindow) {
+                alert('Please allow pop-ups to print the quiz');
+            }
+        },
+
+        async deletePaper(paper) {
+            // Confirmation dialog
+            const confirmMessage = `Are you sure you want to delete "${paper.paper_name}"?\n\nThis will permanently delete:\n• ${paper.question_count || 0} questions\n• All associated data\n\nThis action cannot be undone.`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
+            // Double confirmation for safety
+            const secondConfirm = prompt(`To confirm deletion, please type the paper name exactly:\n\n${paper.paper_name}`);
+            
+            if (secondConfirm !== paper.paper_name) {
+                alert('Paper name did not match. Deletion cancelled.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/paper/delete/${encodeURIComponent(paper.paper_name)}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ ${result.message}`);
+                    // Refresh the paper list
+                    await this.loadAllPapers();
+                    // If we were editing this paper, close the editor
+                    if (this.currentPaperName === paper.paper_name) {
+                        this.closeEditor();
+                    }
+                } else {
+                    alert(`❌ Failed to delete paper: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('❌ Error deleting paper:', error);
+                alert('❌ Failed to delete paper. Please try again.');
+            }
         }
     }
 };
@@ -628,6 +696,10 @@ export default {
 
 .paper-card-header {
     margin-bottom: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
 }
 
 .paper-name {
@@ -635,14 +707,36 @@ export default {
     color: #333;
     font-size: 16px;
     display: block;
-    margin-bottom: 0.25rem;
-    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0; /* Important for text-overflow to work in flexbox */
+}
+
+.no-answer-warning {
+    color: #ff6b6b;
+    margin-right: 0.25rem;
+    font-size: 18px;
+}
+
+.warning-legend {
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 6px;
+    color: #856404;
+    font-size: 0.9rem;
+    display: inline-block;
 }
 
 .paper-topic {
     color: #66CC99;
     font-weight: 500;
-    font-size: 14px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
     background-color: rgba(102, 204, 153, 0.1);
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -808,6 +902,17 @@ export default {
 .action-btn:hover {
     background-color: #e3fcef;
     border-color: #66CC99;
+}
+
+.delete-btn {
+    background-color: #ffe0e0;
+    border-color: #ff6b6b;
+    color: #d32f2f;
+}
+
+.delete-btn:hover {
+    background-color: #ffcccc;
+    border-color: #ff4444;
 }
 
 .manual-question-section {

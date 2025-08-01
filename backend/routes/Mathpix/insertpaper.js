@@ -21,7 +21,8 @@ router.get("/recent", async (req, res) => {
     const result = await client.query(`
       SELECT paper_name, MAX(created_at) as last_uploaded,
        MAX(topic_label) as topic_label,
-       MAX(paper_type) as paper_type
+       MAX(paper_type) as paper_type,
+       COALESCE(BOOL_OR(answer_key IS NOT NULL), false) AS has_answer_key
       FROM question
       GROUP BY paper_name
       ORDER BY last_uploaded DESC
@@ -50,7 +51,8 @@ router.get("/all-papers", async (req, res) => {
         MAX(banding) AS banding,
         MAX(level) AS level,
         MAX(year) AS year,
-        BOOL_OR(vetted) AS vetted  -- This will work now
+        BOOL_OR(vetted) AS vetted,  -- This will work now
+        COALESCE(BOOL_OR(answer_key IS NOT NULL), false) AS has_answer_key  -- COALESCE to handle NULL case
       FROM question
       GROUP BY paper_name
       ORDER BY last_uploaded DESC;
@@ -786,6 +788,92 @@ router.get("/next-question-number/:paper_name", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to get next question number",
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE route to delete a paper and all its questions
+router.delete("/delete/:paper_name", async (req, res) => {
+  const { paper_name } = req.params;
+  const client = await pool.connect();
+
+  try {
+    console.log(`🗑️ Deleting paper: ${paper_name}`);
+
+    // Begin transaction
+    await client.query("BEGIN");
+
+    // First, get the count of questions to be deleted
+    const countResult = await client.query(
+      "SELECT COUNT(*) as count FROM question WHERE paper_name = $1",
+      [paper_name]
+    );
+    const questionCount = countResult.rows[0].count;
+
+    if (questionCount === "0") {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        success: false,
+        error: "Paper not found"
+      });
+    }
+
+    // First, get all question IDs for this paper
+    const questionIdsResult = await client.query(
+      "SELECT ARRAY_AGG(id) as question_ids FROM question WHERE paper_name = $1",
+      [paper_name]
+    );
+    const questionIds = questionIdsResult.rows[0].question_ids || [];
+
+    // Check if any quiz folders reference these questions
+    if (questionIds.length > 0) {
+      const folderCheckResult = await client.query(
+        `SELECT id, question_ids 
+         FROM quiz_folders 
+         WHERE question_ids && $1::int[]`,
+        [questionIds]
+      );
+
+      if (folderCheckResult.rows.length > 0) {
+        console.log(`⚠️ Paper "${paper_name}" questions are used in ${folderCheckResult.rows.length} quiz folders`);
+        // Update quiz folders to remove these question IDs
+        for (const folder of folderCheckResult.rows) {
+          const updatedQuestionIds = folder.question_ids.filter(id => !questionIds.includes(id));
+          await client.query(
+            "UPDATE quiz_folders SET question_ids = $1 WHERE id = $2",
+            [updatedQuestionIds, folder.id]
+          );
+          console.log(`📝 Updated quiz folder ID ${folder.id} to remove deleted questions`);
+        }
+      }
+    }
+
+    // Now delete all questions for this paper
+    const deleteResult = await client.query(
+      "DELETE FROM question WHERE paper_name = $1",
+      [paper_name]
+    );
+
+    // Commit transaction
+    await client.query("COMMIT");
+
+    console.log(`✅ Deleted ${questionCount} questions for paper: ${paper_name}`);
+
+    res.json({
+      success: true,
+      message: `Successfully deleted paper "${paper_name}" with ${questionCount} questions`,
+      deletedQuestions: questionCount
+    });
+
+  } catch (err) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("❌ Error deleting paper:", err.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to delete paper: ${err.message}`
     });
   } finally {
     client.release();

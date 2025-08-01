@@ -103,18 +103,41 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
     );
 
     // Step 3: Merge segmented data if available
+    let segmentedQuestionsParsed = null;
+    if (segmentedQuestions) {
+      try {
+        // Parse if it's a string
+        segmentedQuestionsParsed = typeof segmentedQuestions === 'string' 
+          ? JSON.parse(segmentedQuestions) 
+          : segmentedQuestions;
+      } catch (e) {
+        console.error('Failed to parse segmented questions:', e);
+      }
+    }
+    
     const questionsWithSegments = questionRes.rows.map(question => {
-      if (segmentedQuestions && segmentedQuestions[question.id]) {
-        const segmentData = segmentedQuestions[question.id];
+      if (segmentedQuestionsParsed && segmentedQuestionsParsed[question.id]) {
+        const segmentData = segmentedQuestionsParsed[question.id];
+        console.log(`✅ Found segmented data for question ${question.id}`);
         return {
           ...question,
-          questionParts: segmentData.questionParts
+          question_number: questionIds.indexOf(question.id) + 1, // Add question number for ordering
+          questionParts: segmentData.questionParts || segmentData.parts // Handle both possible property names
         };
       }
-      return question;
+      console.log(`⚠️ No segmented data for question ${question.id}`);
+      return {
+        ...question,
+        question_number: questionIds.indexOf(question.id) + 1 // Add question number for ordering
+      };
     });
 
-    res.status(200).json(questionsWithSegments);
+    // Sort questions by their order in questionIds array
+    const sortedQuestions = questionsWithSegments.sort((a, b) => {
+      return questionIds.indexOf(a.id) - questionIds.indexOf(b.id);
+    });
+    
+    res.status(200).json(sortedQuestions);
   } catch (error) {
     console.error("❌ Error retrieving questions:", error);
     res.status(500).json({
@@ -126,6 +149,48 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
   }
 });
 
+
+// POST /api/folders/saveSegmentedQuestions
+router.post("/folders/saveSegmentedQuestions", async (req, res) => {
+  const { folderId, segmentedQuestions } = req.body;
+  console.log("💾 Saving segmented questions for folder:", folderId);
+
+  if (!folderId || !segmentedQuestions) {
+    return res.status(400).json({ 
+      message: "❌ Folder ID and segmented questions are required" 
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Update the segmented_questions column in quiz_folders
+    const updateRes = await client.query(
+      `UPDATE quiz_folders 
+       SET segmented_questions = $1, updated_at = NOW() 
+       WHERE id = $2`,
+      [JSON.stringify(segmentedQuestions), folderId]
+    );
+
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ message: "❌ Folder not found" });
+    }
+
+    console.log("✅ Segmented questions saved successfully");
+    res.status(200).json({ 
+      success: true, 
+      message: "Segmented questions saved successfully" 
+    });
+  } catch (error) {
+    console.error("❌ Error saving segmented questions:", error);
+    res.status(500).json({
+      message: "Failed to save segmented questions",
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
 
 module.exports = router;
 
