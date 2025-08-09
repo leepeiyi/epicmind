@@ -230,7 +230,7 @@ router.post("/update-question-metadata", async (req, res) => {
     let updated_count = 0;
 
     for (const question_update of questions) {
-      const { question_number, difficulty, sub_topics } = question_update;
+      const { question_number, difficulty, sub_topics, topic_label } = question_update;
 
       if (!question_number) {
         console.warn("⚠️ Skipping question update - missing question_number");
@@ -246,19 +246,20 @@ router.post("/update-question-metadata", async (req, res) => {
           ? JSON.stringify(sub_topics)
           : null;
 
-      // Update the question with difficulty and sub_topics
+      // Update the question with difficulty, sub_topics, and topic_label
       const updateResult = await client.query(
         `UPDATE question 
          SET difficulty_level = $1, 
-             sub_topic = $2
-         WHERE paper_name = $3 AND question_number = $4`,
-        [final_difficulty, sub_topics_json, paper_name, question_number]
+             sub_topic = $2,
+             topic_label = $3
+         WHERE paper_name = $4 AND question_number = $5`,
+        [final_difficulty, sub_topics_json, topic_label || null, paper_name, question_number]
       );
 
       if (updateResult.rowCount > 0) {
         updated_count++;
         console.log(
-          `✅ Updated Q${question_number}: difficulty=${final_difficulty}, sub_topics=${JSON.stringify(
+          `✅ Updated Q${question_number}: difficulty=${final_difficulty}, topic=${topic_label || 'none'}, sub_topics=${JSON.stringify(
             sub_topics
           )}`
         );

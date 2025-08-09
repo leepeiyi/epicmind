@@ -56,21 +56,12 @@
                     </div>
                 </div>
 
-                <!-- Show images if available -->
+                <!-- Show additional images if available (separate from inline images in question text) -->
                 <div v-if="q.image_paths && q.image_paths.length" class="question-images">
-                    <!-- Debug info (can be removed after fixing) -->
-                    <div class="debug-info"
-                        style="background: #f0f0f0; padding: 0.5rem; margin-bottom: 1rem; font-size: 12px;">
-                        <strong>🐛 Image Debug:</strong>
-                        <pre>{{ JSON.stringify(q.image_paths, null, 2) }}</pre>
-                    </div>
-
-                    <!-- Enhanced image rendering with multiple fallbacks -->
                     <div v-for="(img, i) in q.image_paths" :key="i" class="image-container">
                         <img :src="getImageUrl(img)" :alt="`Question ${q.question_number} diagram ${i + 1}`"
                             class="question-image" @error="handleImageError($event, img, i)"
                             @load="handleImageLoad($event, img)" />
-
                     </div>
                 </div>
 
@@ -83,12 +74,21 @@
                         {{ level }}
                     </button>
                 </div>
+                <label>Topic:</label>
+                <select v-model="q.topic_label" @change="updateSubTopicSuggestions(q)" class="topic-select">
+                    <option value="">Select Topic</option>
+                    <option v-for="topic in getTopicsForLevel()" :key="topic.label" :value="topic.label">
+                        {{ topic.label }}
+                    </option>
+                </select>
+                
                 <label>Sub Topics:</label>
                 <div class="tags">
-                    <span v-for="tag in suggestedTags" :key="tag" class="tag"
-                        :class="{ selected: q.sub_topics.includes(tag) }" @click="toggleSubTopic(q, tag)">
+                    <span v-for="tag in getSubHashtagsForTopic(q.topic_label)" :key="tag" class="tag"
+                        :class="{ selected: q.sub_topics && q.sub_topics.includes(tag) }" @click="toggleSubTopic(q, tag)">
                         {{ tag }}
                     </span>
+                    <span v-if="!q.topic_label" class="no-topic-hint">Please select a topic first to see sub-topics</span>
                 </div>
 
              
@@ -102,6 +102,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import API_BASE_URL from '../config/api.js';
+import { mathTopicsData } from '../components/topicData.js';
 
 export default {
     components: { Navbar },
@@ -112,6 +113,8 @@ export default {
             selectedPaper: '',
             selectedQuestions: [],
             suggestedTags: ['Equations', 'Polynomials', 'Fractions', 'Quadratics', 'Simplification'],
+            mathTopicsData: mathTopicsData,
+            currentLevel: '',
             isUpdating: false // Add loading state for vetting operations
         }
     },
@@ -171,13 +174,41 @@ export default {
             }
         },
 
-        // Prepare content for MathJax rendering
+        // Prepare content for MathJax rendering and handle markdown images
         prepareMathContent(text) {
             if (!text) return '';
 
             console.log('Original text:', text);
 
-            let processed = text
+            // First, handle broken/incomplete markdown image references
+            // Pattern 1: Complete markdown images ![alt](url)
+            let processed = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, altText, url) => {
+                console.log('Found complete markdown image:', url);
+                const cleanUrl = url.replace(/['"]/g, '').trim();
+                // Don't show the image if it's just a partial filename
+                if (cleanUrl.includes('http') || cleanUrl.startsWith('/')) {
+                    return `<img src="${cleanUrl}" alt="${altText || 'Question diagram'}" class="inline-question-image" />`;
+                }
+                return ''; // Hide broken image references
+            });
+
+            // Pattern 2: Handle broken image references that appear as plain text
+            // e.g., "Question diagram_P1_Math_%2F_E-Math_Express_Sec_4_V2/page-custom_diagram_17_1.png)"
+            // These appear to be incomplete paths that shouldn't be shown
+            processed = processed.replace(/Question diagram[^)]*\.(png|jpg|jpeg|gif)\)/gi, '');
+            
+            // Pattern 3: Remove any standalone image filenames that might appear
+            processed = processed.replace(/[a-zA-Z0-9_\-\/]+\.(png|jpg|jpeg|gif)(?=\s|$|\)|,)/gi, (match) => {
+                console.log('Found standalone image filename:', match);
+                // Only keep it if it's a full URL
+                if (match.includes('http') || match.startsWith('/')) {
+                    return `<img src="${match}" alt="Question diagram" class="inline-question-image" />`;
+                }
+                return ''; // Remove partial filenames
+            });
+
+            // Then handle MathJax delimiters
+            processed = processed
                 .replace(/\\\\(\(|\)|\[|\])/g, '\\$1')
                 .replace(/\\\\([^\\])/g, '\\$1');
 
@@ -324,6 +355,9 @@ export default {
                         hasRegularDelimiters: questions[0].question_text.includes('\\('),
                         hasDollarSigns: questions[0].question_text.includes('$')
                     });
+                    
+                    // Detect level from paper questions
+                    this.detectLevelFromQuestions(questions);
                 }
 
                 this.selectedQuestions = questions.map(q => ({
@@ -338,6 +372,52 @@ export default {
             } catch (error) {
                 console.error('❌ Failed to load paper questions:', error);
             }
+        },
+        
+        detectLevelFromQuestions(questions) {
+            // Try to detect level from questions data
+            if (questions && questions.length > 0) {
+                const firstQuestion = questions[0];
+                if (firstQuestion.level) {
+                    // Map level to mathTopicsData key
+                    const levelMap = {
+                        'Secondary 1': 'mathSec1',
+                        'Secondary 2': 'mathSec2',
+                        'Secondary 3': 'mathSec3',
+                        'Secondary 4': 'mathSec4',
+                        'A Math Secondary 3': 'amathSec3',
+                        'A Math Secondary 4': 'amathSec4'
+                    };
+                    this.currentLevel = levelMap[firstQuestion.level] || '';
+                }
+            }
+        },
+        
+        getTopicsForLevel() {
+            if (!this.currentLevel || !this.mathTopicsData[this.currentLevel]) {
+                // Return all topics if level not detected
+                return Object.values(this.mathTopicsData).flat();
+            }
+            return this.mathTopicsData[this.currentLevel];
+        },
+        
+        getSubHashtagsForTopic(topicLabel) {
+            if (!topicLabel) return [];
+            
+            // Search across all levels for the topic
+            for (const level of Object.values(this.mathTopicsData)) {
+                const topic = level.find(t => t.label === topicLabel);
+                if (topic && topic.subHashtags) {
+                    return topic.subHashtags;
+                }
+            }
+            return [];
+        },
+        
+        updateSubTopicSuggestions(question) {
+            // This method is called when topic selection changes
+            // The sub-hashtags will be automatically updated through computed property
+            console.log('Topic selected:', question.topic_label);
         },
 
         // Vetting methods
@@ -427,8 +507,11 @@ export default {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         paper_name: this.selectedPaper,
-                        questions: this.selectedQuestions.map(({ question_number, difficulty, sub_topics }) => ({
-                            question_number, difficulty, sub_topics
+                        questions: this.selectedQuestions.map(({ question_number, difficulty, sub_topics, topic_label }) => ({
+                            question_number, 
+                            difficulty, 
+                            sub_topics,
+                            topic_label  // Now including topic_label
                         }))
                     })
                 });
@@ -648,6 +731,16 @@ export default {
     margin-bottom: 0.5rem;
 }
 
+.inline-question-image {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 .debug-info {
     font-family: 'Courier New', monospace;
     max-height: 150px;
@@ -691,24 +784,60 @@ export default {
     background: #e74c3c;
 }
 
+.topic-select {
+    width: 100%;
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+}
+
+.topic-select:focus {
+    outline: none;
+    border-color: #66cc99;
+    box-shadow: 0 0 0 2px rgba(102, 204, 153, 0.2);
+}
+
 .tags {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
     margin-top: 0.5rem;
+    min-height: 40px;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px dashed #ddd;
 }
 
 .tag {
     border: 1px solid #ccc;
     padding: 0.3rem 0.75rem;
-    border-radius: 6px;
+    border-radius: 15px;
     cursor: pointer;
-    background-color: #fff;
+    background-color: #e9ecef;
+    font-size: 13px;
+    transition: all 0.2s;
 }
 
 .tag.selected {
     background-color: #66cc99;
     color: white;
+    border-color: #52a382;
+}
+
+.tag:hover:not(.selected) {
+    background-color: #dee2e6;
+    border-color: #adb5bd;
+}
+
+.no-topic-hint {
+    color: #6c757d;
+    font-style: italic;
+    font-size: 13px;
+    padding: 0.25rem;
 }
 
 .save-btn {
