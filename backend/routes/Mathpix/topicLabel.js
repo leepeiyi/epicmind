@@ -350,11 +350,11 @@ router.get("/cache-status", (req, res) => {
 });
 
 router.post("/uploadSyllabus", async (req, res) => {
-  const { jsonData, subject, banding, level } = req.body;
+  const { jsonData, subject, banding, level, paper_name } = req.body;
 
   const client = await pool.connect();
 
-  if (!jsonData || !subject || !banding || !level) {
+  if (!jsonData || !subject || !banding || !level || !paper_name) {
     return res.status(400).json({ error: "Missing required fields." });
   }
 
@@ -366,8 +366,8 @@ router.post("/uploadSyllabus", async (req, res) => {
         await client.query(
           `UPDATE question
            SET topic_label = $1
-           WHERE question_number = $2 AND subject = $3 AND banding = $4 AND level = $5`,
-          [q.topic_label, q.question_number, subject, banding, level]
+           WHERE question_number = $2 AND subject = $3 AND banding = $4 AND level = $5 AND paper_name = $6`,
+          [q.topic_label, q.question_number, subject, banding, level, paper_name]
         );
       })
     );

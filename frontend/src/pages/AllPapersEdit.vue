@@ -388,7 +388,8 @@ export default {
                                 jsonData: labeledQuestions,
                                 subject: this.form.subject,
                                 banding: this.form.banding,
-                                level: this.form.level
+                                level: this.form.level,
+                                paper_name: this.currentPaperName // Add paper_name to prevent cross-paper updates
                             })
                         });
 
