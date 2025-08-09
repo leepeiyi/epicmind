@@ -811,42 +811,61 @@ export default {
 
 .tags {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.4rem;
     flex-wrap: wrap;
     margin-top: 0.5rem;
-    min-height: 40px;
-    padding: 0.5rem;
-    background: #f8f9fa;
-    border-radius: 6px;
-    border: 1px dashed #ddd;
+    min-height: 36px;
+    padding: 0.4rem;
+    background: linear-gradient(to bottom, #f8f9fa, #fff);
+    border-radius: 8px;
+    border: 1px solid #e0e4e8;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .tag {
-    border: 1px solid #ccc;
-    padding: 0.3rem 0.75rem;
-    border-radius: 15px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #d1d5db;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
     cursor: pointer;
-    background-color: #e9ecef;
-    font-size: 13px;
-    transition: all 0.2s;
+    background: linear-gradient(to bottom, #ffffff, #f9fafb);
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    text-transform: lowercase;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+    max-width: fit-content;
 }
 
 .tag.selected {
-    background-color: #66cc99;
+    background: linear-gradient(135deg, #66cc99, #52a382);
     color: white;
-    border-color: #52a382;
+    border-color: #4a9774;
+    box-shadow: 0 2px 4px rgba(82, 163, 130, 0.3);
+    font-weight: 600;
 }
 
 .tag:hover:not(.selected) {
-    background-color: #dee2e6;
-    border-color: #adb5bd;
+    background: linear-gradient(to bottom, #f3f4f6, #e5e7eb);
+    border-color: #9ca3af;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tag:active {
+    transform: translateY(0);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .no-topic-hint {
-    color: #6c757d;
+    color: #9ca3af;
     font-style: italic;
-    font-size: 13px;
-    padding: 0.25rem;
+    font-size: 11px;
+    padding: 0.2rem 0.4rem;
+    align-self: center;
 }
 
 .save-btn {
