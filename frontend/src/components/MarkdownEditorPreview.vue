@@ -6,6 +6,20 @@
             <button @click="forceMathJaxRender" class="debug-btn">🔄 Force Render</button>
         </div>
 
+        <!-- Question Navigation Bar -->
+        <div v-if="parsedQuestions.length > 0" class="question-nav-bar">
+            <span class="nav-label">Quick Jump:</span>
+            <button 
+                v-for="q in parsedQuestions" 
+                :key="q.number"
+                @click="jumpToQuestion(q.number)"
+                class="question-nav-btn"
+                :title="`Jump to Q${q.number}`"
+            >
+                Q{{ q.number }}
+            </button>
+        </div>
+
         <!-- Markdown Editor and Preview Section -->
         <div class="output-wrapper">
             <!-- Markdown Editor -->
@@ -16,15 +30,17 @@
                     <button v-if="showCloseButton" @click="$emit('close')" class="close-editor-btn">✕ Close</button>
                 </div>
                 <textarea 
+                    ref="markdownEditor"
                     :value="modelValue" 
                     @input="$emit('update:modelValue', $event.target.value)"
+                    @scroll="onEditorScroll"
                     class="markdown-editor" 
                     :placeholder="placeholder"
                 />
             </div>
 
             <!-- Preview -->
-            <div class="preview" ref="previewContainer">
+            <div class="preview" ref="previewContainer" @scroll="onPreviewScroll">
                 <h3>Preview</h3>
                 
                 <!-- Render questions using the original parsing logic -->
@@ -155,7 +171,9 @@ export default {
             mathJaxStatus: 'Loading...',
             mathJaxTimeout: null,
             mathJaxReady: false,
-            allImagesInMarkdown: []
+            allImagesInMarkdown: [],
+            isSyncing: false,  // Prevent infinite scroll loops
+            syncTimeout: null
         };
     },
     computed: {
@@ -266,6 +284,99 @@ export default {
         }
     },
     methods: {
+        // Synchronized scrolling methods
+        onEditorScroll(event) {
+            if (this.isSyncing) return;
+            
+            clearTimeout(this.syncTimeout);
+            this.syncTimeout = setTimeout(() => {
+                this.isSyncing = true;
+                
+                const editor = event.target;
+                const preview = this.$refs.previewContainer;
+                
+                if (!preview) {
+                    this.isSyncing = false;
+                    return;
+                }
+                
+                // Calculate scroll percentage
+                const scrollPercentage = editor.scrollTop / (editor.scrollHeight - editor.clientHeight);
+                
+                // Apply same percentage to preview
+                const targetScrollTop = scrollPercentage * (preview.scrollHeight - preview.clientHeight);
+                preview.scrollTop = targetScrollTop;
+                
+                // Reset sync flag after a delay
+                setTimeout(() => {
+                    this.isSyncing = false;
+                }, 100);
+            }, 10);
+        },
+        
+        onPreviewScroll(event) {
+            if (this.isSyncing) return;
+            
+            clearTimeout(this.syncTimeout);
+            this.syncTimeout = setTimeout(() => {
+                this.isSyncing = true;
+                
+                const preview = event.target;
+                const editor = this.$refs.markdownEditor;
+                
+                if (!editor) {
+                    this.isSyncing = false;
+                    return;
+                }
+                
+                // Calculate scroll percentage
+                const scrollPercentage = preview.scrollTop / (preview.scrollHeight - preview.clientHeight);
+                
+                // Apply same percentage to editor
+                const targetScrollTop = scrollPercentage * (editor.scrollHeight - editor.clientHeight);
+                editor.scrollTop = targetScrollTop;
+                
+                // Reset sync flag after a delay
+                setTimeout(() => {
+                    this.isSyncing = false;
+                }, 100);
+            }, 10);
+        },
+        
+        // Jump to specific question
+        jumpToQuestion(questionNumber) {
+            const editor = this.$refs.markdownEditor;
+            const preview = this.$refs.previewContainer;
+            
+            if (!editor || !preview) return;
+            
+            // Find the question in the editor
+            const editorText = this.modelValue;
+            const questionPattern = new RegExp(`### Q${questionNumber}\\s*\\(`, 'm');
+            const match = editorText.match(questionPattern);
+            
+            if (match) {
+                // Calculate position in editor
+                const textBeforeMatch = editorText.substring(0, match.index);
+                const lines = textBeforeMatch.split('\n').length;
+                const lineHeight = 24; // Approximate line height in pixels
+                
+                // Scroll editor to question
+                editor.scrollTop = (lines - 5) * lineHeight; // Offset by 5 lines for better visibility
+                
+                // Find and scroll to question in preview
+                const questionBlocks = preview.querySelectorAll('.question-block');
+                const targetBlock = Array.from(questionBlocks).find(block => {
+                    const heading = block.querySelector('h4');
+                    return heading && heading.textContent.includes(`Q${questionNumber}`);
+                });
+                
+                if (targetBlock) {
+                    targetBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        },
+        
         async initializeMathJax() {
             console.log('🔧 Initializing MathJax...');
             this.mathJaxStatus = 'Initializing...';
@@ -495,11 +606,51 @@ export default {
     margin-left: 0.5rem;
 }
 
+.question-nav-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    max-height: 80px;
+    overflow-y: auto;
+}
+
+.nav-label {
+    color: white;
+    font-weight: bold;
+    margin-right: 0.5rem;
+}
+
+.question-nav-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.question-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
 .output-wrapper {
     display: flex;
     flex-direction: column;
     gap: 2rem;
-    margin-top: 3rem;
+    margin-top: 1rem;
     border-top: 3px solid #66CC99;
     padding-top: 2rem;
 }

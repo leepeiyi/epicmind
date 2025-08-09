@@ -40,7 +40,7 @@
             </div>
         </div>
 
-        <div v-if="selectedPaper && selectedQuestions.length">
+        <div v-if="selectedPaper && selectedQuestions.length" ref="questionsSection">
             <h2>{{ selectedPaper }}</h2>
             <div v-for="(q, index) in selectedQuestions" :key="index" class="question-box">
                 <p><strong>Q{{ q.question_number }}</strong>:</p>
@@ -368,6 +368,15 @@ export default {
 
                 this.$nextTick(() => {
                     this.typesetMath();
+                    // Scroll to questions section with smooth animation
+                    setTimeout(() => {
+                        if (this.$refs.questionsSection) {
+                            this.$refs.questionsSection.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                            });
+                        }
+                    }, 100);
                 });
             } catch (error) {
                 console.error('❌ Failed to load paper questions:', error);
