@@ -39,9 +39,9 @@
 
                     <div class="selection-item">
                         <label>Topic</label>
-                        <select v-model="form.topic" :disabled="!topics.length">
+                        <select v-model="form.topic" @change="updateSubTopics" :disabled="!topics.length">
                             <option value="" disabled>Select Topic</option>
-                            <option v-for="topic in topics" :key="topic" :value="topic">{{ topic.label }}
+                            <option v-for="topic in topics" :key="topic.label" :value="topic">{{ topic.label }}
                              
                             </option>
                         </select>
@@ -57,14 +57,27 @@
             <!-- Optional Selections -->
             <div class="optional-selections">
                 <div class="optional-selection-row">
-                    <div class="selection-item">
-                        <label>Sub Topic (Optional)</label>
-                        <select v-model="form.subTopic">
-                            <option value="">Any Sub Topic</option>
-                            <option v-for="subTopic in subTopics" :key="subTopic" :value="subTopic">
-                                {{ subTopic }}
-                            </option>
-                        </select>
+                    <div class="selection-item sub-topic-selector">
+                        <label>Sub Topics (Optional - Select Multiple)</label>
+                        <div class="sub-topic-tags">
+                            <div v-if="subTopics.length === 0" class="no-subtopics">
+                                Select a topic first to see sub-topics
+                            </div>
+                            <div v-else class="tags-container">
+                                <span 
+                                    v-for="subTopic in subTopics" 
+                                    :key="subTopic" 
+                                    class="sub-topic-tag"
+                                    :class="{ selected: form.selectedSubTopics.includes(subTopic) }"
+                                    @click="toggleSubTopic(subTopic)"
+                                >
+                                    {{ subTopic }}
+                                </span>
+                            </div>
+                        </div>
+                        <div v-if="form.selectedSubTopics.length > 0" class="selected-count">
+                            {{ form.selectedSubTopics.length }} sub-topic{{ form.selectedSubTopics.length > 1 ? 's' : '' }} selected
+                        </div>
                     </div>
 
                     <div class="selection-item">
@@ -241,7 +254,8 @@ export default {
                 banding: '',
                 level: '',
                 topic: '',
-                subTopic: '',
+                subTopic: '', // Keep for backward compatibility
+                selectedSubTopics: [], // New array for multiple sub-topics
                 difficultyLevel: '',
                 questionCount: 10,
                 quizName: '',
@@ -300,10 +314,19 @@ export default {
             return raw.replace(/\\\\/g, '\\');
         }
         ,
+        toggleSubTopic(subTopic) {
+            const index = this.form.selectedSubTopics.indexOf(subTopic);
+            if (index === -1) {
+                this.form.selectedSubTopics.push(subTopic);
+            } else {
+                this.form.selectedSubTopics.splice(index, 1);
+            }
+        },
         updateTopics() {
-            // Reset topic and sub-topic when subject or level changes
+            // Reset topic and sub-topics when subject or level changes
             this.form.topic = '';
             this.form.subTopic = '';
+            this.form.selectedSubTopics = [];
             this.subTopics = [];
 
             if (!this.form.subject || !this.form.level) {
@@ -345,21 +368,33 @@ export default {
                 this.topics = ['General Topic 1', 'General Topic 2', 'General Topic 3'];
             }
         },
-        async updateSubTopics() {
+        updateSubTopics() {
+            // Clear selected sub-topics when topic changes
+            this.form.selectedSubTopics = [];
+            
             if (!this.form.topic) {
                 this.subTopics = [];
                 return;
             }
 
-            try {
-                // In a real implementation, you would fetch subtopics from the backend
-                const response = await fetch(`${API_BASE_URL}/api/topics/subtopics?subject=${this.form.subject}&level=${this.form.level}&topic=${this.form.topic}`);
-                const data = await response.json();
-                this.subTopics = data.subtopics || [];
-            } catch (error) {
-                console.error('Failed to fetch subtopics:', error);
-                // Fallback dummy data
-                this.subTopics = ['Subtopic 1', 'Subtopic 2', 'Subtopic 3'];
+            // Get sub-hashtags for the selected topic
+            const selectedTopic = this.form.topic;
+            if (selectedTopic && selectedTopic.subHashtags) {
+                this.subTopics = selectedTopic.subHashtags;
+            } else {
+                // If topic is an object without subHashtags or a string, try to find it
+                const topicLabel = typeof selectedTopic === 'string' ? selectedTopic : selectedTopic.label;
+                
+                // Search for the topic across all levels to get its sub-hashtags
+                for (const level of Object.values(mathTopicsData)) {
+                    const topic = level.find(t => t.label === topicLabel);
+                    if (topic && topic.subHashtags) {
+                        this.subTopics = topic.subHashtags;
+                        return;
+                    }
+                }
+                
+                this.subTopics = [];
             }
         },
         async generateQuiz() {
@@ -401,7 +436,8 @@ export default {
                         banding: this.form.banding,
                         level: this.form.level,
                         topic: this.form.topic,
-                        subTopic: this.form.subTopic,
+                        subTopic: this.form.subTopic, // Keep for backward compatibility
+                        selectedSubTopics: this.form.selectedSubTopics, // Send array of selected sub-topics
                         difficultyLevel: this.form.difficultyLevel,
                         questionCount: this.form.questionCount,
                         includePastYears: this.form.includePastYears,
@@ -689,6 +725,73 @@ export default {
     border: 1px solid #ccc;
     border-radius: 5px;
     background-color: white;
+}
+
+/* Sub-topic multi-select styles */
+.sub-topic-selector {
+    flex: 2;
+    min-width: 350px;
+}
+
+.sub-topic-tags {
+    margin-top: 0.5rem;
+    min-height: 60px;
+    max-height: 120px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 0.5rem;
+}
+
+.no-subtopics {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem;
+}
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.sub-topic-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.7rem;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.sub-topic-tag:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+    transform: translateY(-1px);
+}
+
+.sub-topic-tag.selected {
+    background: linear-gradient(135deg, #66cc99, #52a382);
+    color: white;
+    border-color: #4a9774;
+    font-weight: 600;
+}
+
+.sub-topic-tag.selected:hover {
+    background: linear-gradient(135deg, #52a382, #4a9774);
+}
+
+.selected-count {
+    margin-top: 0.5rem;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
 }
 
 h1 {

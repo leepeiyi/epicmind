@@ -92,6 +92,7 @@ router.post("/generate", async (req, res) => {
       level,
       topic,
       subTopic,
+      selectedSubTopics = [], // New array for multiple sub-topics
       difficultyLevel,
       questionCount,
       includePastYears,
@@ -132,9 +133,22 @@ router.post("/generate", async (req, res) => {
     const queryParams = [subject, banding, level, `%${topic.label}%`];
     let paramIndex = 5;
 
-    if (subTopic) {
-      query += ` AND q.sub_topic = $${paramIndex}`;
-      queryParams.push(subTopic);
+    // Handle multiple sub-topics
+    if (selectedSubTopics && selectedSubTopics.length > 0) {
+      // Check if sub_topic JSON array contains ANY of the selected sub-topics
+      const subTopicConditions = selectedSubTopics.map((_, i) => {
+        return `q.sub_topic::jsonb @> $${paramIndex + i}::jsonb`;
+      });
+      query += ` AND (${subTopicConditions.join(' OR ')})`;
+      
+      selectedSubTopics.forEach(st => {
+        queryParams.push(JSON.stringify([st]));
+        paramIndex++;
+      });
+    } else if (subTopic) {
+      // Backward compatibility: single sub-topic
+      query += ` AND q.sub_topic::jsonb @> $${paramIndex}::jsonb`;
+      queryParams.push(JSON.stringify([subTopic]));
       paramIndex++;
     }
 
