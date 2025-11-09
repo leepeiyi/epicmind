@@ -22,7 +22,7 @@ const mathTopicsData = {
         "• Rounding to significant figures or decimal places\n• Estimating values in calculations\n• Use of ≈ and significance",
     },
     {
-      label: "Algebra",
+      label: "Algebra 1",
       hashtag: "#algebra",
       subHashtags: [
         "#substitution",
@@ -104,7 +104,7 @@ const mathTopicsData = {
       description: "• Map scales and conversions\n• Real-world applications",
     },
     {
-      label: "Algebra",
+      label: "Algebra 2",
       hashtag: "#algebra2",
       subHashtags: [
         "#expansion",
@@ -377,6 +377,8 @@ const mathTopicsData = {
         "#remainderthm",
         "#factorthm",
         "#cubic",
+        "#reverse",
+        "#combilock",
       ],
       description:
         "• Multiplication and division of polynomials.\n• Use of remainder and factor theorems.\n• Factorising polynomials and solving cubic equations.",
@@ -437,6 +439,8 @@ const mathTopicsData = {
         "#doubleangle",
         "#proof",
         "#rformula",
+        "#factorformulae",
+        "#modulus",
       ],
       description:
         "• Graphs of trigonometric functions like y = a sin(bx) + c.\n• Trig identities: sin²A + cos²A = 1, etc.\n• Solving trig equations and proving identities.\n• Angle addition and double angle formulae.\n• Expressions of sinθ ± cosθ in the form R sin(θ ± α) or R cos(θ ± α).",
