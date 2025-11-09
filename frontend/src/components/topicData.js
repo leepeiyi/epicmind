@@ -18,11 +18,11 @@ export const mathTopicsData = {
             subHashtags: ["#sigfig"],
             description: "• Rounding to significant figures or decimal places\n• Estimating values in calculations\n• Use of ≈ and significance" 
         },
-        { 
-            label: "Algebra", 
+        {
+            label: "Algebra 1",
             hashtag: "#algebra",
             subHashtags: ["#substitution", "#expansion", "#factorisation", "#solving", "#osef", "#wordproblems"],
-            description: "• Algebraic expressions\n• Substitution\n• Simple formulae and interpreting algebra in context\n• Expanding brackets\n• Simplifying expressions\n• Factoring common terms\n• Solving linear equations" 
+            description: "• Algebraic expressions\n• Substitution\n• Simple formulae and interpreting algebra in context\n• Expanding brackets\n• Simplifying expressions\n• Factoring common terms\n• Solving linear equations"
         },
         { 
             label: "Graphs", 
@@ -74,11 +74,11 @@ export const mathTopicsData = {
             subHashtags: [],
             description: "• Map scales and conversions\n• Real-world applications" 
         },
-        { 
-            label: "Algebra", 
+        {
+            label: "Algebra 2",
             hashtag: "#algebra2",
             subHashtags: ["#expansion", "#123", "#ultraman", "#quadraticsolve", "#simplify", "#subjectofformula"],
-            description: "• Expanding (a + b)(c + d)\n• Factoring quadratics of the form ax² + bx + c\n• Solving quadratic equations" 
+            description: "• Expanding (a + b)(c + d)\n• Factoring quadratics of the form ax² + bx + c\n• Solving quadratic equations"
         },
         { 
             label: "Proportions", 
@@ -290,11 +290,11 @@ export const mathTopicsData = {
             subHashtags: ["#simplify", "#rationalise", "#realworld"],
             description: "• Four operations on surds including rationalising the denominator.\n• Solving equations involving surds." 
         },
-        { 
-            label: "Polynomials", 
+        {
+            label: "Polynomials",
             hashtag: "#polynomials",
-            subHashtags: ["#identities", "#longdiv", "#remainderthm", "#factorthm", "#cubic"],
-            description: "• Multiplication and division of polynomials.\n• Use of remainder and factor theorems.\n• Factorising polynomials and solving cubic equations." 
+            subHashtags: ["#identities", "#longdiv", "#remainderthm", "#factorthm", "#cubic", "#reverse", "#combilock"],
+            description: "• Multiplication and division of polynomials.\n• Use of remainder and factor theorems.\n• Factorising polynomials and solving cubic equations."
         },
         { 
             label: "Partial Fractions", 
@@ -332,11 +332,11 @@ export const mathTopicsData = {
             subHashtags: ["#manipulate", "#graph"],
             description: "• Transformation of relationships like y = ax^n and y = ab^x to linear form for graphical solutions." 
         },
-        { 
-            label: "Trigo", 
+        {
+            label: "Trigo",
             hashtag: "#trigo",
-            subHashtags: ["#basictriangle", "#basicangle", "#bowtie", "#IQBS", "#graphs", "#identities", "#addition", "#doubleangle", "#proof", "#rformula"],
-            description: "• Graphs of trigonometric functions like y = a sin(bx) + c.\n• Trig identities: sin²A + cos²A = 1, etc.\n• Solving trig equations and proving identities.\n• Angle addition and double angle formulae.\n• Expressions of sinθ ± cosθ in the form R sin(θ ± α) or R cos(θ ± α)." 
+            subHashtags: ["#basictriangle", "#basicangle", "#bowtie", "#IQBS", "#graphs", "#identities", "#addition", "#doubleangle", "#proof", "#rformula", "#factorformulae", "#modulus"],
+            description: "• Graphs of trigonometric functions like y = a sin(bx) + c.\n• Trig identities: sin²A + cos²A = 1, etc.\n• Solving trig equations and proving identities.\n• Angle addition and double angle formulae.\n• Expressions of sinθ ± cosθ in the form R sin(θ ± α) or R cos(θ ± α)."
         },
     ],
     amathSec4: [
