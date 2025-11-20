@@ -28,9 +28,9 @@ pool.query("SELECT NOW()", (err, res) => {
   }
 });
 
-// Initialize Gemini API
+// Initialize Gemini API - Switch to Flash-Lite for better availability (less overloaded)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
 // Generate a quiz using Gemini AI
 function normalizeQuestion(row) {

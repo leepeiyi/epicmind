@@ -35,8 +35,9 @@ const s3 = new S3Client({
   },
 });
 
+// Switch to Flash-Lite for better availability (less overloaded) - still very capable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
 // === Upload PDF to Mathpix, then poll until extraction is ready ===
 // === Step 1: Upload PDF to Mathpix and get pdf_id ===
@@ -1520,34 +1521,34 @@ router.post("/update_paper_image_urls", async (req, res) => {
       let hasUpdates = false;
       const imagePaths = question.image_paths || [];
 
-      // Find CDN URLs in question text and replace with S3 URLs if available
-      const imageRegex = /!\[([^\]]*)\]\(https:\/\/cdn\.mathpix\.com\/[^)]+\)/g;
+      // Extract all S3 URLs from image_paths (they should be in order)
+      const s3Urls = imagePaths.filter(
+        (path) =>
+          typeof path === "string" &&
+          path.includes(process.env.S3_BUCKET_NAME)
+      );
+
+      if (s3Urls.length === 0) continue; // Skip if no S3 URLs
+
+      // Find CDN URLs in question text and replace with S3 URLs (in order)
+      const imageRegex = /!\[([^\]]*)\]\((https:\/\/cdn\.mathpix\.com\/[^)]+)\)/g;
+      let imageIndex = 0;
 
       questionText = questionText.replace(
         imageRegex,
-        (match, altText, offset, string) => {
-          // Extract the CDN URL
-          const urlMatch = match.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-          if (!urlMatch) return match;
-
-          const cdnUrl = urlMatch[2];
-
-          // Look for corresponding S3 URL in image_paths
-          const s3Url = imagePaths.find(
-            (path) =>
-              typeof path === "string" &&
-              path.includes(process.env.S3_BUCKET_NAME)
-          );
-
-          if (s3Url) {
+        (match, altText, cdnUrl) => {
+          // Map each CDN URL to corresponding S3 URL by index
+          if (imageIndex < s3Urls.length) {
+            const s3Url = s3Urls[imageIndex];
+            imageIndex++;
             hasUpdates = true;
             console.log(
-              `🔄 Replacing CDN URL with S3 URL in Q${question.question_number}`
+              `🔄 Replacing CDN URL with S3 URL in Q${question.question_number} (image ${imageIndex})`
             );
             return `![${altText}](${s3Url})`;
           }
 
-          return match; // Keep original if no S3 URL found
+          return match; // Keep original if no more S3 URLs
         }
       );
 

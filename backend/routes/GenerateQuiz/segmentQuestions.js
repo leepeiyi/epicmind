@@ -3,6 +3,7 @@ const router = express.Router();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 
+// Use Flash-Lite for simple segmentation tasks (1,000 RPD limit vs 250)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Segment multiple questions at once
@@ -67,7 +68,7 @@ ${question.answer_key}
 Return only valid JSON, no markdown, no extra commentary.
 `;
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
         

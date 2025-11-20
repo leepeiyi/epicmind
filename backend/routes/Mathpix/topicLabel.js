@@ -38,16 +38,16 @@ function getSectionKeys(level, subject, paperType) {
   return keys;
 }
 
-// Add retry mechanism for embedding generation
+// Switched back to Gemini with aggressive caching to avoid quota issues
 async function getGeminiEmbeddingWithRetry(text, maxRetries = 3) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${process.env.GEMINI_API_KEY}`;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await axios.post(
         url,
         {
-          model: "models/embedding-001",
+          model: "models/text-embedding-004",
           content: {
             parts: [{ text: text }],
           },
@@ -56,7 +56,7 @@ async function getGeminiEmbeddingWithRetry(text, maxRetries = 3) {
           headers: {
             "Content-Type": "application/json",
           },
-          timeout: 30000, // 30 second timeout
+          timeout: 30000,
         }
       );
 
@@ -71,7 +71,7 @@ async function getGeminiEmbeddingWithRetry(text, maxRetries = 3) {
         throw error;
       }
 
-      // Wait before retry (exponential backoff)
+      // Wait longer between retries to avoid rate limiting (2s, 4s, 8s)
       await new Promise((resolve) =>
         setTimeout(resolve, Math.pow(2, attempt) * 1000)
       );
@@ -207,8 +207,8 @@ async function processQuestionsSequentially(
           .slice(0, 3), // Top 3 matches for debugging
       });
 
-      // Small delay to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Delay to avoid rate limiting (300ms between questions)
+      await new Promise((resolve) => setTimeout(resolve, 300));
     } catch (err) {
       console.error(
         `❌ Failed to classify question ${q.question_number}: ${err.message}`
@@ -280,8 +280,8 @@ router.post("/match-topics", async (req, res) => {
           );
           topicEmbeddings.push(embedding);
 
-          // Small delay between requests
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          // Delay between requests to avoid rate limiting (500ms)
+          await new Promise((resolve) => setTimeout(resolve, 500));
         } catch (error) {
           console.error(
             `❌ Failed to generate embedding for topic: ${topic.label}`,
@@ -326,7 +326,7 @@ router.post("/match-topics", async (req, res) => {
   } catch (error) {
     console.error("❌ Error in match-topics:", error);
     res.status(500).json({
-      error: "Failed to process questions with Gemini embeddings",
+      error: "Failed to process questions with embeddings",
       details: error.message,
     });
   }

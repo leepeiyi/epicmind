@@ -18,8 +18,9 @@ const s3 = new S3Client({
   },
 });
 
+// Switch to Flash-Lite for better availability (less overloaded) - still capable for markdown parsing
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
 // Configure multer for image uploads
 const upload = multer({
@@ -104,38 +105,29 @@ async function downloadAndUploadImage(
 async function extractQuestionsFromMarkdown(markdownContent, paperMetadata) {
   const prompt = `You are extracting questions from a mathematics exam worksheet in Markdown format.
 
-CRITICAL FORMATTING RULES:
-1. For LaTeX expressions: Use SINGLE backslashes only
-   - Correct: "\\log_2 x", "\\frac{1}{2}", "\\sqrt{x}"
-   - WRONG: "\\\\log_2 x", "\\\\\\\\frac{1}{2}"
-2. Return VALID JSON without markdown code blocks
-3. No json markers in your response
-4. Escape quotes in strings with \"
-5. Keep LaTeX delimiters as-is: \\( ... \\) and $ ... $
+CRITICAL JSON FORMATTING RULES:
+1. Return VALID JSON - in JSON strings, backslashes MUST be escaped as \\\\
+2. For LaTeX in JSON: $\\\\frac{1}{2}$ not $\\frac{1}{2}$
+3. Do NOT wrap response in markdown code blocks
+4. Escape ALL special characters properly in JSON strings
 
 Instructions:
-- Extract each question's number and full text (preserve LaTeX formatting exactly)
+- Extract each question's number and full text (preserve LaTeX formatting)
 - Extract answer options (A, B, C, D) if present
-- Extract image URLs from ![...](https://cdn.mathpix.com/cropped/...) do not modify these URLs
-- Do NOT change or modify any LaTeX expressions
+- Extract image URLs from ![...](https://cdn.mathpix.com/cropped/...)
 - Question numbers should be sequential integers (1, 2, 3, etc.)
-- If you see table formatting or non-question content, ignore it
-- If the answer is included inline (e.g. starts with "Ans:" or "**Answer:**"), extract it and store it in "answer_key.correct_answer"
+- If answer is inline (e.g. "Ans:" or "Answer:"), extract to "answer_key.correct_answer"
 
-
-EXAMPLE OUTPUT FORMAT (no code blocks):
+EXAMPLE OUTPUT (valid JSON):
 [{
   "question_number": "1",
-  "question_text": "Solve \\\\(\\\\log_2 x = 3\\\\)",
+  "question_text": "Solve $\\\\log_2 x = 3$",
   "answer_options": [
     {"option": "A", "text": "x = 8"},
     {"option": "B", "text": "x = 4"}
   ],
- "answer_key": {
-    "question_number": "1",
-    "correct_answer": "(a) a = 338 or b = 320, (b) 21^x = 21, (c) x = 1/3"
-  },
-  "image_path": ["https://cdn.mathpix.com/cropped/..."],
+  "answer_key": {"correct_answer": "x = 8"},
+  "image_path": [],
   "subject": "${paperMetadata.subject}",
   "banding": "${paperMetadata.banding}",
   "level": "${paperMetadata.level}",
@@ -154,7 +146,15 @@ Return the JSON array directly:`;
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     console.log("📝 Gemini raw response length:", rawResponse.length);
-    console.log("📝 First 300 chars:", rawResponse.substring(0, 300));
+    console.log("📝 First 500 chars:", rawResponse.substring(0, 500));
+
+    // Debug: Show area around common error positions
+    if (rawResponse.length > 1988) {
+      console.log("📝 Around position 1988:", rawResponse.substring(1900, 2100));
+    }
+    if (rawResponse.length > 2299) {
+      console.log("📝 Around position 2299:", rawResponse.substring(2200, 2400));
+    }
 
     // Parse the JSON response with multiple strategies
     let parsed;
@@ -182,7 +182,37 @@ Return the JSON array directly:`;
 // Helper function to parse Gemini JSON responses with multiple strategies
 async function parseGeminiJsonResponse(rawResponse) {
   const strategies = [
-    // Strategy 1: Clean response and parse directly
+    // Strategy 1: Double all backslashes, then fix over-escaping
+    {
+      name: "Fix invalid JSON escape sequences",
+      parse: (raw) => {
+        const cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+
+        let jsonString = jsonMatch[0];
+
+        // Step 1: Replace all single backslashes with double backslashes
+        jsonString = jsonString.replace(/\\/g, '\\\\');
+
+        // Step 2: Fix over-escaped valid JSON sequences
+        // \\\" → \" (quote)
+        // \\\\\\\\ → \\\\ (backslash)
+        // \\\/ → \/ (slash)
+        jsonString = jsonString
+          .replace(/\\\\\\\\/g, '\\\\') // Fix quadruple backslashes
+          .replace(/\\\\\"/g, '\\"')      // Fix over-escaped quotes
+          .replace(/\\\\\//g, '\\/')       // Fix over-escaped slashes
+          .replace(/\\\\n/g, '\\n')        // Fix newlines
+          .replace(/\\\\r/g, '\\r')        // Fix carriage returns
+          .replace(/\\\\t/g, '\\t')        // Fix tabs
+          .replace(/\\\\b/g, '\\b');       // Fix backspace
+
+        return JSON.parse(jsonString);
+      },
+    },
+
+    // Strategy 2: Clean response and parse directly
     {
       name: "Direct parsing after cleanup",
       parse: (raw) => {
@@ -190,52 +220,6 @@ async function parseGeminiJsonResponse(rawResponse) {
         const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
         if (!jsonMatch) throw new Error("No JSON array found");
         return JSON.parse(jsonMatch[0]);
-      },
-    },
-
-    // Strategy 2: Fix common LaTeX escaping issues
-    {
-      name: "LaTeX backslash normalization",
-      parse: (raw) => {
-        let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
-        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
-        if (!jsonMatch) throw new Error("No JSON array found");
-
-        let jsonString = jsonMatch[0];
-
-        // Fix over-escaped LaTeX commands
-        jsonString = jsonString
-          .replace(/\\\\\\\\([a-zA-Z_{}])/g, "\\\\$1") // \\\\log -> \\log
-          .replace(/\\\\\\\\([()])/g, "\\\\$1") // \\\\( -> \\(
-          .replace(/\\\\\\\\([{}])/g, "\\\\$1") // \\\\{ -> \\{
-          .replace(/\\\\\\\\text/g, "\\\\text") // \\\\text -> \\text
-          .replace(/\\\\\\\\frac/g, "\\\\frac") // \\\\frac -> \\frac
-          .replace(/\\\\\\\\sqrt/g, "\\\\sqrt") // \\\\sqrt -> \\sqrt
-          .replace(/\\\\\\\\log/g, "\\\\log") // \\\\log -> \\log
-          .replace(/\\\\\\\\sin/g, "\\\\sin") // \\\\sin -> \\sin
-          .replace(/\\\\\\\\cos/g, "\\\\cos"); // \\\\cos -> \\cos
-
-        return JSON.parse(jsonString);
-      },
-    },
-
-    // Strategy 3: Aggressive backslash reduction
-    {
-      name: "Aggressive backslash reduction",
-      parse: (raw) => {
-        let cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
-        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
-        if (!jsonMatch) throw new Error("No JSON array found");
-
-        let jsonString = jsonMatch[0];
-
-        // More aggressive cleaning - reduce all multiple backslashes
-        jsonString = jsonString
-          .replace(/\\{4,}/g, "\\\\") // Any 4+ backslashes -> 2 backslashes
-          .replace(/\\{3}/g, "\\\\") // Triple backslashes -> double
-          .replace(/\\\\\\([a-zA-Z])/g, "\\\\$1"); // Clean up LaTeX commands
-
-        return JSON.parse(jsonString);
       },
     },
   ];
@@ -626,6 +610,9 @@ router.post("/process", async (req, res) => {
     let imagesProcessed = 0;
     const updatedQuestions = await Promise.all(
       questions.map(async (question) => {
+        // Create URL mapping for replacement
+        const urlMapping = new Map();
+
         if (
           !Array.isArray(question.image_path) ||
           question.image_path.length === 0
@@ -645,6 +632,9 @@ router.post("/process", async (req, res) => {
               );
               if (s3Url !== rawUrl) {
                 imagesProcessed++;
+                // Store mapping for text replacement
+                urlMapping.set(cleanedUrl, s3Url);
+                urlMapping.set(rawUrl, s3Url); // Also map original URL
               }
               return s3Url;
             }
@@ -652,7 +642,20 @@ router.post("/process", async (req, res) => {
           })
         );
 
-        return { ...question, image_path: newImagePaths };
+        // Replace Mathpix URLs in question_text with S3 URLs
+        let updatedQuestionText = question.question_text;
+        urlMapping.forEach((s3Url, mathpixUrl) => {
+          updatedQuestionText = updatedQuestionText.replace(
+            new RegExp(mathpixUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+            s3Url
+          );
+        });
+
+        return {
+          ...question,
+          image_path: newImagePaths,
+          question_text: updatedQuestionText // Update text with S3 URLs
+        };
       })
     );
 

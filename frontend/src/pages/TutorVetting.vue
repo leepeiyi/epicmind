@@ -193,27 +193,60 @@ export default {
             });
 
             // Pattern 2: Handle broken image references that appear as plain text
-            // e.g., "Question diagram_P1_Math_%2F_E-Math_Express_Sec_4_V2/page-custom_diagram_17_1.png)"
-            // These appear to be incomplete paths that shouldn't be shown
             processed = processed.replace(/Question diagram[^)]*\.(png|jpg|jpeg|gif)\)/gi, '');
-            
+
             // Pattern 3: Remove any standalone image filenames that might appear
             processed = processed.replace(/[a-zA-Z0-9_\-\/]+\.(png|jpg|jpeg|gif)(?=\s|$|\)|,)/gi, (match) => {
                 console.log('Found standalone image filename:', match);
-                // Only keep it if it's a full URL
                 if (match.includes('http') || match.startsWith('/')) {
                     return `<img src="${match}" alt="Question diagram" class="inline-question-image" />`;
                 }
-                return ''; // Remove partial filenames
+                return '';
             });
 
-            // Then handle MathJax delimiters
-            processed = processed
-                .replace(/\\\\(\(|\)|\[|\])/g, '\\$1')
-                .replace(/\\\\([^\\])/g, '\\$1');
+            // Check if text already has LaTeX delimiters
+            const hasLatex = processed.includes('$') || processed.includes('\\(') || processed.includes('\\[');
+
+            if (!hasLatex) {
+                // Convert plain text math to LaTeX
+                processed = this.convertPlainTextMathToLatex(processed);
+            }
+
+            // Don't strip backslashes - LaTeX needs them!
+            // Only fix over-escaped delimiters if present
+            if (processed.includes('\\\\(') || processed.includes('\\\\)')) {
+                processed = processed
+                    .replace(/\\\\(\(|\))/g, '\\$1')
+                    .replace(/\\\\(\[|\])/g, '\\$1');
+            }
 
             console.log('Processed text:', processed);
             return processed;
+        },
+
+        // Convert plain text math notation to LaTeX
+        convertPlainTextMathToLatex(text) {
+            // Convert fractions: (numerator)/(denominator) to $\frac{numerator}{denominator}$
+            text = text.replace(/\(([^)]+)\)\/\(([^)]+)\)/g, '$\\frac{$1}{$2}$');
+
+            // Convert simple fractions: a/b (where a and b are single terms or numbers)
+            text = text.replace(/(\d+[a-z]*|[a-z]\w*)\/(\d+[a-z]*|[a-z]\w*)/gi, (match, num, den) => {
+                // Don't convert dates or URLs
+                if (/\d{1,2}\/\d{1,2}/.test(match)) return match;
+                return `$\\frac{${num}}{${den}}$`;
+            });
+
+            // Wrap standalone math variables and expressions in $
+            // Look for patterns like: x=3, y^2, 3x, etc.
+            text = text.replace(/\b([a-z][\w]*(\^[\d]+)?)\s*=\s*([^,.\s]+)/gi, '$$$1=$3$$');
+
+            // Wrap multiplication signs
+            text = text.replace(/×/g, '$\\times$');
+
+            // Wrap division signs
+            text = text.replace(/÷/g, '$\\div$');
+
+            return text;
         },
 
         typesetMath() {
