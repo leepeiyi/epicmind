@@ -2,31 +2,21 @@
     <div class="register-page">
         <div class="register-box">
             <img src="../assets/epic-mind-logo.png" alt="Logo" class="logo" />
-            <h2>Create an account</h2>
-            <p>Select your role and get started</p>
-
-            <div class="role-toggle">
-                <button :class="{ active: role === 'teacher' }" @click="role = 'teacher'">
-                    👩‍🏫 I'm a Teacher
-                </button>
-                <button :class="{ active: role === 'student' }" @click="role = 'student'">
-                    🧑‍🎓 I'm a Student
-                </button>
-            </div>
+            <h2>Create Student Account</h2>
+            <p>Sign up as a student to get started</p>
 
             <form @submit.prevent="handleSubmit">
                 <input type="text" v-model="form.name" placeholder="Full Name" required />
                 <input type="email" v-model="form.email" placeholder="Email Address" required />
                 <input type="password" v-model="form.password" placeholder="Password" required />
                 <input type="password" v-model="form.confirm" placeholder="Confirm Password" required />
-
-                <input v-if="role === 'student'" type="email" v-model="form.parentEmail"
-                    placeholder="Parent's Email Address" required />
+                <input type="email" v-model="form.parentEmail" placeholder="Parent's Email Address" required />
 
                 <button type="submit" class="submit">Sign Up</button>
             </form>
 
             <p class="login-link">Already have an account? <a href="/">Log in</a></p>
+            <p class="teacher-note">👩‍🏫 Teachers: Please contact your administrator to create your account.</p>
         </div>
     </div>
 </template>
@@ -39,7 +29,6 @@ export default {
     name: "CreateAccount",
     data() {
         return {
-            role: 'teacher',
             form: {
                 name: '',
                 email: '',
@@ -57,15 +46,15 @@ export default {
       }
 
       try {
-        const response = await axios.post(`${API_BASE_URL}/api/user/register`, {
+        await axios.post(`${API_BASE_URL}/api/user/register`, {
           name: this.form.name,
           email: this.form.email,
           password: this.form.password,
-          role: this.role,
-          parentEmail: this.role === 'student' ? this.form.parentEmail : null,
+          role: 'student', // Only allow student registration
+          parentEmail: this.form.parentEmail,
         });
 
-        alert('Registration successful!');
+        alert('Registration successful! You can now log in.');
         this.$router.push('/'); // go to login
       } catch (err) {
         alert(err.response?.data?.error || 'Registration failed');
@@ -174,5 +163,16 @@ form input {
     color: #0055B8;
     font-weight: bold;
     text-decoration: none;
+}
+
+.teacher-note {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-left: 4px solid #66CC99;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #555;
+    text-align: left;
 }
 </style>

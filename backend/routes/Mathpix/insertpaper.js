@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
+const requireTeacher = require("../../middleware/require-teacher");
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -83,7 +84,7 @@ router.get("/questions/:paper_name", async (req, res) => {
   }
 });
 
-router.post("/setup-vetting-columns", async (req, res) => {
+router.post("/setup-vetting-columns", requireTeacher, async (req, res) => {
   const client = await pool.connect();
 
   try {
@@ -211,7 +212,7 @@ router.post("/setup-vetting-columns", async (req, res) => {
 });
 
 // UPDATE question metadata (difficulty and sub_topics) for tutor vetting
-router.post("/update-question-metadata", async (req, res) => {
+router.post("/update-question-metadata", requireTeacher, async (req, res) => {
   const { paper_name, questions } = req.body;
 
   if (!paper_name || !questions || !Array.isArray(questions)) {
@@ -313,7 +314,7 @@ router.post("/update-question-metadata", async (req, res) => {
 
 // FIXED: Remove the updated_at column reference
 
-router.post("/revert-paper", async (req, res) => {
+router.post("/revert-paper", requireTeacher, async (req, res) => {
   try {
     const { paper_name } = req.body;
 
@@ -354,7 +355,7 @@ router.post("/revert-paper", async (req, res) => {
   }
 });
 
-router.post("/update-question-details", async (req, res) => {
+router.post("/update-question-details", requireTeacher, async (req, res) => {
   const { paper_name, content } = req.body;
   if (!paper_name || !content) {
     return res.status(400).json({ error: "Missing paper_name or content" });
@@ -552,7 +553,7 @@ router.get("/exists/:paper_name", async (req, res) => {
   }
 });
 
-router.post("/update-question-numbers", async (req, res) => {
+router.post("/update-question-numbers", requireTeacher, async (req, res) => {
   const { paper_name, questions } = req.body;
   if (!paper_name || !questions || !Array.isArray(questions)) {
     return res.status(400).json({ error: "Missing paper_name or questions" });
@@ -611,7 +612,7 @@ router.get("/logs/:paper_name", async (req, res) => {
 });
 
 // POST route to add manual question
-router.post("/add-manual-question", async (req, res) => {
+router.post("/add-manual-question", requireTeacher, async (req, res) => {
   const {
     paper_name,
     question_number,
@@ -796,7 +797,7 @@ router.get("/next-question-number/:paper_name", async (req, res) => {
 });
 
 // DELETE route to delete a paper and all its questions
-router.delete("/delete/:paper_name", async (req, res) => {
+router.delete("/delete/:paper_name", requireTeacher, async (req, res) => {
   const { paper_name } = req.params;
   const client = await pool.connect();
 

@@ -4,6 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const topicData = require("../../data/topicData");
 const { Pool } = require("pg");
+const requireTeacher = require("../../middleware/require-teacher");
 
 require("dotenv").config();
 
@@ -225,7 +226,7 @@ async function processQuestionsSequentially(
   return results;
 }
 
-router.post("/match-topics", async (req, res) => {
+router.post("/match-topics", requireTeacher, async (req, res) => {
   const { questions, level, subject, paper_type } = req.body;
 
   if (
@@ -349,7 +350,7 @@ router.get("/cache-status", (req, res) => {
   });
 });
 
-router.post("/uploadSyllabus", async (req, res) => {
+router.post("/uploadSyllabus", requireTeacher, async (req, res) => {
   const { jsonData, subject, banding, level, paper_name } = req.body;
 
   const client = await pool.connect();

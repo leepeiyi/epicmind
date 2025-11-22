@@ -71,7 +71,14 @@ export default {
         // Dispatch a custom event to notify components that user logged in
         window.dispatchEvent(new Event('storage'));
 
-        this.$router.push('/insert-paper');
+        // Redirect based on user role
+        if (user.role === 'admin') {
+          this.$router.push('/admin-panel');
+        } else if (user.role === 'teacher') {
+          this.$router.push('/insert-paper');
+        } else {
+          this.$router.push('/mathstery'); // Students go to Mathstery
+        }
       } catch (err) {
         alert(err.response?.data?.error || 'Login failed');
       }

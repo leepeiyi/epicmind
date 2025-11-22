@@ -14,6 +14,7 @@ import AllPapersEdit from "../pages/AllPapersEdit.vue";
 import Favourites from "../pages/Favourites.vue";
 import Mathstery from "../pages/Mathstery.vue";
 import CompletionLogs from "../pages/CompletionLogs.vue";
+import AdminPanel from "../pages/AdminPanel.vue";
 
 const routes = [
   {
@@ -112,6 +113,12 @@ const routes = [
     component: CompletionLogs,
     meta: { requiresAuth: true, requiresRole: "teacher" },
   },
+  {
+    path: "/admin-panel",
+    name: "AdminPanel",
+    component: AdminPanel,
+    meta: { requiresAuth: true, requiresRole: "admin" },
+  },
 ];
 
 const router = createRouter({
@@ -145,13 +152,25 @@ router.beforeEach((to, from, next) => {
 
   // Handle role-based access
   if (requiresRole && (!user || user.role !== to.meta.requiresRole)) {
-    // If page requires specific role that user doesn't have, redirect to safe page
-    return next({ path: "/insert-paper" });
+    // If page requires specific role that user doesn't have, redirect to role-appropriate page
+    if (user.role === 'admin') {
+      return next({ path: "/admin-panel" });
+    } else if (user.role === 'teacher') {
+      return next({ path: "/insert-paper" });
+    } else {
+      return next({ path: "/mathstery" });
+    }
   }
 
   // Redirect to dashboard if user is already logged in and tries to access login/register
   if (!requiresAuth && token && (to.path === "/" || to.path === "/register")) {
-    return next({ path: "/insert-paper" });
+    if (user.role === 'admin') {
+      return next({ path: "/admin-panel" });
+    } else if (user.role === 'teacher') {
+      return next({ path: "/insert-paper" });
+    } else {
+      return next({ path: "/mathstery" });
+    }
   }
 
   // Otherwise, proceed normally

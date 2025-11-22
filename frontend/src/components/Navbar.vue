@@ -78,6 +78,28 @@
           </div>
         </div>
 
+        <!-- Special handling for For Admin with dropdown -->
+        <div v-else-if="item.label === 'For Admin'" class="nav-item-dropdown" @mouseenter="showAdminDropdown = true"
+          @mouseleave="showAdminDropdown = false">
+          <div class="dropdown-trigger">
+            <component :is="item.icon" class="icon" />
+            <span class="label">{{ item.label }}</span>
+            <ChevronDown class="dropdown-arrow" />
+          </div>
+
+          <!-- For Admin Dropdown Menu -->
+          <div v-show="showAdminDropdown" class="dropdown-menu">
+            <router-link to="/admin-panel" class="dropdown-item" @click="showAdminDropdown = false">
+              <Shield class="dropdown-icon" />
+              <span>Admin Panel</span>
+            </router-link>
+            <router-link to="/paper-logs" class="dropdown-item" @click="showAdminDropdown = false">
+              <FolderOpen class="dropdown-icon" />
+              <span>Paper Logs</span>
+            </router-link>
+          </div>
+        </div>
+
         <!-- Regular nav items -->
         <router-link v-else :to="item.route" class="nav-item">
           <component :is="item.icon" class="icon" />
@@ -98,7 +120,7 @@
 </template>
 
 <script>
-import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut, ChevronDown, Upload, UserCheck, ClipboardList } from 'lucide-vue-next';
+import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut, ChevronDown, Upload, UserCheck, ClipboardList, Shield } from 'lucide-vue-next';
 
 export default {
   name: 'Navbar',
@@ -114,6 +136,7 @@ export default {
     Upload,
     UserCheck,
     ClipboardList,
+    Shield,
   },
   data() {
     return {
@@ -121,13 +144,14 @@ export default {
       showInsertDropdown: false,
       showQuizDropdown: false,
       showTutorsDropdown: false,
+      showAdminDropdown: false,
       navItems: [
-        { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper' },
+        { icon: 'Shield', label: 'For Admin', route: '/admin-panel', requiresRole: 'admin' }, // This will have dropdown
+        { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper', requiresRole: 'teacher' },
         { icon: 'BookOpen', label: 'Mathstery', route: '/mathstery' },
         { icon: 'FolderOpen', label: 'Topical Revision', route: '/generate-topical' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' }, // This will have dropdown
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' }, // This will have dropdown
-        { icon: 'FolderOpen', label: 'Paper Logs', route: '/paper-logs', requiresRole: 'admin' },
       ],
     };
   },

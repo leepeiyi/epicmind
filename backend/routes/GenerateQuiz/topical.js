@@ -428,20 +428,44 @@ router.post("/save", async (req, res) => {
     // Extract question IDs from the questions array
     const questionIds = questions.map((q) => q.id);
 
+    // Normalize and validate field lengths to prevent VARCHAR overflow
+    const normalizedQuizName = String(quizName || '').substring(0, 255);
+    const normalizedSubject = String(subject || '').substring(0, 255);
+    const normalizedBanding = String(banding || '').substring(0, 50);
+    const normalizedLevel = String(level || '').substring(0, 50);
+
+    // Handle topic - if it's an object, extract the label property
+    let normalizedTopic = topic;
+    if (typeof topic === 'object' && topic !== null) {
+      normalizedTopic = topic.label || JSON.stringify(topic);
+    }
+    normalizedTopic = String(normalizedTopic || '').substring(0, 255);
+
+    // Segmented questions should be stored as JSONB, but we'll stringify for now
+    // and ensure it's within reasonable limits
+    const segmentedQuestionsJson = segmented_questions ? JSON.stringify(segmented_questions) : null;
+
+    // Log field lengths for debugging
+    console.log(`📝 Field lengths - Name: ${normalizedQuizName.length}, Subject: ${normalizedSubject.length}, Topic: ${normalizedTopic.length}, Segmented: ${segmentedQuestionsJson?.length || 0}`);
+
+    if (segmentedQuestionsJson && segmentedQuestionsJson.length > 255) {
+      console.warn(`⚠️ Segmented questions JSON is ${segmentedQuestionsJson.length} chars - may need TEXT column type`);
+    }
+
     // Insert quiz with the teacher_id and segmented questions
     const quizInsertResult = await pool.query(
       `INSERT INTO quiz_folders (
-                name, 
-                subject, 
-                banding, 
-                level, 
+                name,
+                subject,
+                banding,
+                level,
                 topic,
                 question_ids,
                 teacher_id,
                 segmented_questions,
                 created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) RETURNING id`,
-      [quizName, subject, banding, level, topic, questionIds, teacher_id, segmented_questions ? JSON.stringify(segmented_questions) : null]
+      [normalizedQuizName, normalizedSubject, normalizedBanding, normalizedLevel, normalizedTopic, questionIds, teacher_id, segmentedQuestionsJson]
     );
 
     const quizId = quizInsertResult.rows[0].id;

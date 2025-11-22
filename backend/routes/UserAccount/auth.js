@@ -30,18 +30,34 @@ client.connect((err) => {
   }
 });
 
-// === USER REGISTRATION ===
+// === USER REGISTRATION (STUDENTS ONLY) ===
 router.post("/register", async (req, res) => {
   const { name, email, password, role, parentEmail } = req.body;
+
+  // Only allow student registration from public endpoint
+  if (role !== 'student') {
+    return res.status(403).json({
+      error: "Access denied",
+      message: "Teacher accounts must be created by an administrator. Please contact support."
+    });
+  }
+
+  // Validate parent email is provided for students
+  if (!parentEmail) {
+    return res.status(400).json({
+      error: "Parent email is required for student registration"
+    });
+  }
+
   try {
     const hashed = await bcrypt.hash(password, 10);
     const result = await client.query(
       `INSERT INTO users (name, email, password, role, parent_email)
              VALUES ($1, $2, $3, $4, $5)
              RETURNING id, name, email, role`,
-      [name, email, hashed, role, parentEmail || null]
+      [name, email, hashed, 'student', parentEmail]
     );
-    res.status(201).json({ message: "User created", user: result.rows[0] });
+    res.status(201).json({ message: "Student account created successfully", user: result.rows[0] });
   } catch (err) {
     console.error(err.message);
     res.status(400).json({ error: "Registration failed", detail: err.message });
@@ -165,6 +181,55 @@ router.post("/reset-password", async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: "Reset failed" });
+  }
+});
+
+// === ADMIN-ONLY: CREATE TEACHER ACCOUNT ===
+const requireAdmin = require("../../middleware/require-admin");
+
+router.post("/admin/create-teacher", requireAdmin, async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({
+      error: "Missing required fields",
+      message: "Name, email, and password are required"
+    });
+  }
+
+  try {
+    // Check if email already exists
+    const existingUser = await client.query(
+      "SELECT id FROM users WHERE email = $1",
+      [email]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({
+        error: "Email already exists",
+        message: "A user with this email already exists"
+      });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+    const result = await client.query(
+      `INSERT INTO users (name, email, password, role, parent_email)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, name, email, role`,
+      [name, email, hashed, 'teacher', null]
+    );
+
+    console.log(`✅ Admin ${req.user.id} created teacher account: ${email}`);
+    res.status(201).json({
+      message: "Teacher account created successfully",
+      user: result.rows[0]
+    });
+  } catch (err) {
+    console.error("❌ Error creating teacher account:", err.message);
+    res.status(500).json({
+      error: "Failed to create teacher account",
+      detail: err.message
+    });
   }
 });
 

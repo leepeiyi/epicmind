@@ -8,6 +8,7 @@ const axios = require("axios");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
+const requireTeacher = require("../../middleware/require-teacher");
 require("dotenv").config();
 
 const s3 = new S3Client({
@@ -294,7 +295,7 @@ async function matchAnswersWithGemini(questions, answerKeyMarkdown) {
 // ===== IMAGE UPLOAD ROUTES =====
 
 // Route to upload single image
-router.post("/upload/image", upload.single("image"), async (req, res) => {
+router.post("/upload/image", requireTeacher, upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No image file provided" });
@@ -364,7 +365,7 @@ router.post("/upload/image", upload.single("image"), async (req, res) => {
 });
 
 // Route to upload multiple images
-router.post("/upload/images", upload.array("images", 10), async (req, res) => {
+router.post("/upload/images", requireTeacher, upload.array("images", 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: "No image files provided" });
@@ -463,7 +464,7 @@ router.get("/upload/info", (req, res) => {
 // ===== EXISTING MARKDOWN PROCESSING ROUTES =====
 
 // ROUTE 1: Preview route - extract questions and optionally match answers
-router.post("/preview", async (req, res) => {
+router.post("/preview", requireTeacher, async (req, res) => {
   try {
     const {
       markdown_content,
@@ -573,7 +574,7 @@ router.post("/preview", async (req, res) => {
 });
 
 // ROUTE 2: Process route - for when user wants to save after preview
-router.post("/process", async (req, res) => {
+router.post("/process", requireTeacher, async (req, res) => {
   try {
     const {
       questions, // Pre-extracted questions from preview
@@ -692,7 +693,7 @@ router.post("/process", async (req, res) => {
 });
 
 // ROUTE 3: Direct process route (for backward compatibility - processes markdown directly)
-router.post("/process-direct", async (req, res) => {
+router.post("/process-direct", requireTeacher, async (req, res) => {
   try {
     const {
       markdown_content,

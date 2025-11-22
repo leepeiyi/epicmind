@@ -14,6 +14,7 @@ const { PDFDocument } = require("pdf-lib");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const { Pool } = require("pg");
+const requireTeacher = require("../../middleware/require-teacher");
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -203,7 +204,7 @@ router.post("/test/batch-params", upload.single("pdf"), async (req, res) => {
   }
 });
 
-router.post("/split_batch", upload.single("pdf"), async (req, res) => {
+router.post("/split_batch", requireTeacher, upload.single("pdf"), async (req, res) => {
   try {
     const { startPage, endPage } = req.body;
     const start = parseInt(startPage, 10);
@@ -248,6 +249,7 @@ router.post("/split_batch", upload.single("pdf"), async (req, res) => {
 
 router.post(
   "/upload_pdf_to_mathpix",
+  requireTeacher,
   upload.single("pdf"),
   async (req, res) => {
     try {
@@ -361,7 +363,7 @@ router.get("/mathpix/markdown/:pdf_id", async (req, res) => {
   }
 });
 
-router.post("/extract_questions_from_mmd", async (req, res) => {
+router.post("/extract_questions_from_mmd", requireTeacher, async (req, res) => {
   try {
     const {
       pdf_id,
@@ -586,7 +588,7 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
 });
 
 // Extract answers from Mathpix MMD
-router.post("/extract_questions_from_mmd", async (req, res) => {
+router.post("/extract_questions_from_mmd", requireTeacher, async (req, res) => {
   try {
     const {
       pdf_id,
@@ -840,7 +842,7 @@ router.post("/extract_questions_from_mmd", async (req, res) => {
   }
 });
 
-router.post("/update_answer_keys_direct", async (req, res) => {
+router.post("/update_answer_keys_direct", requireTeacher, async (req, res) => {
   try {
     const { paper_name, answers } = req.body;
 
@@ -972,7 +974,7 @@ router.post("/update_answer_keys_direct", async (req, res) => {
 // === Step 2: Upload extracted image paths to your S3 ===
 
 // === Complete Fixed upload_extracted_images_to_s3 Route ===
-router.post("/upload_extracted_images_to_s3", async (req, res) => {
+router.post("/upload_extracted_images_to_s3", requireTeacher, async (req, res) => {
   try {
     const {
       paper_name,
@@ -1494,7 +1496,7 @@ function generateFinalStats(questions) {
 }
 
 // Helper function to update existing papers with S3 image replacements
-router.post("/update_paper_image_urls", async (req, res) => {
+router.post("/update_paper_image_urls", requireTeacher, async (req, res) => {
   try {
     const { paper_name } = req.body;
 
@@ -1645,6 +1647,7 @@ router.get("/debug/paper_image_urls/:paper_name", async (req, res) => {
 
 router.post(
   "/extract_answers_from_pdf",
+  requireTeacher,
   upload.single("pdf"),
   async (req, res) => {
     try {
@@ -1908,6 +1911,7 @@ ${pdfText}
 // Enhanced route that can handle both PDF text extraction AND OCR via Mathpix
 router.post(
   "/extract_answers_smart",
+  requireTeacher,
   upload.single("pdf"),
   async (req, res) => {
     try {
@@ -2016,7 +2020,7 @@ router.get("/markdown/:pdf_id", async (req, res) => {
   }
 });
 
-router.post("/image_to_s3", upload.single("image"), async (req, res) => {
+router.post("/image_to_s3", requireTeacher, upload.single("image"), async (req, res) => {
   try {
     const file = req.file;
     const { paper_name, question_number } = req.body;
