@@ -75,6 +75,10 @@
               <ClipboardList class="dropdown-icon" />
               <span>Completion Logs</span>
             </router-link>
+            <router-link to="/topic-tags" class="dropdown-item" @click="showTutorsDropdown = false">
+              <Tag class="dropdown-icon" />
+              <span>Topic Tags</span>
+            </router-link>
           </div>
         </div>
 
@@ -120,7 +124,7 @@
 </template>
 
 <script>
-import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut, ChevronDown, Upload, UserCheck, ClipboardList, Shield } from 'lucide-vue-next';
+import { FileText, BookOpen, FolderOpen, Star, HelpCircle, FilePlus, LogOut, ChevronDown, Upload, UserCheck, ClipboardList, Shield, Tag } from 'lucide-vue-next';
 
 export default {
   name: 'Navbar',
@@ -137,6 +141,7 @@ export default {
     UserCheck,
     ClipboardList,
     Shield,
+    Tag,
   },
   data() {
     return {

@@ -15,6 +15,7 @@ import Favourites from "../pages/Favourites.vue";
 import Mathstery from "../pages/Mathstery.vue";
 import CompletionLogs from "../pages/CompletionLogs.vue";
 import AdminPanel from "../pages/AdminPanel.vue";
+import TopicTags from "../pages/TopicTags.vue";
 
 const routes = [
   {
@@ -118,6 +119,12 @@ const routes = [
     name: "AdminPanel",
     component: AdminPanel,
     meta: { requiresAuth: true, requiresRole: "admin" },
+  },
+  {
+    path: "/topic-tags",
+    name: "TopicTags",
+    component: TopicTags,
+    meta: { requiresAuth: true, requiresRole: "teacher" },
   },
 ];
 

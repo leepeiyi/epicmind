@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
-const topicData = require("../../data/topicData");
+// const topicData = require("../../data/topicData"); // DEPRECATED: Now using database
 const { Pool } = require("pg");
 const requireTeacher = require("../../middleware/require-teacher");
 
@@ -37,6 +37,48 @@ function getSectionKeys(level, subject, paperType) {
   }
 
   return keys;
+}
+
+// NEW: Fetch topics from database instead of static file
+async function getTopicsFromDatabase(levelKeys) {
+  const client = await pool.connect();
+
+  try {
+    // Build query to get topics for specified levels
+    const placeholders = levelKeys.map((_, i) => `$${i + 1}`).join(',');
+    const query = `
+      SELECT
+        t.id,
+        t.label,
+        t.hashtag,
+        t.description,
+        l.name as level_name,
+        ARRAY_AGG(sh.hashtag ORDER BY sh.hashtag) FILTER (WHERE sh.hashtag IS NOT NULL) as sub_hashtags
+      FROM topics t
+      JOIN levels l ON t.level_id = l.id
+      LEFT JOIN sub_hashtags sh ON t.id = sh.topic_id
+      WHERE l.name IN (${placeholders})
+      GROUP BY t.id, t.label, t.hashtag, t.description, l.name
+      ORDER BY l.name, t.label
+    `;
+
+    const result = await client.query(query, levelKeys);
+
+    // Format data to match the old topicData structure
+    const topics = result.rows.map(row => ({
+      label: row.label,
+      hashtag: row.hashtag,
+      description: row.description,
+      subHashtags: row.sub_hashtags || []
+    }));
+
+    return topics;
+  } catch (error) {
+    console.error("❌ Error fetching topics from database:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Switched back to Gemini with aggressive caching to avoid quota issues
@@ -242,21 +284,30 @@ router.post("/match-topics", requireTeacher, async (req, res) => {
   }
 
   const sectionKeys = getSectionKeys(level, subject, paper_type);
-  const validKeys = sectionKeys.filter((key) => topicData[key]);
 
-  if (validKeys.length === 0) {
+  if (sectionKeys.length === 0) {
     return res
       .status(400)
       .json({ error: `No topic data found for level/subject combination.` });
   }
 
-  // ✅ Merge all topics
-  const topics = validKeys.flatMap((key) => topicData[key]);
-  console.log("Merged keys:", validKeys, "| Total topics:", topics.length);
+  // ✅ Fetch topics from database instead of static file
+  let topics;
+  try {
+    topics = await getTopicsFromDatabase(sectionKeys);
+    console.log("Fetched from database - Keys:", sectionKeys, "| Total topics:", topics.length);
+  } catch (error) {
+    console.error("❌ Failed to fetch topics from database:", error);
+    return res.status(500).json({ error: "Failed to fetch topics from database" });
+  }
+
+  if (topics.length === 0) {
+    return res.status(400).json({ error: "No topics found in database for this level/subject combination" });
+  }
 
   try {
     // Create cache key for this set of topics
-    const cacheKey = validKeys.join("-");
+    const cacheKey = sectionKeys.join("-");
     let topicEmbeddings;
 
     // Check if we have cached embeddings for these topics
@@ -315,10 +366,11 @@ router.post("/match-topics", requireTeacher, async (req, res) => {
       questions: results,
       metadata: {
         total_questions: questions.length,
-        topics_used: validKeys,
+        topics_used: sectionKeys,
         total_topics: topics.length,
         processing_method: "sequential",
         cache_used: topicEmbeddingsCache.has(cacheKey),
+        data_source: "database", // NEW: Indicate we're using database
         timestamp: new Date().toISOString(),
       },
     };

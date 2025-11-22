@@ -103,6 +103,10 @@ app.use("/api/topic-label", topicLabelRoutes);
 
 const completionLogRoutes = require("./routes/Logs/completionLog");
 app.use("/api/completion-log", completionLogRoutes);
+
+const topicsRoutes = require("./routes/topics");
+app.use("/api/topics", topicsRoutes);
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
