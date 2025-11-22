@@ -180,6 +180,7 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import FavouriteButton from '../components/FavouriteButton.vue';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'Favourites',
@@ -310,7 +311,7 @@ export default {
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error("❌ API Error:", errorData);
-                    alert("Failed to load topic questions.");
+                    toast.error("Failed to load topic questions.");
                     return;
                 }
 
@@ -327,7 +328,7 @@ export default {
 
             } catch (err) {
                 console.error("❌ Fetch failed:", err);
-                alert("An error occurred while loading topic questions.");
+                toast.error("An error occurred while loading topic questions.");
             }
         },
 
@@ -343,7 +344,7 @@ export default {
             }
 
             if (!userId) {
-                alert("User session missing. Please log in again.");
+                toast.error("User session missing. Please log in again.");
                 this.loadingFavorites = false;
                 return;
             }
@@ -366,7 +367,7 @@ export default {
                 this.myFavorites = data.favorites || [];
             } catch (error) {
                 console.error("❌ Error loading favorites:", error);
-                alert("Failed to load your favorites");
+                toast.error("Failed to load your favorites");
             } finally {
                 this.loadingFavorites = false;
             }
@@ -399,7 +400,7 @@ export default {
             }
 
             if (!userId) {
-                alert("User session missing. Please log in again.");
+                toast.error("User session missing. Please log in again.");
                 this.loadingQuestions = false;
                 return;
             }
@@ -418,7 +419,7 @@ export default {
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error("❌ API Error:", errorData);
-                    alert("Failed to load favorite questions.");
+                    toast.error("Failed to load favorite questions.");
                     return;
                 }
 
@@ -434,7 +435,7 @@ export default {
 
             } catch (error) {
                 console.error("❌ Error loading favorite questions:", error);
-                alert("Failed to load questions.");
+                toast.error("Failed to load questions.");
             } finally {
                 this.loadingQuestions = false;
             }
@@ -450,7 +451,7 @@ export default {
             }
 
             if (!userId) {
-                alert("User session missing. Please log in again.");
+                toast.error("User session missing. Please log in again.");
                 return;
             }
 
@@ -485,7 +486,7 @@ export default {
 
             } catch (err) {
                 console.error("❌ Request failed:", err);
-                alert("Failed to remove favorite. Please try again.");
+                toast.error("Failed to remove favorite. Please try again.");
             }
         },
 
@@ -499,7 +500,7 @@ export default {
             }
 
             if (!userId || !this.selectedFavorite) {
-                alert("Session missing or topic not selected.");
+                toast.error("Session missing or topic not selected.");
                 return;
             }
 
@@ -522,7 +523,7 @@ export default {
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error("❌ Backend error:", errorData);
-                    alert("Failed to remove from favorites.");
+                    toast.error("Failed to remove from favorites.");
                     return;
                 }
 
@@ -540,7 +541,7 @@ export default {
 
             } catch (err) {
                 console.error("❌ Request failed:", err);
-                alert("Failed to remove favorite. Please try again.");
+                toast.error("Failed to remove favorite. Please try again.");
             }
         },
 

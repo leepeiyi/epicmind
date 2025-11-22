@@ -94,6 +94,7 @@
 import Navbar from '../components/Navbar.vue';
 import TopicSelector from '../components/TopicSelector.vue';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     components: {
@@ -455,7 +456,7 @@ export default {
         // Vetting methods
         async markAsVetted() {
             if (!this.selectedPaper || !this.selectedQuestions.length) {
-                alert('No paper or questions selected');
+                toast.error('No paper or questions selected');
                 return;
             }
 
@@ -482,15 +483,15 @@ export default {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    alert(`✅ ${this.selectedPaper} has been approved and metadata saved!`);
+                    toast.success(`${this.selectedPaper} has been approved and metadata saved!`);
                     this.closeEditor();
                     this.loadPapers();
                 } else {
-                    alert(`❌ Failed to approve paper: ${data.error}`);
+                    toast.error(`Failed to approve paper: ${data.error}`);
                 }
             } catch (error) {
                 console.error('❌ Failed to mark paper as vetted:', error);
-                alert('❌ Failed to approve paper');
+                toast.error('Failed to approve paper');
             } finally {
                 this.isUpdating = false;
             }
@@ -517,14 +518,14 @@ export default {
                 const data = await res.json();
 
                 if (res.ok && data.success) {
-                    alert(`🔄 ${paperName} has been sent back for vetting`);
+                    toast.success(`${paperName} has been sent back for vetting`);
                     this.loadPapers();
                 } else {
-                    alert(`❌ Failed to revert paper: ${data.error}`);
+                    toast.error(`Failed to revert paper: ${data.error}`);
                 }
             } catch (error) {
                 console.error('❌ Failed to revert paper:', error);
-                alert('❌ Failed to revert paper');
+                toast.error('Failed to revert paper');
             }
         },
 
@@ -554,15 +555,15 @@ export default {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert('✅ Metadata saved and paper approved!');
+                    toast.success('Metadata saved and paper approved!');
                     this.loadPapers();
                     this.closeEditor();
                 } else {
-                    alert(`❌ Save failed: ${data.error}`);
+                    toast.error(`Save failed: ${data.error}`);
                 }
             } catch (error) {
                 console.error('❌ Failed to save updates:', error);
-                alert('❌ Failed to save updates');
+                toast.error('Failed to save updates');
             }
         }
     }

@@ -56,6 +56,7 @@
 <script>
 import axios from 'axios';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 export default {
   name: 'AssignQuizModal',
   props: {
@@ -215,12 +216,12 @@ export default {
           throw new Error('You must be logged in to assign quizzes');
         }
         if (!this.newAssignments.length && !this.removedAssignments.length) {
-          alert("No changes to save.");
+          toast.info("No changes to save.");
           return;
         }
 
         if (!this.dueDate) {
-          alert("Please set a due date before saving.");
+          toast.warning("Please set a due date before saving.");
           return;
         }
 
@@ -252,7 +253,7 @@ export default {
         this.close();
       } catch (err) {
         console.error('Failed to save assignments:', err);
-        alert(err.message || 'Failed to save assignments. Please try again.');
+        toast.error(err.message || 'Failed to save assignments. Please try again.');
       } finally {
         this.saving = false;
       }

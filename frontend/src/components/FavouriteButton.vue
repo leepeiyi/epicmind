@@ -11,6 +11,7 @@
 
 <script>
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'FavoriteButton',
@@ -104,7 +105,7 @@ export default {
             try {
                 const userId = this.getUserId();
                 if (!userId) {
-                    alert("User not logged in or session expired.");
+                    toast.error("User not logged in or session expired.");
                     this.loading = false;
                     return;
                 }
@@ -146,7 +147,7 @@ export default {
                 }
             } catch (error) {
                 console.error('❌ Error toggling favorite:', error);
-                alert('Failed to update favorite. Please try again.');
+                toast.error('Failed to update favorite. Please try again.');
             } finally {
                 this.loading = false;
             }

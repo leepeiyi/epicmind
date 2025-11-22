@@ -21,6 +21,7 @@
 </template>
 
 <script>
+import { toast } from 'vue-sonner';
 export default {
   name: "LatexConverter",
   data() {
@@ -32,7 +33,7 @@ export default {
   methods: {
     convertToLatex() {
       if (!this.textToConvert.trim()) {
-        alert('Please enter a math expression to convert');
+        toast.warning('Please enter a math expression to convert');
         return;
       }
 
@@ -63,10 +64,10 @@ export default {
 
     copyToClipboard(text) {
       navigator.clipboard.writeText(text)
-        .then(() => alert('Copied to clipboard!'))
+        .then(() => toast.success('Copied to clipboard!'))
         .catch(err => {
           console.error('Failed to copy:', err);
-          alert('Failed to copy to clipboard');
+          toast.error('Failed to copy to clipboard');
         });
     }
   }

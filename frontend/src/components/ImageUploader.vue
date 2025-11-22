@@ -56,6 +56,7 @@
 
 <script>
 import API_BASE_URL from '../config/api';
+import { toast } from 'vue-sonner';
 export default {
     name: 'ImageUploader',
     emits: ['insert-markdown'],
@@ -85,11 +86,11 @@ export default {
         },
         async uploadSingleImage(file) {
             if (!file.type.startsWith('image/')) {
-                alert(`${file.name} is not an image file.`);
+                toast.error(`${file.name} is not an image file.`);
                 return;
             }
             if (file.size > 10 * 1024 * 1024) {
-                alert(`${file.name} is too large. Maximum size is 10MB.`);
+                toast.error(`${file.name} is too large. Maximum size is 10MB.`);
                 return;
             }
             const progressItem = {
@@ -122,7 +123,7 @@ export default {
             } catch (error) {
                 console.error('❌ Upload error:', error);
                 progressItem.status = 'failed';
-                alert(`Failed to upload ${file.name}: ${error.message}`);
+                toast.error(`Failed to upload ${file.name}: ${error.message}`);
             }
             setTimeout(() => {
                 const index = this.uploadProgress.indexOf(progressItem);
@@ -180,9 +181,9 @@ export default {
             textArea.select();
             try {
                 document.execCommand('copy');
-                alert('Link copied to clipboard!');
+                toast.success('Link copied to clipboard!');
             } catch (err) {
-                alert('Failed to copy link');
+                toast.error('Failed to copy link');
             }
             document.body.removeChild(textArea);
         },

@@ -291,6 +291,7 @@ import {
 } from 'lucide-vue-next';
 import axios from 'axios';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
   name: 'TopicTags',
@@ -582,7 +583,7 @@ export default {
     async saveTopic() {
       // Validate hashtag format
       if (!this.formData.hashtag.startsWith('#')) {
-        alert('Hashtag must start with #');
+        toast.error('Hashtag must start with #');
         return;
       }
 
@@ -617,13 +618,13 @@ export default {
           );
 
           console.log('✅ Topic updated successfully');
-          alert('Topic updated successfully!');
+          toast.success('Topic updated successfully!');
         } else {
           // Create new topic
           // First, get the level_id
           const levelId = await this.getLevelId(this.formData.level);
           if (!levelId) {
-            alert('Failed to get level ID. Please try again.');
+            toast.error('Failed to get level ID. Please try again.');
             this.saving = false;
             return;
           }
@@ -641,7 +642,7 @@ export default {
           );
 
           console.log('✅ Topic created successfully');
-          alert('Topic created successfully!');
+          toast.success('Topic created successfully!');
         }
 
         // Refresh data and close modal
@@ -649,7 +650,7 @@ export default {
         this.closeModal();
       } catch (err) {
         console.error('❌ Failed to save topic:', err);
-        alert(err.response?.data?.error || 'Failed to save topic. Please try again.');
+        toast.error(err.response?.data?.error || 'Failed to save topic. Please try again.');
       } finally {
         this.saving = false;
       }
@@ -680,14 +681,14 @@ export default {
         });
 
         console.log('✅ Topic deleted successfully');
-        alert('Topic deleted successfully!');
+        toast.success('Topic deleted successfully!');
 
         // Refresh data and close modal
         await this.fetchTopicData();
         this.closeDeleteConfirm();
       } catch (err) {
         console.error('❌ Failed to delete topic:', err);
-        alert(err.response?.data?.error || 'Failed to delete topic. Please try again.');
+        toast.error(err.response?.data?.error || 'Failed to delete topic. Please try again.');
       } finally {
         this.deleting = false;
       }
@@ -1211,20 +1212,30 @@ h1 {
 }
 
 .cancel-btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.875rem 2rem;
   background: white;
   color: #666;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   transition: all 0.2s;
+  min-width: 140px;
 }
 
 .cancel-btn:hover {
   background: #f5f5f5;
   border-color: #999;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.delete-modal .form-actions {
+  justify-content: center;
+  padding-top: 1.5rem;
+  border-top: none;
+  gap: 1rem;
 }
 
 .save-btn {
@@ -1250,57 +1261,69 @@ h1 {
 
 /* Delete Modal */
 .delete-modal {
-  max-width: 450px;
+  max-width: 480px;
 }
 
 .delete-content {
-  padding: 2rem 1.5rem;
+  padding: 2.5rem 2rem;
   text-align: center;
 }
 
 .warning-icon {
-  width: 64px;
-  height: 64px;
-  color: #ff9800;
-  margin: 0 auto 1rem;
+  width: 56px;
+  height: 56px;
+  color: #f44336;
+  margin: 0 auto 1.5rem;
+  stroke-width: 2;
 }
 
 .delete-content p {
-  margin: 0.5rem 0;
-  color: #666;
+  margin: 0;
+  color: #555;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .topic-name {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #333;
-  margin: 1rem 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #d32f2f;
+  margin: 1.25rem 0;
+  padding: 0.5rem 1rem;
+  background: #ffebee;
+  border-radius: 6px;
+  display: inline-block;
 }
 
 .warning-text {
-  font-size: 0.9rem;
-  color: #d32f2f;
+  font-size: 0.875rem;
+  color: #757575;
   font-weight: 500;
+  margin-top: 1rem;
 }
 
 .delete-btn {
-  padding: 0.75rem 1.5rem;
+  padding: 0.875rem 2rem;
   background: #d32f2f;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 15px;
   font-weight: 600;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  min-width: 140px;
 }
 
 .delete-btn:hover:not(:disabled) {
   background: #b71c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3);
 }
 
 .delete-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 </style>

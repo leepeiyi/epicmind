@@ -42,6 +42,7 @@ import studentImage from '../assets/student-illustration.png';
 import logoImage from '../assets/epic-mind-logo.png';
 import axios from 'axios';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
   name: 'LoginPage',
@@ -80,7 +81,7 @@ export default {
           this.$router.push('/mathstery'); // Students go to Mathstery
         }
       } catch (err) {
-        alert(err.response?.data?.error || 'Login failed');
+        toast.error(err.response?.data?.error || 'Login failed');
       }
     },
   },

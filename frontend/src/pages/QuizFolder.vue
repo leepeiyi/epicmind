@@ -270,7 +270,7 @@
 import Navbar from '../components/Navbar.vue';
 import API_BASE_URL from '../config/api.js';
 import AssignQuizModal from '../components/AssignQuiz.vue';
-
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'QuizFolder',
@@ -615,11 +615,11 @@ export default {
                 await this.fetchStudents();
 
                 // Close the modal
-                alert('Student list updated successfully!');
+                toast.success('Student list updated successfully!');
                 this.closeAddStudentModal();
             } catch (err) {
                 console.error('❌ Failed to update student list:', err);
-                alert(err.message || 'Failed to update student list. Please try again.');
+                toast.error(err.message || 'Failed to update student list. Please try again.');
             } finally {
                 this.savingStudentLinks = false;
             }
@@ -686,10 +686,10 @@ export default {
 
                 // Remove the deleted quiz from the local array
                 this.quizzes = this.quizzes.filter(quiz => quiz.id !== quizId);
-                alert('Quiz deleted successfully');
+                toast.success('Quiz deleted successfully');
             } catch (error) {
                 console.error('❌ Failed to delete quiz:', error);
-                alert('Failed to delete quiz. Please try again later.');
+                toast.error('Failed to delete quiz. Please try again later.');
             }
 
             this.activeDropdown = null;
@@ -734,7 +734,7 @@ export default {
                     // Option 2: Create new student account
                     await this.createNewStudentAccount();
                 } else {
-                    alert('Please provide either an existing student email or complete the new student form.');
+                    toast.info('Please provide either an existing student email or complete the new student form.');
                     this.addingStudent = false;
                     return;
                 }
@@ -745,7 +745,7 @@ export default {
                 this.resetForm();
             } catch (err) {
                 console.error('❌ Failed to add student:', err);
-                alert(err.message || 'Failed to add student. Please try again.');
+                toast.error(err.message || 'Failed to add student. Please try again.');
             } finally {
                 this.addingStudent = false;
             }
@@ -821,7 +821,7 @@ export default {
                 this.students = this.students.filter(s => s.id !== studentId);
             } catch (err) {
                 console.error('❌ Failed to remove student:', err);
-                alert(err.message || 'Failed to remove student. Please try again.');
+                toast.error(err.message || 'Failed to remove student. Please try again.');
             }
         },
 
@@ -899,7 +899,7 @@ export default {
                 this.timerQuestionCount = data.question_count || 0;
             } catch (err) {
                 console.error("❌ Failed to fetch quiz details:", err);
-                alert("Failed to load quiz info.");
+                toast.error("Failed to load quiz info.");
             }
         },
 
@@ -927,12 +927,12 @@ export default {
 
                 if (!response.ok) throw new Error("Failed to save timer");
 
-                alert("✅ Timer saved successfully!");
+                toast.success("Timer saved successfully!");
                 this.closeTimerModal();
                 this.fetchQuizFolders(); // refresh list
             } catch (err) {
                 console.error("❌ Timer save error:", err);
-                alert("Failed to save timer. Please try again.");
+                toast.error("Failed to save timer. Please try again.");
             } finally {
                 this.savingTimer = false;
             }
