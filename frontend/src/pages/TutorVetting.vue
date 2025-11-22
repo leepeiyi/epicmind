@@ -74,24 +74,15 @@
                         {{ level }}
                     </button>
                 </div>
-                <label>Topic:</label>
-                <select v-model="q.topic_label" @change="updateSubTopicSuggestions(q)" class="topic-select">
-                    <option value="">Select Topic</option>
-                    <option v-for="topic in getTopicsForLevel()" :key="topic.label" :value="topic.label">
-                        {{ topic.label }}
-                    </option>
-                </select>
-                
-                <label>Sub Topics:</label>
-                <div class="tags">
-                    <span v-for="tag in getSubHashtagsForTopic(q.topic_label)" :key="tag" class="tag"
-                        :class="{ selected: q.sub_topics && q.sub_topics.includes(tag) }" @click="toggleSubTopic(q, tag)">
-                        {{ tag }}
-                    </span>
-                    <span v-if="!q.topic_label" class="no-topic-hint">Please select a topic first to see sub-topics</span>
-                </div>
 
-             
+                <!-- New hierarchical topic selector -->
+                <TopicSelector
+                    :initial-topic="q.topic_label"
+                    :initial-sub-topics="q.sub_topics || []"
+                    :detected-level="currentLevel"
+                    :detected-subject="currentSubject"
+                    @update="handleTopicUpdate(q, $event)"
+                />
             </div>
 
             <button @click="saveUpdates" class="save-btn">💾 Save Changes & Approve</button>
@@ -101,20 +92,22 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import TopicSelector from '../components/TopicSelector.vue';
 import API_BASE_URL from '../config/api.js';
-import { mathTopicsData } from '../components/topicData.js';
 
 export default {
-    components: { Navbar },
+    components: {
+        Navbar,
+        TopicSelector
+    },
     data() {
         return {
             unvettedPapers: [],
             vettedPapers: [],
             selectedPaper: '',
             selectedQuestions: [],
-            suggestedTags: ['Equations', 'Polynomials', 'Fractions', 'Quadratics', 'Simplification'],
-            mathTopicsData: mathTopicsData,
             currentLevel: '',
+            currentSubject: '', // Add subject detection
             isUpdating: false // Add loading state for vetting operations
         }
     },
@@ -417,9 +410,21 @@ export default {
         },
         
         detectLevelFromQuestions(questions) {
-            // Try to detect level from questions data
+            // Try to detect level and subject from questions data
             if (questions && questions.length > 0) {
                 const firstQuestion = questions[0];
+
+                // Detect subject from question's subject field
+                if (firstQuestion.subject) {
+                    const subject = firstQuestion.subject.toLowerCase();
+                    if (subject.includes('a-math') || subject.includes('a math') || subject.includes('additional')) {
+                        this.currentSubject = 'amath';
+                    } else if (subject.includes('math')) {
+                        this.currentSubject = 'math';
+                    }
+                }
+
+                // Detect level
                 if (firstQuestion.level) {
                     // Map level to mathTopicsData key
                     const levelMap = {
@@ -431,35 +436,20 @@ export default {
                         'A Math Secondary 4': 'amathSec4'
                     };
                     this.currentLevel = levelMap[firstQuestion.level] || '';
+
+                    // If subject wasn't detected from subject field, try from level
+                    if (!this.currentSubject && this.currentLevel) {
+                        this.currentSubject = this.currentLevel.startsWith('amath') ? 'amath' : 'math';
+                    }
                 }
             }
         },
-        
-        getTopicsForLevel() {
-            if (!this.currentLevel || !this.mathTopicsData[this.currentLevel]) {
-                // Return all topics if level not detected
-                return Object.values(this.mathTopicsData).flat();
-            }
-            return this.mathTopicsData[this.currentLevel];
-        },
-        
-        getSubHashtagsForTopic(topicLabel) {
-            if (!topicLabel) return [];
-            
-            // Search across all levels for the topic
-            for (const level of Object.values(this.mathTopicsData)) {
-                const topic = level.find(t => t.label === topicLabel);
-                if (topic && topic.subHashtags) {
-                    return topic.subHashtags;
-                }
-            }
-            return [];
-        },
-        
-        updateSubTopicSuggestions(question) {
-            // This method is called when topic selection changes
-            // The sub-hashtags will be automatically updated through computed property
-            console.log('Topic selected:', question.topic_label);
+
+        // Handle topic selection updates from TopicSelector component
+        handleTopicUpdate(question, selection) {
+            console.log('Topic selection updated:', selection);
+            question.topic_label = selection.topic;
+            question.sub_topics = selection.subTopics;
         },
 
         // Vetting methods
@@ -471,10 +461,14 @@ export default {
 
             this.isUpdating = true;
             try {
+                const token = sessionStorage.getItem('token');
                 // Use your existing update-question-metadata endpoint which already sets vetted = true
                 const res = await fetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.selectedPaper,
                         questions: this.selectedQuestions.map(({ question_number, difficulty, sub_topics }) => ({
@@ -508,9 +502,13 @@ export default {
             }
 
             try {
+                const token = sessionStorage.getItem('token');
                 const res = await fetch(`${API_BASE_URL}/api/paper/revert-paper`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         paper_name: paperName
                     })
@@ -535,23 +533,20 @@ export default {
             this.selectedQuestions = [];
         },
 
-        // Question management methods
-        toggleSubTopic(question, tag) {
-            const idx = question.sub_topics.indexOf(tag);
-            if (idx === -1) question.sub_topics.push(tag);
-            else question.sub_topics.splice(idx, 1);
-        },
-
         async saveUpdates() {
             try {
+                const token = sessionStorage.getItem('token');
                 const res = await fetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.selectedPaper,
                         questions: this.selectedQuestions.map(({ question_number, difficulty, sub_topics, topic_label }) => ({
-                            question_number, 
-                            difficulty, 
+                            question_number,
+                            difficulty,
                             sub_topics,
                             topic_label  // Now including topic_label
                         }))
@@ -824,81 +819,6 @@ export default {
 
 .difficulty-buttons button.hard.active {
     background: #e74c3c;
-}
-
-.topic-select {
-    width: 100%;
-    padding: 0.5rem;
-    margin: 0.5rem 0;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 14px;
-    background: white;
-}
-
-.topic-select:focus {
-    outline: none;
-    border-color: #66cc99;
-    box-shadow: 0 0 0 2px rgba(102, 204, 153, 0.2);
-}
-
-.tags {
-    display: flex;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-    margin-top: 0.5rem;
-    min-height: 36px;
-    padding: 0.4rem;
-    background: linear-gradient(to bottom, #f8f9fa, #fff);
-    border-radius: 8px;
-    border: 1px solid #e0e4e8;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.tag {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid #d1d5db;
-    padding: 0.2rem 0.6rem;
-    border-radius: 20px;
-    cursor: pointer;
-    background: linear-gradient(to bottom, #ffffff, #f9fafb);
-    font-size: 11px;
-    font-weight: 500;
-    transition: all 0.15s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    text-transform: lowercase;
-    letter-spacing: 0.3px;
-    line-height: 1.2;
-    max-width: fit-content;
-}
-
-.tag.selected {
-    background: linear-gradient(135deg, #66cc99, #52a382);
-    color: white;
-    border-color: #4a9774;
-    box-shadow: 0 2px 4px rgba(82, 163, 130, 0.3);
-    font-weight: 600;
-}
-
-.tag:hover:not(.selected) {
-    background: linear-gradient(to bottom, #f3f4f6, #e5e7eb);
-    border-color: #9ca3af;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.tag:active {
-    transform: translateY(0);
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.no-topic-hint {
-    color: #9ca3af;
-    font-style: italic;
-    font-size: 11px;
-    padding: 0.2rem 0.4rem;
-    align-self: center;
 }
 
 .save-btn {
