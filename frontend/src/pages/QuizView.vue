@@ -161,6 +161,14 @@
                 <div class="question-content">
                     <div class="question-header">
                         <h2>Question {{ currentQuestion.question_number }}</h2>
+                        <button
+                            v-if="isTeacher"
+                            class="edit-question-btn"
+                            @click="openEditModal"
+                            title="Edit this question"
+                        >
+                            ✏️ Edit Question
+                        </button>
                     </div>
 
                     <!-- Loading state for question splitting -->
@@ -334,6 +342,14 @@
                 <button @click="goBack" class="back-btn">Back to Quizzes</button>
             </div>
         </div>
+
+        <!-- Question Edit Modal (for teachers) -->
+        <QuestionEditModal
+            :isOpen="showEditModal"
+            :question="editingQuestion"
+            @close="closeEditModal"
+            @saved="handleQuestionSaved"
+        />
     </div>
 </template>
 
@@ -342,10 +358,11 @@ import Navbar from '../components/Navbar.vue';
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 import MathEditor from '../components/MathEditor.vue';
+import QuestionEditModal from '../components/QuestionEditModal.vue';
 
 export default {
     name: 'QuizView',
-    components: { Navbar, MathEditor },
+    components: { Navbar, MathEditor, QuestionEditModal },
     data() {
         return {
             quizId: null,
@@ -386,7 +403,11 @@ export default {
             partResults: [],
             // API availability tracking
             apiLimitReached: false,
-            usingFallback: false
+            usingFallback: false,
+            // Question editing (for teachers)
+            showEditModal: false,
+            editingQuestion: null,
+            isTeacher: false
         };
     },
     watch: {
@@ -504,6 +525,7 @@ export default {
 
     created() {
         this.quizId = this.$route.params.id;
+        this.checkIfTeacher();
         this.fetchQuizData();
     },
     beforeUnmount() {
@@ -1060,12 +1082,12 @@ export default {
         localQuestionSplitter(question) {
             // Local fallback for splitting questions when API is unavailable
             console.log('🔧 Attempting local question splitting');
-            
+
             if (!question.question_text) return null;
-            
+
             const parts = [];
             const text = question.question_text;
-            
+
             // Common patterns for sub-questions
             const patterns = [
                 /\(([a-z])\)/gi,  // (a), (b), (c)
@@ -1073,7 +1095,7 @@ export default {
                 /\(([ivx]+)\)/gi, // (i), (ii), (iii)
                 /\b([ivx]+)\)/gi, // i), ii), iii)
             ];
-            
+
             // Try to find sub-parts in the question
             let foundParts = [];
             for (const pattern of patterns) {
@@ -1083,7 +1105,7 @@ export default {
                     break;
                 }
             }
-            
+
             if (foundParts.length > 1) {
                 // Split the question into parts based on found patterns
                 for (let i = 0; i < foundParts.length; i++) {
@@ -1091,22 +1113,22 @@ export default {
                     const label = match[0];
                     const startIndex = match.index;
                     const endIndex = i < foundParts.length - 1 ? foundParts[i + 1].index : text.length;
-                    
+
                     const partText = text.substring(startIndex + label.length, endIndex).trim();
-                    
+
                     // Try to extract answer from answer_key if available
                     let answer = null;
                     if (question.answer_key) {
                         try {
-                            const answerKey = typeof question.answer_key === 'string' 
-                                ? JSON.parse(question.answer_key) 
+                            const answerKey = typeof question.answer_key === 'string'
+                                ? JSON.parse(question.answer_key)
                                 : question.answer_key;
-                            
+
                             // Look for matching part in answer
                             const answerText = answerKey.correct_answer || '';
                             const answerPattern = new RegExp(`${label}\\s*([^,\\n]+)`, 'i');
                             const answerMatch = answerText.match(answerPattern);
-                            
+
                             if (answerMatch) {
                                 answer = answerMatch[1].trim();
                             }
@@ -1114,21 +1136,64 @@ export default {
                             console.warn('Could not parse answer key:', e);
                         }
                     }
-                    
+
                     parts.push({
                         part_label: label,
                         text: partText,
                         answer: answer
                     });
                 }
-                
+
                 console.log(`✅ Locally split into ${parts.length} parts`);
                 return parts;
             }
-            
+
             // If no multi-part structure found, return null (will be treated as single question)
             console.log('ℹ️ No multi-part structure detected locally');
             return null;
+        },
+
+        // Teacher role check
+        checkIfTeacher() {
+            const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+            this.isTeacher = user.role === 'teacher' || user.role === 'admin';
+        },
+
+        // Question editing methods (for teachers)
+        openEditModal() {
+            if (!this.isTeacher) return;
+            this.editingQuestion = { ...this.currentQuestion };
+            this.showEditModal = true;
+        },
+
+        closeEditModal() {
+            this.showEditModal = false;
+            this.editingQuestion = null;
+        },
+
+        handleQuestionSaved(updatedQuestion) {
+            // Update the question in the questions array
+            const index = this.questions.findIndex(q => q.id === updatedQuestion.id);
+            if (index !== -1) {
+                this.questions[index] = {
+                    ...this.questions[index],
+                    question_text: updatedQuestion.text || updatedQuestion.question_text,
+                    answer_options: updatedQuestion.options || updatedQuestion.answer_options,
+                    answer_key: updatedQuestion.answer_key || { correct_answer: updatedQuestion.answer },
+                    topic_label: updatedQuestion.topic || updatedQuestion.topic_label,
+                    difficulty_level: updatedQuestion.difficulty || updatedQuestion.difficulty_level,
+                    // Clear segmentation to force re-processing
+                    questionParts: null
+                };
+            }
+            this.closeEditModal();
+
+            // Re-render MathJax
+            this.$nextTick(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise();
+                }
+            });
         }
     }
 };
@@ -1990,6 +2055,24 @@ export default {
 .toggle-editor-btn:hover {
     background: #e6f3ec;
     border-color: #66CC99;
+}
+
+/* Edit Question Button (for teachers) */
+.edit-question-btn {
+    padding: 0.4rem 0.8rem;
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.edit-question-btn:hover {
+    background-color: #ffeeba;
+    border-color: #ffda6a;
 }
 
 @media (max-width: 768px) {

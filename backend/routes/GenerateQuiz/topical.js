@@ -631,6 +631,222 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Update a single question (for teachers to fix errors)
+router.put("/question/:questionId", async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const {
+      question_text,
+      answer_options,
+      answer_key,
+      topic_label,
+      difficulty_level,
+      sub_topic,
+      teacher_id // For audit trail
+    } = req.body;
+
+    // Validate required fields
+    if (!questionId) {
+      return res.status(400).json({
+        success: false,
+        error: "Question ID is required"
+      });
+    }
+
+    // Check if question exists
+    const existingQuestion = await pool.query(
+      "SELECT * FROM question WHERE id = $1",
+      [questionId]
+    );
+
+    if (existingQuestion.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Question not found"
+      });
+    }
+
+    // Build dynamic update query based on provided fields
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (question_text !== undefined) {
+      updates.push(`question_text = $${paramIndex}`);
+      values.push(question_text);
+      paramIndex++;
+    }
+
+    if (answer_options !== undefined) {
+      updates.push(`answer_options = $${paramIndex}`);
+      // Ensure it's stored as JSONB
+      values.push(typeof answer_options === 'string' ? answer_options : JSON.stringify(answer_options));
+      paramIndex++;
+    }
+
+    if (answer_key !== undefined) {
+      updates.push(`answer_key = $${paramIndex}`);
+      // Ensure it's stored as JSONB
+      values.push(typeof answer_key === 'string' ? answer_key : JSON.stringify(answer_key));
+      paramIndex++;
+    }
+
+    if (topic_label !== undefined) {
+      updates.push(`topic_label = $${paramIndex}`);
+      values.push(topic_label);
+      paramIndex++;
+    }
+
+    if (difficulty_level !== undefined) {
+      updates.push(`difficulty_level = $${paramIndex}`);
+      values.push(difficulty_level);
+      paramIndex++;
+    }
+
+    if (sub_topic !== undefined) {
+      updates.push(`sub_topic = $${paramIndex}`);
+      values.push(typeof sub_topic === 'string' ? sub_topic : JSON.stringify(sub_topic));
+      paramIndex++;
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No fields to update"
+      });
+    }
+
+    // Add question ID as last parameter
+    values.push(questionId);
+
+    const updateQuery = `
+      UPDATE question
+      SET ${updates.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `;
+
+    console.log(`📝 Updating question ${questionId} by teacher ${teacher_id || 'unknown'}`);
+
+    const result = await pool.query(updateQuery, values);
+    const updatedQuestion = result.rows[0];
+
+    // Process the returned question for response
+    let options = [];
+    if (updatedQuestion.answer_options) {
+      try {
+        options = typeof updatedQuestion.answer_options === 'string'
+          ? JSON.parse(updatedQuestion.answer_options)
+          : updatedQuestion.answer_options;
+      } catch (e) {
+        options = [];
+      }
+    }
+
+    let answerKey = {};
+    if (updatedQuestion.answer_key) {
+      try {
+        answerKey = typeof updatedQuestion.answer_key === 'string'
+          ? JSON.parse(updatedQuestion.answer_key)
+          : updatedQuestion.answer_key;
+      } catch (e) {
+        answerKey = {};
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: "Question updated successfully",
+      question: {
+        id: updatedQuestion.id,
+        text: updatedQuestion.question_text,
+        options: options,
+        answer: answerKey.correct_answer || '',
+        topic: updatedQuestion.topic_label,
+        difficulty: updatedQuestion.difficulty_level,
+        sub_topic: updatedQuestion.sub_topic
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error updating question:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Server error: " + error.message
+    });
+  }
+});
+
+// Get a single question by ID (for editing)
+router.get("/question/:questionId", async (req, res) => {
+  try {
+    const { questionId } = req.params;
+
+    const result = await pool.query(
+      "SELECT * FROM question WHERE id = $1",
+      [questionId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Question not found"
+      });
+    }
+
+    const row = result.rows[0];
+
+    // Process answer options
+    let options = [];
+    if (row.answer_options) {
+      try {
+        options = typeof row.answer_options === 'string'
+          ? JSON.parse(row.answer_options)
+          : row.answer_options;
+      } catch (e) {
+        options = [];
+      }
+    }
+
+    // Process answer key
+    let answerKey = {};
+    if (row.answer_key) {
+      try {
+        answerKey = typeof row.answer_key === 'string'
+          ? JSON.parse(row.answer_key)
+          : row.answer_key;
+      } catch (e) {
+        answerKey = {};
+      }
+    }
+
+    return res.json({
+      success: true,
+      question: {
+        id: row.id,
+        question_text: row.question_text,
+        answer_options: options,
+        answer_key: answerKey,
+        topic_label: row.topic_label,
+        difficulty_level: row.difficulty_level,
+        sub_topic: row.sub_topic,
+        image_paths: row.image_paths,
+        paper_name: row.paper_name,
+        subject: row.subject,
+        level: row.level,
+        banding: row.banding
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching question:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Server error: " + error.message
+    });
+  }
+});
+
 // Handle database connection errors
 pool.on("error", (err) => {
   console.error("Unexpected error on idle client", err);

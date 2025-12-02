@@ -151,7 +151,12 @@
                 <div class="preview-container">
                     <div class="preview-content">
                         <div v-for="(question, index) in generatedQuiz" :key="index" class="question-item" v-if="!showSegmentedPreview">
-                            <h3>Question {{ index + 1 }}</h3>
+                            <div class="question-header-row">
+                                <h3>Question {{ index + 1 }}</h3>
+                                <button class="edit-question-btn" @click="openEditModal(question, index)" title="Edit this question">
+                                    ✏️ Edit
+                                </button>
+                            </div>
                             <div class="question-text" v-html="sanitizeLatex(question.text)"></div>
 
 
@@ -234,18 +239,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Question Edit Modal -->
+        <QuestionEditModal
+            :isOpen="showEditModal"
+            :question="editingQuestion"
+            @close="closeEditModal"
+            @saved="handleQuestionSaved"
+        />
     </div>
 </template>
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import QuestionEditModal from '../components/QuestionEditModal.vue';
 import { mathTopicsData } from '../components/topicData';
 import API_BASE_URL from '../config/api.js';
 
 export default {
     name: 'GenerateQuiz',
     components: {
-        Navbar
+        Navbar,
+        QuestionEditModal
     },
     data() {
         return {
@@ -276,7 +291,10 @@ export default {
             favoritedQuestions: [],
             segmentedQuestions: {}, // Store pre-segmented questions
             showSegmentedPreview: false, // Toggle preview mode
-
+            // Question editing
+            showEditModal: false,
+            editingQuestion: null,
+            editingQuestionIndex: null
         };
     },
     computed: {
@@ -659,6 +677,43 @@ export default {
             }
         },
 
+        // Question editing methods
+        openEditModal(question, index) {
+            this.editingQuestion = { ...question };
+            this.editingQuestionIndex = index;
+            this.showEditModal = true;
+        },
+        closeEditModal() {
+            this.showEditModal = false;
+            this.editingQuestion = null;
+            this.editingQuestionIndex = null;
+        },
+        handleQuestionSaved(updatedQuestion) {
+            if (this.editingQuestionIndex !== null) {
+                // Update the question in the generatedQuiz array
+                this.generatedQuiz[this.editingQuestionIndex] = {
+                    ...this.generatedQuiz[this.editingQuestionIndex],
+                    text: updatedQuestion.text || updatedQuestion.question_text,
+                    options: updatedQuestion.options || updatedQuestion.answer_options,
+                    answer: updatedQuestion.answer,
+                    topic: updatedQuestion.topic || updatedQuestion.topic_label,
+                    difficulty: updatedQuestion.difficulty || updatedQuestion.difficulty_level
+                };
+
+                // Clear any cached segmentation for this question
+                if (this.segmentedQuestions[updatedQuestion.id]) {
+                    delete this.segmentedQuestions[updatedQuestion.id];
+                }
+            }
+            this.closeEditModal();
+
+            // Re-render MathJax
+            this.$nextTick(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise();
+                }
+            });
+        }
     },
     watch: {
         'form.topic'() {
@@ -967,6 +1022,38 @@ h1 {
     margin-bottom: 0;
     padding-bottom: 0;
     border-bottom: none;
+}
+
+.question-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.question-header-row h3 {
+    color: #66CC99;
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.edit-question-btn {
+    background: #fff;
+    border: 1px solid #ddd;
+    color: #666;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.edit-question-btn:hover {
+    background: #f0f8f4;
+    border-color: #66CC99;
+    color: #333;
 }
 
 .question-item h3 {
