@@ -853,4 +853,66 @@ pool.on("error", (err) => {
   process.exit(-1);
 });
 
+// Update a question's correct answer
+router.put("/question/:id/update-answer", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { correct_answer } = req.body;
+
+    if (!correct_answer) {
+      return res.status(400).json({
+        success: false,
+        error: "correct_answer is required"
+      });
+    }
+
+    // Get the current answer_key
+    const current = await pool.query(
+      "SELECT answer_key FROM question WHERE id = $1",
+      [id]
+    );
+
+    if (current.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Question not found"
+      });
+    }
+
+    // Parse current answer_key or create new one
+    let answerKey = {};
+    try {
+      answerKey = typeof current.rows[0].answer_key === "string"
+        ? JSON.parse(current.rows[0].answer_key)
+        : current.rows[0].answer_key || {};
+    } catch (e) {
+      answerKey = {};
+    }
+
+    // Update the correct_answer
+    answerKey.correct_answer = correct_answer;
+
+    // Save back to database
+    const result = await pool.query(
+      "UPDATE question SET answer_key = $1 WHERE id = $2 RETURNING *",
+      [JSON.stringify(answerKey), id]
+    );
+
+    console.log(`✅ Updated answer for question ${id} to: ${correct_answer}`);
+
+    res.json({
+      success: true,
+      message: "Answer updated successfully",
+      question: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error("❌ Error updating answer:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update answer"
+    });
+  }
+});
+
 module.exports = router;

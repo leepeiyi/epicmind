@@ -107,6 +107,9 @@ app.use("/api/completion-log", completionLogRoutes);
 const topicsRoutes = require("./routes/topics");
 app.use("/api/topics", topicsRoutes);
 
+const flaggedQuestionsRoutes = require("./routes/FlaggedQuestions/flaggedQuestions");
+app.use("/api/flagged", flaggedQuestionsRoutes);
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 

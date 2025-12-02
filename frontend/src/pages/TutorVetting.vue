@@ -38,12 +38,79 @@
                     No papers have been approved yet.
                 </div>
             </div>
+
+            <!-- Flagged Questions Section -->
+            <div class="vetting-list flagged-list">
+                <h3>🚩 Flagged by Students ({{ flaggedQuestions.length }})</h3>
+                <ul>
+                    <li v-for="flag in flaggedQuestions" :key="flag.id" class="flagged-item">
+                        <div class="flag-info" @click="expandFlag(flag)">
+                            <div class="flag-header">
+                                <span class="flag-reason-badge" :class="flag.flag_reason">
+                                    {{ formatFlagReason(flag.flag_reason) }}
+                                </span>
+                                <span class="flag-date">{{ formatDate(flag.created_at) }}</span>
+                            </div>
+                            <strong>Q{{ flag.question_number || '?' }}: {{ truncateText(flag.question_text, 60) }}</strong>
+                            <small class="flag-meta">
+                                Reported by: {{ flag.student_name || 'Student' }}
+                                <span v-if="flag.quiz_name"> • From: {{ flag.quiz_name }}</span>
+                            </small>
+                            <small v-if="flag.flag_description" class="flag-description">
+                                "{{ truncateText(flag.flag_description, 80) }}"
+                            </small>
+                        </div>
+
+                        <!-- Expanded flag details with action buttons -->
+                        <div v-if="expandedFlagId === flag.id" class="flag-expanded">
+                            <div class="flag-question-preview">
+                                <div class="preview-label">Question:</div>
+                                <div v-html="prepareMathContent(flag.question_text)" class="preview-content"></div>
+
+                                <div v-if="flag.answer_options && flag.answer_options.length" class="preview-options">
+                                    <div v-for="opt in flag.answer_options" :key="opt.option" class="preview-option">
+                                        <span class="opt-letter" :class="{ 'correct-answer': opt.option === getCorrectAnswer(flag) }">
+                                            {{ opt.option }}
+                                        </span>
+                                        <span v-html="prepareMathContent(opt.text)"></span>
+                                        <span v-if="opt.option === getCorrectAnswer(flag)" class="correct-badge">✓ Current Answer</span>
+                                    </div>
+                                </div>
+
+                                <div class="current-answer-info">
+                                    <strong>Current Correct Answer:</strong> {{ getCorrectAnswer(flag) || 'Not set' }}
+                                </div>
+                            </div>
+
+                            <div class="flag-actions">
+                                <button class="action-btn edit-btn" @click.stop="viewFlaggedQuestion(flag)">
+                                    ✏️ Edit Question
+                                </button>
+                                <button class="action-btn resolve-btn" @click.stop="resolveFlaggedQuestion(flag.id, 'resolved')">
+                                    ✓ Mark Resolved
+                                </button>
+                                <button class="action-btn dismiss-btn" @click.stop="resolveFlaggedQuestion(flag.id, 'dismissed')">
+                                    ✗ Dismiss
+                                </button>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+                <div v-if="flaggedQuestions.length === 0" class="empty-state">
+                    ✅ No flagged questions to review!
+                </div>
+            </div>
         </div>
 
         <div v-if="selectedPaper && selectedQuestions.length" ref="questionsSection">
             <h2>{{ selectedPaper }}</h2>
             <div v-for="(q, index) in selectedQuestions" :key="index" class="question-box">
-                <p><strong>Q{{ q.question_number }}</strong>:</p>
+                <div class="question-header-row">
+                    <p><strong>Q{{ q.question_number }}</strong>:</p>
+                    <button class="edit-question-btn" @click="openEditModal(q, index)" title="Edit this question">
+                        ✏️ Edit
+                    </button>
+                </div>
                 <!-- Key change: Use prepareMathContent instead of displaying raw HTML -->
                 <div v-html="prepareMathContent(q.question_text)" class="math-content"></div>
 
@@ -87,19 +154,31 @@
 
             <button @click="saveUpdates" class="save-btn">💾 Save Changes & Approve</button>
         </div>
+
+        <!-- Question Edit Modal -->
+        <QuestionEditModal
+            :isOpen="showEditModal"
+            :question="editingQuestion"
+            :detected-level="currentLevel"
+            :detected-subject="currentSubject"
+            @close="closeEditModal"
+            @saved="handleQuestionSaved"
+        />
     </div>
 </template>
 
 <script>
 import Navbar from '../components/Navbar.vue';
 import TopicSelector from '../components/TopicSelector.vue';
+import QuestionEditModal from '../components/QuestionEditModal.vue';
 import API_BASE_URL from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
     components: {
         Navbar,
-        TopicSelector
+        TopicSelector,
+        QuestionEditModal
     },
     data() {
         return {
@@ -109,21 +188,36 @@ export default {
             selectedQuestions: [],
             currentLevel: '',
             currentSubject: '', // Add subject detection
-            isUpdating: false // Add loading state for vetting operations
+            isUpdating: false, // Add loading state for vetting operations
+            // Question editing
+            showEditModal: false,
+            editingQuestion: null,
+            editingQuestionIndex: null,
+            // Flagged questions
+            flaggedQuestions: [],
+            selectedFlaggedQuestion: null,
+            expandedFlagId: null
         }
     },
     mounted() {
         this.loadPapers();
+        this.loadFlaggedQuestions();
         this.configureMathJax();
     },
     updated() {
-        this.$nextTick(() => this.typesetMath());
+        // Only typeset math if the edit modal is not open
+        if (!this.showEditModal) {
+            this.$nextTick(() => this.typesetMath());
+        }
     },
     watch: {
         selectedQuestions: {
             deep: true,
             handler() {
-                this.$nextTick(() => this.typesetMath());
+                // Only typeset math if the edit modal is not open
+                if (!this.showEditModal) {
+                    this.$nextTick(() => this.typesetMath());
+                }
             }
         }
     },
@@ -196,6 +290,29 @@ export default {
                     return `<img src="${match}" alt="Question diagram" class="inline-question-image" />`;
                 }
                 return '';
+            });
+
+            // Fix missing backslashes in LaTeX commands (common issue when backslashes get stripped)
+            // This handles cases where \frac becomes frac, \times becomes times, etc.
+            const latexCommands = [
+                'frac', 'sqrt', 'times', 'div', 'pm', 'mp', 'cdot', 'ldots', 'cdots',
+                'leq', 'geq', 'neq', 'approx', 'equiv', 'sim', 'propto',
+                'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'theta', 'lambda', 'mu', 'pi', 'sigma', 'omega',
+                'infty', 'partial', 'nabla', 'sum', 'prod', 'int', 'oint',
+                'sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'log', 'ln', 'exp',
+                'lim', 'max', 'min', 'sup', 'inf',
+                'left', 'right', 'big', 'Big', 'bigg', 'Bigg',
+                'text', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathcal',
+                'overline', 'underline', 'hat', 'bar', 'vec', 'dot', 'ddot',
+                'begin', 'end', 'quad', 'qquad', 'hspace', 'vspace'
+            ];
+
+            // Add backslashes before LaTeX commands that are missing them
+            latexCommands.forEach(cmd => {
+                // Match the command when it's NOT preceded by a backslash
+                // Use word boundary or start of content within $ delimiters
+                const regex = new RegExp(`(?<!\\\\)(${cmd})(?=[{\\s\\d]|$)`, 'g');
+                processed = processed.replace(regex, '\\$1');
             });
 
             // Check if text already has LaTeX delimiters
@@ -565,6 +682,182 @@ export default {
                 console.error('❌ Failed to save updates:', error);
                 toast.error('Failed to save updates');
             }
+        },
+
+        // Question editing methods
+        openEditModal(question, index) {
+            // Map the question to the format expected by QuestionEditModal
+            this.editingQuestion = {
+                id: question.id,
+                text: question.question_text,
+                question_text: question.question_text,
+                options: question.answer_options,
+                answer_options: question.answer_options,
+                answer: question.answer_key || question.answer,
+                topic: question.topic_label,
+                topic_label: question.topic_label,
+                sub_topic: question.sub_topics || [],
+                difficulty: question.difficulty || question.difficulty_level,
+                difficulty_level: question.difficulty || question.difficulty_level
+            };
+            this.editingQuestionIndex = index;
+            this.showEditModal = true;
+        },
+
+        closeEditModal() {
+            this.showEditModal = false;
+            this.editingQuestion = null;
+            this.editingQuestionIndex = null;
+        },
+
+        handleQuestionSaved(updatedQuestion) {
+            if (this.editingQuestionIndex !== null) {
+                // Update the question in the selectedQuestions array
+                this.selectedQuestions[this.editingQuestionIndex] = {
+                    ...this.selectedQuestions[this.editingQuestionIndex],
+                    question_text: updatedQuestion.text || updatedQuestion.question_text,
+                    answer_options: updatedQuestion.options || updatedQuestion.answer_options,
+                    answer_key: updatedQuestion.answer,
+                    topic_label: updatedQuestion.topic || updatedQuestion.topic_label,
+                    sub_topics: updatedQuestion.sub_topic || updatedQuestion.sub_topics || [],
+                    difficulty: updatedQuestion.difficulty || updatedQuestion.difficulty_level
+                };
+            }
+            this.closeEditModal();
+
+            // Re-render MathJax
+            this.$nextTick(() => {
+                this.typesetMath();
+            });
+        },
+
+        // Flagged Questions Methods
+        async loadFlaggedQuestions() {
+            try {
+                const token = sessionStorage.getItem('token');
+                const response = await fetch(`${API_BASE_URL}/api/flagged/pending`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    this.flaggedQuestions = data.flagged_questions || [];
+                    console.log('📋 Loaded flagged questions:', this.flaggedQuestions.length);
+                }
+            } catch (error) {
+                console.error('❌ Failed to load flagged questions:', error);
+            }
+        },
+
+        viewFlaggedQuestion(flag) {
+            // Open the edit modal with the flagged question
+            this.editingQuestion = {
+                id: flag.question_id,
+                text: flag.question_text,
+                question_text: flag.question_text,
+                options: flag.answer_options,
+                answer_options: flag.answer_options,
+                answer: flag.answer_key,
+                topic: flag.topic_label,
+                topic_label: flag.topic_label,
+                sub_topic: flag.sub_topic || [],
+                difficulty: flag.difficulty_level,
+                difficulty_level: flag.difficulty_level,
+                // Include flag info for context
+                flag_info: {
+                    flag_id: flag.id,
+                    flag_reason: flag.flag_reason,
+                    flag_description: flag.flag_description,
+                    student_name: flag.student_name,
+                    quiz_name: flag.quiz_name
+                }
+            };
+            this.selectedFlaggedQuestion = flag;
+            this.currentLevel = flag.level || '';
+            this.currentSubject = flag.subject || '';
+            this.showEditModal = true;
+        },
+
+        async resolveFlaggedQuestion(flagId, status) {
+            try {
+                const token = sessionStorage.getItem('token');
+                const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+
+                const response = await fetch(`${API_BASE_URL}/api/flagged/${flagId}/resolve`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        status: status,
+                        reviewed_by: user.id,
+                        resolution_notes: `Reviewed and ${status} by ${user.name || user.username}`
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    toast.success(`Flag ${status}`);
+                    this.loadFlaggedQuestions(); // Reload the list
+                } else {
+                    toast.error(data.error || 'Failed to resolve flag');
+                }
+            } catch (error) {
+                console.error('❌ Error resolving flag:', error);
+                toast.error('Failed to resolve flag');
+            }
+        },
+
+        formatFlagReason(reason) {
+            const reasonMap = {
+                'wrong_answer': '❌ Wrong Answer',
+                'unclear_question': '❓ Unclear',
+                'wrong_topic': '📚 Wrong Topic',
+                'typo_error': '✏️ Typo',
+                'other': '💬 Other'
+            };
+            return reasonMap[reason] || reason;
+        },
+
+        formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        },
+
+        truncateText(text, maxLength) {
+            if (!text) return '';
+            const plainText = text.replace(/<[^>]*>/g, '').replace(/\$[^$]+\$/g, '[math]');
+            if (plainText.length <= maxLength) return plainText;
+            return plainText.substring(0, maxLength) + '...';
+        },
+
+        expandFlag(flag) {
+            // Toggle expansion
+            if (this.expandedFlagId === flag.id) {
+                this.expandedFlagId = null;
+            } else {
+                this.expandedFlagId = flag.id;
+                // Re-render MathJax for the expanded content
+                this.$nextTick(() => {
+                    this.typesetMath();
+                });
+            }
+        },
+
+        getCorrectAnswer(flag) {
+            if (!flag.answer_key) return '';
+            try {
+                const answerKey = typeof flag.answer_key === 'string'
+                    ? JSON.parse(flag.answer_key)
+                    : flag.answer_key;
+                return answerKey.correct_answer || '';
+            } catch {
+                return flag.answer_key || '';
+            }
         }
     }
 }
@@ -580,15 +873,25 @@ export default {
     display: flex;
     justify-content: space-between;
     margin-bottom: 2rem;
-    gap: 2rem;
+    gap: 1.5rem;
 }
 
 .vetting-list {
-    width: 48%;
+    width: 32%;
     background: #f9f9f9;
     border-radius: 10px;
     padding: 1rem;
     min-height: 400px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.flagged-list {
+    background: #fff9e6;
+}
+
+.flagged-list h3 {
+    border-bottom-color: #ffc107 !important;
 }
 
 .vetting-list h3 {
@@ -669,6 +972,203 @@ export default {
     margin-top: 1rem;
 }
 
+/* Flagged Questions Styles */
+.flagged-item {
+    border-left: 3px solid #ffc107 !important;
+}
+
+.flagged-item:hover {
+    background: #fffbeb !important;
+}
+
+.flag-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.flag-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+.flag-reason-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.flag-reason-badge.wrong_answer {
+    background: #ffe0e0;
+    color: #c62828;
+}
+
+.flag-reason-badge.unclear_question {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.flag-reason-badge.wrong_topic {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.flag-reason-badge.typo_error {
+    background: #fff3e0;
+    color: #ef6c00;
+}
+
+.flag-reason-badge.other {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.flag-date {
+    font-size: 0.7rem;
+    color: #999;
+}
+
+.flag-info strong {
+    font-size: 0.85rem;
+    color: #333;
+    line-height: 1.3;
+}
+
+.flag-meta {
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.flag-description {
+    font-size: 0.75rem;
+    color: #856404;
+    background: #fff9e6;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-style: italic;
+}
+
+/* Expanded Flag Styles */
+.flag-expanded {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed #ffc107;
+}
+
+.flag-question-preview {
+    background: #fff;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border: 1px solid #eee;
+}
+
+.preview-label {
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.preview-content {
+    color: #333;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+}
+
+.preview-options {
+    margin: 1rem 0;
+}
+
+.preview-option {
+    display: flex;
+    align-items: flex-start;
+    padding: 0.5rem;
+    margin: 0.3rem 0;
+    background: #f8f9fa;
+    border-radius: 4px;
+    gap: 0.5rem;
+}
+
+.opt-letter {
+    font-weight: bold;
+    min-width: 25px;
+    height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    border-radius: 50%;
+    font-size: 0.85rem;
+}
+
+.opt-letter.correct-answer {
+    background: #66CC99;
+    color: white;
+}
+
+.correct-badge {
+    font-size: 0.7rem;
+    color: #28a745;
+    background: #d4edda;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    margin-left: auto;
+}
+
+.current-answer-info {
+    padding: 0.5rem;
+    background: #e8f5e9;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.flag-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.action-btn.edit-btn {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.action-btn.edit-btn:hover {
+    background: #bbdefb;
+}
+
+.action-btn.resolve-btn {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.action-btn.resolve-btn:hover {
+    background: #e1bee7;
+}
+
+.action-btn.dismiss-btn {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.action-btn.dismiss-btn:hover {
+    background: #ffcdd2;
+}
+
 .vetting-controls {
     display: flex;
     gap: 1rem;
@@ -721,6 +1221,30 @@ export default {
     border: 1px solid #ccc;
     border-radius: 10px;
     background: #fff;
+}
+
+.question-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.edit-question-btn {
+    background: #fff;
+    border: 1px solid #ddd;
+    color: #666;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.edit-question-btn:hover {
+    background: #f0f8f4;
+    border-color: #66CC99;
+    color: #333;
 }
 
 .math-content {

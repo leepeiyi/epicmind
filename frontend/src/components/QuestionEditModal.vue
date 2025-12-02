@@ -85,24 +85,25 @@
                     </div>
 
                     <!-- Difficulty Level -->
-                    <div class="form-group form-row">
-                        <div class="form-col">
-                            <label>Difficulty Level</label>
-                            <select v-model="editedQuestion.difficulty_level">
-                                <option value="Easy">Easy</option>
-                                <option value="Medium">Medium</option>
-                                <option value="Hard">Hard</option>
-                            </select>
-                        </div>
+                    <div class="form-group">
+                        <label>Difficulty Level</label>
+                        <select v-model="editedQuestion.difficulty_level" class="difficulty-select">
+                            <option value="Easy">Easy</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Hard">Hard</option>
+                        </select>
+                    </div>
 
-                        <div class="form-col">
-                            <label>Topic Label</label>
-                            <input
-                                type="text"
-                                v-model="editedQuestion.topic_label"
-                                placeholder="Topic..."
-                            />
-                        </div>
+                    <!-- Topic Selection -->
+                    <div class="form-group">
+                        <label>Topic & Sub-Topics</label>
+                        <TopicSelector
+                            :initial-topic="editedQuestion.topic_label"
+                            :initial-sub-topics="editedQuestion.sub_topic || []"
+                            :detected-level="detectedLevel"
+                            :detected-subject="detectedSubject"
+                            @update="handleTopicUpdate"
+                        />
                     </div>
 
                     <!-- Preview Section -->
@@ -141,9 +142,13 @@
 import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 import { toast } from 'vue-sonner';
+import TopicSelector from './TopicSelector.vue';
 
 export default {
     name: 'QuestionEditModal',
+    components: {
+        TopicSelector
+    },
     props: {
         isOpen: {
             type: Boolean,
@@ -156,6 +161,14 @@ export default {
         questionId: {
             type: [Number, String],
             default: null
+        },
+        detectedLevel: {
+            type: String,
+            default: ''
+        },
+        detectedSubject: {
+            type: String,
+            default: ''
         }
     },
     emits: ['close', 'saved'],
@@ -376,6 +389,11 @@ export default {
 
         closeModal() {
             this.$emit('close');
+        },
+
+        handleTopicUpdate(selection) {
+            this.editedQuestion.topic_label = selection.topic;
+            this.editedQuestion.sub_topic = selection.subTopics;
         }
     },
     updated() {
@@ -542,6 +560,14 @@ export default {
 }
 
 .correct-answer-select select {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+.difficulty-select {
     width: 100%;
     padding: 0.8rem;
     border: 1px solid #ddd;

@@ -161,14 +161,23 @@
                 <div class="question-content">
                     <div class="question-header">
                         <h2>Question {{ currentQuestion.question_number }}</h2>
-                        <button
-                            v-if="isTeacher"
-                            class="edit-question-btn"
-                            @click="openEditModal"
-                            title="Edit this question"
-                        >
-                            ✏️ Edit Question
-                        </button>
+                        <div class="question-actions-header">
+                            <button
+                                v-if="isTeacher"
+                                class="edit-question-btn"
+                                @click="openEditModal"
+                                title="Edit this question"
+                            >
+                                ✏️ Edit Question
+                            </button>
+                            <button
+                                class="report-question-btn"
+                                @click="showReportModal = true"
+                                title="Report an issue with this question"
+                            >
+                                🚩 Report
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Loading state for question splitting -->
@@ -350,6 +359,16 @@
             @close="closeEditModal"
             @saved="handleQuestionSaved"
         />
+
+        <!-- Report Question Modal (for students) -->
+        <ReportQuestionModal
+            :isOpen="showReportModal"
+            :question="currentQuestion"
+            :quizId="quizId"
+            :quizName="quiz.folder_name"
+            @close="showReportModal = false"
+            @reported="handleQuestionReported"
+        />
     </div>
 </template>
 
@@ -359,10 +378,11 @@ import { marked } from 'marked';
 import API_BASE_URL from '../config/api.js';
 import MathEditor from '../components/MathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
+import ReportQuestionModal from '../components/ReportQuestionModal.vue';
 
 export default {
     name: 'QuizView',
-    components: { Navbar, MathEditor, QuestionEditModal },
+    components: { Navbar, MathEditor, QuestionEditModal, ReportQuestionModal },
     data() {
         return {
             quizId: null,
@@ -407,7 +427,9 @@ export default {
             // Question editing (for teachers)
             showEditModal: false,
             editingQuestion: null,
-            isTeacher: false
+            isTeacher: false,
+            // Question reporting (for students)
+            showReportModal: false
         };
     },
     watch: {
@@ -1194,6 +1216,12 @@ export default {
                     window.MathJax.typesetPromise();
                 }
             });
+        },
+
+        // Handle question reported
+        handleQuestionReported(flag) {
+            console.log('Question reported:', flag);
+            // Could add visual indicator that question was reported
         }
     }
 };
@@ -1265,6 +1293,29 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+}
+
+.question-actions-header {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.report-question-btn {
+    padding: 0.4rem 0.8rem;
+    background-color: #fff;
+    color: #856404;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.report-question-btn:hover {
+    background-color: #fff3cd;
+    border-color: #e0a800;
 }
 
 .splitting-loader {
