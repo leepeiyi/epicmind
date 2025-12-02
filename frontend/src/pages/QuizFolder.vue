@@ -68,7 +68,7 @@
         <!-- Quiz Management Section -->
         <div class="quiz-controls">
             <input type="text" v-model="searchQuery" placeholder="Search quizzes..." class="search-bar" />
-            <button class="new-quiz-btn" @click="navigateToNewQuiz">+ New Quiz</button>
+            <button v-if="userRole === 'teacher'" class="new-quiz-btn" @click="navigateToNewQuiz">+ New Quiz</button>
         </div>
 
         <div v-if="loading" class="loading-state">
@@ -81,7 +81,8 @@
         </div>
 
         <div v-else-if="filteredQuizzes.length === 0" class="empty-state">
-            <p>No quizzes match your search. Try a different search term or create a new quiz.</p>
+            <p v-if="userRole === 'student'">No quizzes have been assigned to you yet.</p>
+            <p v-else>No quizzes match your search. Try a different search term or create a new quiz.</p>
         </div>
 
         <div v-else class="quiz-grid">
@@ -107,10 +108,24 @@
                 <div class="quiz-tags">
                     <span class="quiz-tag">{{ quiz.subject }}</span>
                     <span class="quiz-tag">{{ quiz.level }}</span>
+                    <!-- Show completion status for students -->
+                    <span v-if="userRole === 'student' && quiz.completed" class="quiz-tag completed-tag">
+                        ✅ Completed
+                    </span>
+                    <span v-if="userRole === 'student' && !quiz.completed" class="quiz-tag pending-tag">
+                        ⏳ Pending
+                    </span>
+                </div>
+                <!-- Show score if completed (for students) -->
+                <div v-if="userRole === 'student' && quiz.completed && quiz.score !== null" class="quiz-score">
+                    Score: {{ quiz.score }}%
+                </div>
+                <div v-if="userRole === 'student' && quiz.teacher_name" class="quiz-teacher">
+                    Assigned by: {{ quiz.teacher_name }}
                 </div>
                 <div class="quiz-actions">
                     <button class="open-btn" @click="openQuiz(quiz.id)">Open Quiz</button>
-                    <button @click="printQuiz(quiz)" class="print-btn">Print</button>
+                    <button v-if="userRole === 'teacher'" @click="printQuiz(quiz)" class="print-btn">Print</button>
                 </div>
             </div>
         </div>
@@ -432,18 +447,50 @@ export default {
             this.error = null;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/folders/all`, {
-                    headers: {
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                let response;
+
+                if (this.userRole === 'student') {
+                    // Students only see quizzes assigned to them
+                    response = await fetch(`${API_BASE_URL}/api/quiz/student/${this.userId}/assigned-quizzes`, {
+                        headers: {
+                            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Server responded with status: ${response.status}`);
                     }
-                });
 
-                if (!response.ok) {
-                    throw new Error(`Server responded with status: ${response.status}`);
+                    const data = await response.json();
+                    // Map assignment data to quiz format for consistent display
+                    this.quizzes = (data.assignments || []).map(assignment => ({
+                        id: assignment.quiz_id,
+                        name: assignment.folder_name,
+                        subject: assignment.subject,
+                        level: assignment.level,
+                        question_count: assignment.question_count,
+                        created_at: assignment.assigned_at,
+                        // Student-specific fields
+                        completed: assignment.completed,
+                        completion_date: assignment.completion_date,
+                        score: assignment.score,
+                        teacher_name: assignment.teacher_name
+                    }));
+                } else {
+                    // Teachers see all quizzes they created
+                    response = await fetch(`${API_BASE_URL}/api/quiz/folders/all`, {
+                        headers: {
+                            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Server responded with status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    this.quizzes = data.folders || [];
                 }
-
-                const data = await response.json();
-                this.quizzes = data.folders || [];
             } catch (error) {
                 console.error('❌ Failed to fetch quiz folders:', error);
                 this.error = 'Could not load quiz folders. Please try again later.';
@@ -1575,5 +1622,29 @@ export default {
 .completion-info {
     display: block;
     margin-top: 0.25rem;
+}
+
+/* Student quiz card styles */
+.quiz-tag.completed-tag {
+    background-color: #e6f7ee;
+    color: #2e7d32;
+}
+
+.quiz-tag.pending-tag {
+    background-color: #fff8e1;
+    color: #f57c00;
+}
+
+.quiz-score {
+    font-weight: bold;
+    color: #0055B8;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+.quiz-teacher {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.75rem;
 }
 </style>

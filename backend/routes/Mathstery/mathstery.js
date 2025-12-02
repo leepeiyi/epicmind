@@ -55,29 +55,58 @@ router.get("/exam-papers", async (req, res) => {
 
 router.get("/by-topic/:topicLabel", async (req, res) => {
   const { topicLabel } = req.params;
+  const { topic_id } = req.query; // Optional: use topic_id for more precise queries
 
   try {
-    const query = `
+    // If topic_id is provided, use it for faster lookup
+    // Otherwise fall back to topic_label text matching
+    const query = topic_id ? `
       SELECT
-        id,
-        question_number,
-        question_text,
-        topic_label,
-        paper_name,
-        paper_type,
-        difficulty_level,
-        sub_topic,
-        image_paths,
-        answer_options,
-        answer_key
-      FROM question
-      WHERE topic_label = $1
+        q.id,
+        q.question_number,
+        q.question_text,
+        q.topic_label,
+        q.topic_id,
+        q.paper_name,
+        q.paper_type,
+        q.difficulty_level,
+        q.sub_topic,
+        q.image_paths,
+        q.answer_options,
+        q.answer_key,
+        t.label as topic_name,
+        t.hashtag as topic_hashtag
+      FROM question q
+      LEFT JOIN topics t ON q.topic_id = t.id
+      WHERE q.topic_id = $1
       ORDER BY
-        CASE WHEN paper_type = 'exam' THEN 1 ELSE 2 END,
-        question_number ASC
+        CASE WHEN q.paper_type = 'exam' THEN 1 ELSE 2 END,
+        q.question_number ASC
+    ` : `
+      SELECT
+        q.id,
+        q.question_number,
+        q.question_text,
+        q.topic_label,
+        q.topic_id,
+        q.paper_name,
+        q.paper_type,
+        q.difficulty_level,
+        q.sub_topic,
+        q.image_paths,
+        q.answer_options,
+        q.answer_key,
+        t.label as topic_name,
+        t.hashtag as topic_hashtag
+      FROM question q
+      LEFT JOIN topics t ON q.topic_id = t.id
+      WHERE q.topic_label = $1
+      ORDER BY
+        CASE WHEN q.paper_type = 'exam' THEN 1 ELSE 2 END,
+        q.question_number ASC
     `;
 
-    const result = await pool.query(query, [topicLabel]);
+    const result = await pool.query(query, [topic_id || topicLabel]);
 
     const questions = result.rows.map((row) => {
       let answer_options = [];

@@ -110,6 +110,9 @@ app.use("/api/topics", topicsRoutes);
 const flaggedQuestionsRoutes = require("./routes/FlaggedQuestions/flaggedQuestions");
 app.use("/api/flagged", flaggedQuestionsRoutes);
 
+const quizAttemptsRoutes = require("./routes/QuizAttempts/quizAttempts");
+app.use("/api/attempts", quizAttemptsRoutes);
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -124,6 +127,8 @@ app.use((req, res) => {
       "/api/mathpix",
       "/api/paper",
       "/api/quiz",
+      "/api/attempts",
+      "/api/flagged",
     ],
   });
 });

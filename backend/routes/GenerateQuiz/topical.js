@@ -695,6 +695,18 @@ router.put("/question/:questionId", async (req, res) => {
       updates.push(`topic_label = $${paramIndex}`);
       values.push(topic_label);
       paramIndex++;
+
+      // Also try to match topic_id from topics table
+      // This helps keep topic_id in sync when topic_label changes
+      const topicMatch = await pool.query(
+        `SELECT id FROM topics WHERE label = $1 OR hashtag ILIKE $2 LIMIT 1`,
+        [topic_label, `%${topic_label}%`]
+      );
+      if (topicMatch.rows.length > 0) {
+        updates.push(`topic_id = $${paramIndex}`);
+        values.push(topicMatch.rows[0].id);
+        paramIndex++;
+      }
     }
 
     if (difficulty_level !== undefined) {
