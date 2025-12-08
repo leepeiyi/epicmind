@@ -3,7 +3,7 @@
         <Navbar />
 
         <div v-if="loading" class="loading-container">
-            <p>Loading quiz...</p>
+            <EpicMindLoader text="Loading quiz..." />
         </div>
 
         <div v-else-if="error" class="error-container">
@@ -374,15 +374,17 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { marked } from 'marked';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 import MathEditor from '../components/MathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
 import ReportQuestionModal from '../components/ReportQuestionModal.vue';
 
 export default {
     name: 'QuizView',
-    components: { Navbar, MathEditor, QuestionEditModal, ReportQuestionModal },
+    components: { Navbar, EpicMindLoader, MathEditor, QuestionEditModal, ReportQuestionModal },
     data() {
         return {
             quizId: null,
@@ -1063,7 +1065,7 @@ export default {
 
         jumpToQuestion(index) {
             if (this.mode === 'test' && !this.answeredQuestions.includes(this.currentQuestionIndex)) {
-                alert('Please answer the current question before moving to another one.');
+                toast.warning('Please answer the current question before moving to another one.');
                 return;
             }
 

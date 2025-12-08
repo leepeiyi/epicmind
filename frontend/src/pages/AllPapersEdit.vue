@@ -2,13 +2,11 @@
     <div>
         <Navbar />
         <div v-if="isSaving" class="overlay-spinner">
-            <div class="spinner"></div>
-            <p>Saving Markdown...</p>
+            <EpicMindLoader text="Saving Markdown..." />
         </div>
 
         <div v-if="isLabeling" class="overlay-spinner">
-            <div class="spinner"></div>
-            <p>Adding topic labels...</p>
+            <EpicMindLoader text="Adding topic labels..." />
         </div>
 
         <div class="papers-page">
@@ -105,8 +103,7 @@
 
             <!-- Loading State -->
             <div v-else-if="isLoading" class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading papers...</p>
+                <EpicMindLoader text="Loading papers..." />
             </div>
 
             <!-- Empty State -->
@@ -173,8 +170,10 @@ import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
 import PrintView from '../components/PrintView.vue';
 import ManualQuestionModal from '../components/ManualQuestionModal.vue';
-import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // IMPORT THE COMPONENT
+import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'AllPapersView',
@@ -184,7 +183,8 @@ export default {
         ImageUploader,
         PrintView,
         ManualQuestionModal,
-        MarkdownEditorPreview // ADD THE COMPONENT
+        MarkdownEditorPreview,
+        EpicMindLoader
     },
     data() {
         return {
@@ -298,7 +298,7 @@ export default {
                 console.log(`⚠️ Papers without answer keys: ${papersWithoutAnswers.length}`, papersWithoutAnswers.map(p => p.paper_name));
             } catch (err) {
                 console.error('❌ Failed to fetch all papers:', err);
-                alert('Failed to load papers. Please try again.');
+                toast.error('Failed to load papers. Please try again.');
             } finally {
                 this.isLoading = false;
             }
@@ -394,7 +394,7 @@ export default {
                         console.log('✅ Topic labels added and saved successfully');
                     } catch (error) {
                         console.error('❌ Error during topic labeling:', error);
-                        alert('Failed to add topic labels. Proceeding with existing data.');
+                        toast.warning('Failed to add topic labels. Proceeding with existing data.');
                     } finally {
                         this.isLabeling = false;
                     }
@@ -452,7 +452,7 @@ export default {
 
             } catch (err) {
                 console.error('❌ Failed to load paper content:', err);
-                alert('Failed to load paper content. Please try again.');
+                toast.error('Failed to load paper content. Please try again.');
             }
         },
 
@@ -488,7 +488,7 @@ export default {
             const marker = `### Q${this.selectedQuestionNumber}`;
             const parts = this.markdownContent.split(marker);
             if (parts.length < 2) {
-                alert(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                toast.error(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
                 return;
             }
 
@@ -510,13 +510,13 @@ export default {
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert('✅ Markdown saved successfully!');
+                    toast.success('Markdown saved successfully!');
                 } else {
-                    alert(`❌ Save failed: ${result.error}`);
+                    toast.error(`Save failed: ${result.error}`);
                 }
             } catch (error) {
                 console.error('❌ Save error:', error);
-                alert('❌ Failed to save markdown');
+                toast.error('Failed to save markdown');
             } finally {
                 this.isSaving = false;
             }
@@ -549,7 +549,7 @@ export default {
         },
 
         async onQuestionAdded(data) {
-            alert(`✅ ${data.message}`);
+            toast.success(data.message);
 
             // Reload the paper to show the new question
             await this.loadPaper(this.currentPaperName);
@@ -559,7 +559,7 @@ export default {
             // Open print view in a new window
             const printWindow = window.open(`#/print?paper_name=${encodeURIComponent(paper.paper_name)}`, '_blank');
             if (!printWindow) {
-                alert('Please allow pop-ups to print the quiz');
+                toast.warning('Please allow pop-ups to print the quiz');
             }
         },
 
@@ -575,7 +575,7 @@ export default {
             const secondConfirm = prompt(`To confirm deletion, please type the paper name exactly:\n\n${paper.paper_name}`);
             
             if (secondConfirm !== paper.paper_name) {
-                alert('Paper name did not match. Deletion cancelled.');
+                toast.warning('Paper name did not match. Deletion cancelled.');
                 return;
             }
 
@@ -587,7 +587,7 @@ export default {
                 const result = await response.json();
                 
                 if (response.ok) {
-                    alert(`✅ ${result.message}`);
+                    toast.success(result.message);
                     // Refresh the paper list
                     await this.loadAllPapers();
                     // If we were editing this paper, close the editor
@@ -595,11 +595,11 @@ export default {
                         this.closeEditor();
                     }
                 } else {
-                    alert(`❌ Failed to delete paper: ${result.error}`);
+                    toast.error(`Failed to delete paper: ${result.error}`);
                 }
             } catch (error) {
                 console.error('❌ Error deleting paper:', error);
-                alert('❌ Failed to delete paper. Please try again.');
+                toast.error('Failed to delete paper. Please try again.');
             }
         }
     }

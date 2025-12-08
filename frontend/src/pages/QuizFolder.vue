@@ -34,7 +34,7 @@
 
             <!-- Students List -->
             <div v-if="studentsLoading" class="loading-state">
-                <p>Loading your students...</p>
+                <EpicMindLoader size="small" text="Loading your students..." />
             </div>
 
             <div v-else-if="studentsError" class="error-state">
@@ -72,7 +72,7 @@
         </div>
 
         <div v-if="loading" class="loading-state">
-            <p>Loading your quizzes...</p>
+            <EpicMindLoader text="Loading your quizzes..." />
         </div>
 
         <div v-else-if="error" class="error-state">
@@ -145,7 +145,7 @@
                     </div>
 
                     <div v-if="loadingAvailableStudents" class="loading-indicator">
-                        <p>Loading students...</p>
+                        <EpicMindLoader size="small" text="Loading students..." />
                     </div>
 
                     <div v-else-if="availableStudentsError" class="error-message">
@@ -193,7 +193,7 @@
 
                 <div class="modal-body">
                     <div v-if="loadingAssignments" class="loading-indicator">
-                        <p>Loading assignments...</p>
+                        <EpicMindLoader size="small" text="Loading assignments..." />
                     </div>
 
                     <div v-else-if="assignmentsError" class="error-message">
@@ -283,13 +283,14 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import AssignQuizModal from '../components/AssignQuiz.vue';
 import { toast } from 'vue-sonner';
 
 export default {
     name: 'QuizFolder',
-    components: { Navbar, AssignQuizModal },
+    components: { Navbar, EpicMindLoader, AssignQuizModal },
     data() {
         return {
             // Quiz list data

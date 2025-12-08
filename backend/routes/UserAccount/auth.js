@@ -160,13 +160,31 @@ router.post("/forgot-password", async (req, res) => {
 router.post("/reset-password", async (req, res) => {
   const { token, newPassword } = req.body;
   try {
+    console.log("🔑 Reset password attempt with token:", token?.substring(0, 20) + "...");
+
     const result = await client.query(
       "SELECT * FROM users WHERE reset_token = $1",
       [token]
     );
     const user = result.rows[0];
 
-    if (!user || !user.token_expires || user.token_expires < Date.now()) {
+    console.log("👤 User found:", user ? "Yes" : "No");
+    if (user) {
+      console.log("⏰ Token expires:", user.token_expires);
+      console.log("⏰ Current time:", Date.now());
+      console.log("⏰ Token expires type:", typeof user.token_expires);
+
+      // Convert to number if it's a string or BigInt
+      const expiresTime = Number(user.token_expires);
+      console.log("⏰ Expires as number:", expiresTime);
+      console.log("⏰ Is expired:", expiresTime < Date.now());
+    }
+
+    // Convert token_expires to number for proper comparison
+    const tokenExpires = user ? Number(user.token_expires) : 0;
+
+    if (!user || !user.token_expires || tokenExpires < Date.now()) {
+      console.log("❌ Token invalid or expired");
       return res.status(400).json({ error: "Invalid or expired token" });
     }
 

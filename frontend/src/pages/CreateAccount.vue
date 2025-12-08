@@ -24,6 +24,7 @@
 <script>
 import axios from 'axios';
 import API_BASE_URL from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: "CreateAccount",
@@ -41,7 +42,7 @@ export default {
     methods: {
     async handleSubmit() {
       if (this.form.password !== this.form.confirm) {
-        alert("Passwords do not match!");
+        toast.warning("Passwords do not match!");
         return;
       }
 
@@ -54,10 +55,10 @@ export default {
           parentEmail: this.form.parentEmail,
         });
 
-        alert('Registration successful! You can now log in.');
+        toast.success('Registration successful! You can now log in.');
         this.$router.push('/'); // go to login
       } catch (err) {
-        alert(err.response?.data?.error || 'Registration failed');
+        toast.error(err.response?.data?.error || 'Registration failed');
       }
     },
   },

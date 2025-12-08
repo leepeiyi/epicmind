@@ -4,16 +4,18 @@
         <img src="../assets/epic-mind-logo.png" alt="Logo" class="logo" />
         <h2>Reset your password</h2>
         <form @submit.prevent="submitPassword">
-          <input type="password" v-model="password" placeholder="New Password" required />
-          <button type="submit">Reset Password</button>
-          <p v-if="message" class="info">{{ message }}</p>
+          <input type="password" v-model="password" placeholder="New Password" required minlength="6" />
+          <button type="submit" :disabled="isLoading">
+            {{ isLoading ? 'Resetting...' : 'Reset Password' }}
+          </button>
+          <p v-if="message" :class="{ 'info': isSuccess, 'error': !isSuccess }">{{ message }}</p>
         </form>
         <br>
         <router-link to="/">Back to Login</router-link>
       </div>
     </div>
   </template>
-  
+
   <script>
   import axios from 'axios';
   import API_BASE_URL from '../config/api.js';
@@ -22,19 +24,52 @@
       return {
         password: '',
         message: '',
+        isLoading: false,
+        isSuccess: false,
         token: this.$route.query.token
       };
     },
+    mounted() {
+      if (!this.token) {
+        this.message = 'Invalid reset link. No token provided.';
+        this.isSuccess = false;
+      }
+    },
     methods: {
       async submitPassword() {
+        if (!this.token) {
+          this.message = 'Invalid reset link. Please request a new password reset.';
+          this.isSuccess = false;
+          return;
+        }
+
+        if (this.password.length < 6) {
+          this.message = 'Password must be at least 6 characters.';
+          this.isSuccess = false;
+          return;
+        }
+
+        this.isLoading = true;
+        this.message = '';
+
         try {
-          await axios.post(`${API_BASE_URL}/api/user/reset-password`, {
+          const response = await axios.post(`${API_BASE_URL}/api/user/reset-password`, {
             token: this.token,
             newPassword: this.password
           });
-          this.message = 'Password reset successful!';
-        } catch {
-          this.message = 'Token expired or invalid.';
+          this.message = 'Password reset successful! You can now login with your new password.';
+          this.isSuccess = true;
+          this.password = '';
+        } catch (error) {
+          console.error('Reset password error:', error);
+          this.isSuccess = false;
+          if (error.response?.data?.error) {
+            this.message = error.response.data.error;
+          } else {
+            this.message = 'Token expired or invalid. Please request a new password reset.';
+          }
+        } finally {
+          this.isLoading = false;
         }
       }
     }
@@ -83,6 +118,14 @@
   .info {
     color: green;
     margin-top: 0.5rem;
+  }
+  .error {
+    color: red;
+    margin-top: 0.5rem;
+  }
+  button:disabled {
+    background-color: #999;
+    cursor: not-allowed;
   }
   </style>
   

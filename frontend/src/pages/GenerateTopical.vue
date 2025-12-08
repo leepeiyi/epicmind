@@ -139,10 +139,11 @@
 
             <!-- Loading Indicator -->
             <div v-if="loading" class="loading-indicator">
-                <div class="progress-bar">
+                <EpicMindLoader :text="loadingMessage" />
+                <div class="progress-bar" style="margin-top: 1rem;">
                     <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
                 </div>
-                <p>{{ loadingMessage }} ({{ progressPercent }}%)</p>
+                <p>{{ progressPercent }}%</p>
             </div>
 
             <!-- Quiz Preview - Styled similar to InsertPaper's preview -->
@@ -253,14 +254,17 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { mathTopicsData } from '../components/topicData';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'GenerateQuiz',
     components: {
         Navbar,
-        QuestionEditModal
+        QuestionEditModal,
+        EpicMindLoader
     },
     data() {
         return {
@@ -417,7 +421,7 @@ export default {
         },
         async generateQuiz() {
             if (!this.isFormValid) {
-                alert('Please fill in all required fields.');
+                toast.warning('Please fill in all required fields.');
                 return;
             }
 
@@ -502,7 +506,7 @@ export default {
             } catch (error) {
                 console.error('Failed to generate quiz:', error);
 
-                alert(`Failed to generate quiz: ${error.message}`);
+                toast.error(`Failed to generate quiz: ${error.message}`);
 
                 // For demo or testing purposes, you can use mock data if the API fails
                 // this.generatedQuiz = this.getMockQuestions();
@@ -541,7 +545,7 @@ export default {
         ,
         async previewSegmentedQuestions() {
             if (this.generatedQuiz.length === 0) {
-                alert('No quiz to preview. Please generate a quiz first.');
+                toast.warning('No quiz to preview. Please generate a quiz first.');
                 return;
             }
 
@@ -583,13 +587,13 @@ export default {
             } catch (error) {
                 console.error('Failed to segment questions:', error);
                 this.loading = false;
-                alert('Failed to segment questions: ' + error.message);
+                toast.error('Failed to segment questions: ' + error.message);
             }
         },
 
         async saveQuiz() {
             if (this.generatedQuiz.length === 0) {
-                alert('No quiz to save. Please generate a quiz first.');
+                toast.warning('No quiz to save. Please generate a quiz first.');
                 return;
             }
 
@@ -600,7 +604,7 @@ export default {
 
             console.log("Teacher ID:", this.form.teacherId);
             if (!this.form.teacherId) {
-                alert("Session expired. Please log in again.");
+                toast.error("Session expired. Please log in again.");
                 return;
             }
 
@@ -661,7 +665,7 @@ export default {
                     this.loadingMessage = 'Quiz saved successfully!';
 
                     setTimeout(() => {
-                        alert(`Quiz "${this.form.quizName}" saved successfully!`);
+                        toast.success(`Quiz "${this.form.quizName}" saved successfully!`);
                         this.loading = false;
 
                         // Optional redirect
@@ -673,7 +677,7 @@ export default {
             } catch (error) {
                 console.error('Failed to save quiz:', error);
                 this.loading = false;
-                alert('Failed to save quiz: ' + error.message);
+                toast.error('Failed to save quiz: ' + error.message);
             }
         },
 

@@ -2,8 +2,7 @@
     <div>
         <Navbar />
         <div v-if="isSaving" class="overlay-spinner">
-            <div class="spinner"></div>
-            <p>Saving Markdown...</p>
+            <EpicMindLoader text="Saving Markdown..." />
         </div>
 
         <div class="mathstery-page">
@@ -83,8 +82,7 @@
 
             <!-- Loading State -->
             <div v-else-if="isLoading" class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading exam papers...</p>
+                <EpicMindLoader text="Loading exam papers..." />
             </div>
 
             <!-- Empty State -->
@@ -269,12 +267,15 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'MathsteryView',
     components: {
-        Navbar
+        Navbar,
+        EpicMindLoader
     },
     data() {
         return {
@@ -406,7 +407,7 @@ export default {
                 this.allPapers = data.papers || [];
             } catch (err) {
                 console.error('❌ Failed to fetch exam papers:', err);
-                alert('Failed to load exam papers. Please try again.');
+                toast.error('Failed to load exam papers. Please try again.');
             } finally {
                 this.isLoading = false;
             }
@@ -434,7 +435,7 @@ export default {
 
             } catch (err) {
                 console.error('❌ Failed to load exam paper content:', err);
-                alert('Failed to load exam paper content. Please try again.');
+                toast.error('Failed to load exam paper content. Please try again.');
             }
         },
 
@@ -550,17 +551,17 @@ export default {
 
         async saveQuiz() {
             if (!this.quizForm.quizName || !this.quizForm.teacher_id) {
-                alert('Please fill in quiz name and teacher ID');
+                toast.warning('Please fill in quiz name and teacher ID');
                 return;
             }
 
             if (!this.quizForm.subject || !this.quizForm.banding || !this.quizForm.level) {
-                alert('Please fill in subject, banding, and level');
+                toast.warning('Please fill in subject, banding, and level');
                 return;
             }
 
             if (this.finalQuizQuestions.length === 0) {
-                alert('No questions to save');
+                toast.warning('No questions to save');
                 return;
             }
 
@@ -619,15 +620,15 @@ export default {
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    alert(`✅ Quiz saved successfully! Quiz ID: ${result.quizId}`);
+                    toast.success(`Quiz saved successfully! Quiz ID: ${result.quizId}`);
                     this.closeSaveQuizModal();
                 } else {
-                    alert(`❌ Failed to save quiz: ${result.error}`);
+                    toast.error(`Failed to save quiz: ${result.error}`);
                 }
 
             } catch (error) {
                 console.error('❌ Error saving quiz:', error);
-                alert('❌ Failed to save quiz. Please try again.');
+                toast.error('Failed to save quiz. Please try again.');
             } finally {
                 this.isSavingQuiz = false;
             }

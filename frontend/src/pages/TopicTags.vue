@@ -83,8 +83,7 @@
 
       <!-- Loading State -->
       <div v-if="loading" class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading topic data...</p>
+        <EpicMindLoader text="Loading topic data..." />
       </div>
 
       <!-- Error State -->
@@ -275,6 +274,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import TagHierarchy from '../components/TagHierarchy.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import {
   Tags,
   Info,
@@ -298,6 +298,7 @@ export default {
   components: {
     Navbar,
     TagHierarchy,
+    EpicMindLoader,
     Tags,
     Info,
     Search,

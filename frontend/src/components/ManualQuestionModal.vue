@@ -105,6 +105,7 @@
 
 <script>
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'ManualQuestionModal',
@@ -235,7 +236,7 @@ export default {
         
         async saveQuestion() {
             if (!this.questionData.questionNumber || !this.questionData.questionText) {
-                alert('Please fill in question number and question text');
+                toast.warning('Please fill in question number and question text');
                 return;
             }
             
@@ -289,12 +290,12 @@ export default {
                     });
                     this.closeModal();
                 } else {
-                    alert(`❌ Failed to add question: ${result.error}`);
+                    toast.error(`Failed to add question: ${result.error}`);
                 }
                 
             } catch (error) {
                 console.error('❌ Error adding question:', error);
-                alert('❌ Failed to add question. Please try again.');
+                toast.error('Failed to add question. Please try again.');
             } finally {
                 this.isSaving = false;
             }

@@ -76,7 +76,7 @@
                 <h3>⭐ My Favorite Topics</h3>
 
                 <div v-if="loadingFavorites" class="loading-state">
-                    <p>Loading your favorites...</p>
+                    <EpicMindLoader text="Loading your favorites..." />
                 </div>
 
                 <div v-else-if="myFavorites.length === 0" class="empty-state">
@@ -119,7 +119,7 @@
 
                     <div class="modal-body">
                         <div v-if="loadingQuestions" class="loading-state">
-                            <p>Loading questions...</p>
+                            <EpicMindLoader size="small" text="Loading questions..." />
                         </div>
 
                         <div v-else-if="favoriteQuestions.length === 0" class="empty-state">
@@ -179,6 +179,7 @@
 import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import FavouriteButton from '../components/FavouriteButton.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
@@ -187,7 +188,8 @@ export default {
     components: {
         Navbar,
         PaperDetails,
-        FavouriteButton
+        FavouriteButton,
+        EpicMindLoader
     },
     data() {
         return {

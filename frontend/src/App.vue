@@ -1,6 +1,6 @@
 <template>
   <router-view />
-  <Toaster position="bottom-right" :duration="4000" richColors />
+  <Toaster position="bottom-right" :duration="4000" :richColors="true" :closeButton="true" />
 </template>
 
 <script>

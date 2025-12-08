@@ -8,7 +8,7 @@
 
             <div class="modal-body">
                 <div v-if="loading" class="loading-state">
-                    <p>Loading question...</p>
+                    <EpicMindLoader size="small" text="Loading question..." />
                 </div>
 
                 <form v-else @submit.prevent="saveQuestion">
@@ -143,11 +143,13 @@ import { marked } from 'marked';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import TopicSelector from './TopicSelector.vue';
+import EpicMindLoader from './EpicMindLoader.vue';
 
 export default {
     name: 'QuestionEditModal',
     components: {
-        TopicSelector
+        TopicSelector,
+        EpicMindLoader
     },
     props: {
         isOpen: {

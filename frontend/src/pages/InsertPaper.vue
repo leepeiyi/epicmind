@@ -2,8 +2,7 @@
     <div>
         <Navbar />
         <div v-if="isSaving" class="overlay-spinner">
-            <div class="spinner"></div>
-            <p>Saving Markdown...</p>
+            <EpicMindLoader size="large" text="Saving Markdown..." />
         </div>
 
         <div class="upload-page">
@@ -219,8 +218,10 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import * as pdfjsLib from 'pdfjs-dist';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'InsertPaper',
@@ -228,7 +229,8 @@ export default {
         Navbar,
         PaperDetails,
         LatexConverter,
-        MarkdownEditorPreview
+        MarkdownEditorPreview,
+        EpicMindLoader
     },
     data() {
         return {
@@ -311,7 +313,7 @@ export default {
 
         async extractAnswersForTesting() {
             if (!this.selectedPaperForAnswers || !this.testAnswerKeyFile) {
-                alert('Please select a paper and upload an answer key file.');
+                toast.warning('Please select a paper and upload an answer key file.');
                 return;
             }
 
@@ -356,7 +358,7 @@ export default {
 
             } catch (error) {
                 console.error('❌ Answer extraction failed:', error);
-                alert(`❌ Answer extraction failed: ${error.message}`);
+                toast.error(`Answer extraction failed: ${error.message}`);
                 this.answerExtractionProgress = '';
                 this.answerExtractionPercent = 0;
             } finally {
@@ -434,7 +436,7 @@ export default {
 
         async saveAnswersToDatabase() {
             if (!this.selectedPaperForAnswers || this.extractedAnswers.length === 0) {
-                alert('No answers to save or paper not selected.');
+                toast.warning('No answers to save or paper not selected.');
                 return;
             }
 
@@ -466,7 +468,7 @@ export default {
                     throw new Error(result.error || 'Failed to save answers');
                 }
 
-                alert(`✅ Successfully updated ${result.updated} questions for ${this.selectedPaperForAnswers}`);
+                toast.success(`Successfully updated ${result.updated} questions for ${this.selectedPaperForAnswers}`);
                 console.log('📊 Update details:', result.details);
 
                 // Clear the extracted answers after successful save
@@ -476,7 +478,7 @@ export default {
 
             } catch (error) {
                 console.error('❌ Failed to save answers:', error);
-                alert(`❌ Failed to save answers: ${error.message}`);
+                toast.error(`Failed to save answers: ${error.message}`);
             } finally {
                 this.isSavingAnswers = false;
             }
@@ -691,7 +693,7 @@ export default {
 
             } catch (err) {
                 console.error('❌ Failed to load recent paper content:', err);
-                alert('❌ Error loading paper: ' + err.message);
+                toast.error('Error loading paper: ' + err.message);
             }
         },
 
@@ -712,13 +714,13 @@ export default {
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert('✅ Markdown saved successfully!');
+                    toast.success('Markdown saved successfully!');
                 } else {
-                    alert(`❌ Save failed: ${result.error}`);
+                    toast.error(`Save failed: ${result.error}`);
                 }
             } catch (error) {
                 console.error('❌ Save error:', error);
-                alert('❌ Failed to save markdown');
+                toast.error('Failed to save markdown');
             } finally {
                 this.isSaving = false;
             }
@@ -729,20 +731,20 @@ export default {
             // Validate inputs
             if (this.hasSeparateAnswerKey) {
                 if (!this.questionsFile || !this.answerKeyFile) {
-                    alert("Please upload both question and answer key files.");
+                    toast.warning("Please upload both question and answer key files.");
                     return;
                 }
             } else if (!this.uploadedFile) {
-                alert("Please upload a file.");
+                toast.warning("Please upload a file.");
                 return;
             }
 
             if (!this.form.subject || !this.form.banding || !this.form.level) {
-                alert("Please complete all fields.");
+                toast.warning("Please complete all fields.");
                 return;
             }
             if (this.uploadType === "topical" && !this.form.topic_label) {
-                alert("Please select a topic for Math / E-Math Sec 1.");
+                toast.warning("Please select a topic for Math / E-Math Sec 1.");
                 return;
             }
 
@@ -760,8 +762,8 @@ export default {
                 const existsRes = await authFetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(paperName)}`);
                 const { exists } = await existsRes.json();
                 if (exists) {
-                    alert(`⚠️ Paper "${paperName}" already exists in the database.`);
-                    this.progressMessage = "⚠️ Duplicate paper detected.";
+                    toast.warning(`Paper "${paperName}" already exists in the database.`);
+                    this.progressMessage = "Duplicate paper detected.";
                     this.progressPercent = 0;
                     return;
                 }
@@ -922,7 +924,7 @@ export default {
 
             } catch (error) {
                 console.error("❌ handleSubmit error:", error);
-                alert("❌ Something went wrong: " + error.message);
+                toast.error("Something went wrong: " + error.message);
                 this.progressMessage = "";
                 this.progressPercent = 0;
             }

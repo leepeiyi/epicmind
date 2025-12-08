@@ -70,8 +70,7 @@
                 <h3>📋 Recent Activity</h3>
                 
                 <div v-if="loading" class="loading-state">
-                    <div class="spinner"></div>
-                    <p>Loading completion logs...</p>
+                    <EpicMindLoader text="Loading completion logs..." />
                 </div>
 
                 <div v-else-if="filteredLogs.length === 0" class="empty-state">
@@ -171,6 +170,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { RefreshCw, Mail, Eye } from 'lucide-vue-next';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 
@@ -178,6 +178,7 @@ export default {
     name: 'CompletionLogs',
     components: {
         Navbar,
+        EpicMindLoader,
         RefreshCw,
         Mail,
         Eye

@@ -2,8 +2,7 @@
     <div>
         <Navbar />
         <div v-if="isSaving" class="overlay-spinner">
-            <div class="spinner"></div>
-            <p>Processing Markdown...</p>
+            <EpicMindLoader size="large" text="Processing Markdown..." />
         </div>
 
         <div class="upload-page">
@@ -193,12 +192,14 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
+import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { marked } from 'marked';
 import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
 
 export default {
     name: 'InsertMarkdown',
-    components: { Navbar, PaperDetails, LatexConverter, ImageUploader },
+    components: { Navbar, PaperDetails, LatexConverter, ImageUploader, EpicMindLoader },
     data() {
         return {
             uploadType: '',
@@ -334,7 +335,7 @@ export default {
 
             } catch (err) {
                 console.error('❌ Failed to load recent paper content:', err);
-                alert('Failed to load paper content');
+                toast.error('Failed to load paper content');
             }
         }, cleanMarkdownContent(content) {
             return content
@@ -358,15 +359,15 @@ export default {
 
         async generatePreview() {
             if (!this.markdownInput.trim()) {
-                alert("Please paste markdown content first.");
+                toast.warning("Please paste markdown content first.");
                 return;
             }
             if (!this.form.subject || !this.form.banding || !this.form.level) {
-                alert("Please complete all required fields.");
+                toast.warning("Please complete all required fields.");
                 return;
             }
             if (this.uploadType === "topical" && !this.form.topic_label) {
-                alert("Please select a topic for topical revision.");
+                toast.warning("Please select a topic for topical revision.");
                 return;
             }
 
@@ -473,7 +474,7 @@ export default {
 
             } catch (error) {
                 console.error("❌ generatePreview error:", error);
-                alert("❌ Failed to generate preview: " + error.message);
+                toast.error("Failed to generate preview: " + error.message);
             } finally {
                 this.isGeneratingPreview = false;
             }
@@ -490,7 +491,7 @@ export default {
             const marker = `### Q${this.selectedQuestionNumber}`;
             const parts = this.previewMarkdown.split(marker);
             if (parts.length < 2) {
-                alert(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                toast.warning(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
                 return;
             }
             // Insert the image right after the marker
@@ -501,7 +502,7 @@ export default {
         async handleMarkdownSubmit() {
             // Validation
             if (!this.previewMarkdown.trim()) {
-                alert("Please generate a preview first.");
+                toast.warning("Please generate a preview first.");
                 return;
             }
 
@@ -511,7 +512,7 @@ export default {
                 // Generate paper name
                 // Require user input
                 if (!this.paperName.trim()) {
-                    alert("❗ Please enter a paper name.");
+                    toast.warning("Please enter a paper name.");
                     return;
                 }
 
@@ -528,8 +529,8 @@ export default {
                 const existsRes = await authFetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(this.paperName)}`);
                 const { exists } = await existsRes.json();
                 if (exists) {
-                    alert(`⚠️ Paper "${this.paperName}" already exists in the database.`);
-                    this.progressMessage = "⚠️ Duplicate paper detected.";
+                    toast.warning(`Paper "${this.paperName}" already exists in the database.`);
+                    this.progressMessage = "Duplicate paper detected.";
                     this.progressPercent = 0;
                     return;
                 }
@@ -602,7 +603,7 @@ export default {
 
             } catch (error) {
                 console.error("❌ handleMarkdownSubmit error:", error);
-                alert("❌ Something went wrong: " + error.message);
+                toast.error("Something went wrong: " + error.message);
                 this.progressMessage = "";
                 this.progressPercent = 0;
             } finally {
@@ -627,17 +628,17 @@ export default {
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert('✅ Markdown saved successfully!');
+                    toast.success('Markdown saved successfully!');
                     // Refresh recent papers
                     const res = await authFetch(`${API_BASE_URL}/api/paper/recent`);
                     const data = await res.json();
                     this.recentPapers = data.recent || [];
                 } else {
-                    alert(`❌ Save failed: ${result.error}`);
+                    toast.error(`Save failed: ${result.error}`);
                 }
             } catch (error) {
                 console.error('❌ Save error:', error);
-                alert('❌ Failed to save markdown');
+                toast.error('Failed to save markdown');
             } finally {
                 this.isSaving = false;
             }
