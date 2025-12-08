@@ -62,7 +62,7 @@
 </template>
 
 <script>
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -151,7 +151,7 @@ export default {
             try {
                 const user = JSON.parse(sessionStorage.getItem('user') || '{}');
 
-                const response = await fetch(`${API_BASE_URL}/api/flagged/report`, {
+                const response = await authFetch(`${API_BASE_URL}/api/flagged/report`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

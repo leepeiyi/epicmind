@@ -287,55 +287,55 @@ export default {
         // Synchronized scrolling methods
         onEditorScroll(event) {
             if (this.isSyncing) return;
-            
+
             clearTimeout(this.syncTimeout);
             this.syncTimeout = setTimeout(() => {
                 this.isSyncing = true;
-                
+
                 const editor = event.target;
                 const preview = this.$refs.previewContainer;
-                
+
                 if (!preview) {
                     this.isSyncing = false;
                     return;
                 }
-                
+
                 // Calculate scroll percentage
                 const scrollPercentage = editor.scrollTop / (editor.scrollHeight - editor.clientHeight);
-                
+
                 // Apply same percentage to preview
                 const targetScrollTop = scrollPercentage * (preview.scrollHeight - preview.clientHeight);
                 preview.scrollTop = targetScrollTop;
-                
+
                 // Reset sync flag after a delay
                 setTimeout(() => {
                     this.isSyncing = false;
                 }, 100);
             }, 10);
         },
-        
+
         onPreviewScroll(event) {
             if (this.isSyncing) return;
-            
+
             clearTimeout(this.syncTimeout);
             this.syncTimeout = setTimeout(() => {
                 this.isSyncing = true;
-                
+
                 const preview = event.target;
                 const editor = this.$refs.markdownEditor;
-                
+
                 if (!editor) {
                     this.isSyncing = false;
                     return;
                 }
-                
+
                 // Calculate scroll percentage
                 const scrollPercentage = preview.scrollTop / (preview.scrollHeight - preview.clientHeight);
-                
+
                 // Apply same percentage to editor
                 const targetScrollTop = scrollPercentage * (editor.scrollHeight - editor.clientHeight);
                 editor.scrollTop = targetScrollTop;
-                
+
                 // Reset sync flag after a delay
                 setTimeout(() => {
                     this.isSyncing = false;

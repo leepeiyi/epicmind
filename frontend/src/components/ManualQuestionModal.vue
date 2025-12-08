@@ -104,7 +104,7 @@
 </template>
 
 <script>
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'ManualQuestionModal',
@@ -215,7 +215,7 @@ export default {
                 formData.append('paper_name', this.paperName);
                 formData.append('question_number', this.questionData.questionNumber);
                 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/image_to_s3`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/image_to_s3`, {
                     method: 'POST',
                     body: formData
                 });
@@ -274,7 +274,7 @@ export default {
                 };
                 
                 // Save to database
-                const response = await fetch(`${API_BASE_URL}/api/paper/add-manual-question`, {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/add-manual-question`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(questionPayload)

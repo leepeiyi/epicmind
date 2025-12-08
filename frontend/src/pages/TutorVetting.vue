@@ -171,7 +171,7 @@
 import Navbar from '../components/Navbar.vue';
 import TopicSelector from '../components/TopicSelector.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -470,7 +470,7 @@ export default {
         // Paper management methods
         async loadPapers() {
             try {
-                const res = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/all-papers`);
                 const data = await res.json();
 
                 console.log("📦 All papers fetched:", data);
@@ -490,7 +490,7 @@ export default {
         async loadPaper(paperName) {
             this.selectedPaper = paperName;
             try {
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodeURIComponent(paperName)}`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodeURIComponent(paperName)}`);
                 const { questions } = await res.json();
 
                 if (questions.length > 0) {
@@ -581,7 +581,7 @@ export default {
             try {
                 const token = sessionStorage.getItem('token');
                 // Use your existing update-question-metadata endpoint which already sets vetted = true
-                const res = await fetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
+                const res = await authFetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -621,7 +621,7 @@ export default {
 
             try {
                 const token = sessionStorage.getItem('token');
-                const res = await fetch(`${API_BASE_URL}/api/paper/revert-paper`, {
+                const res = await authFetch(`${API_BASE_URL}/api/paper/revert-paper`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -654,7 +654,7 @@ export default {
         async saveUpdates() {
             try {
                 const token = sessionStorage.getItem('token');
-                const res = await fetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
+                const res = await authFetch(`${API_BASE_URL}/api/paper/update-question-metadata`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -735,7 +735,7 @@ export default {
         async loadFlaggedQuestions() {
             try {
                 const token = sessionStorage.getItem('token');
-                const response = await fetch(`${API_BASE_URL}/api/flagged/pending`, {
+                const response = await authFetch(`${API_BASE_URL}/api/flagged/pending`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
@@ -785,7 +785,7 @@ export default {
                 const token = sessionStorage.getItem('token');
                 const user = JSON.parse(sessionStorage.getItem('user') || '{}');
 
-                const response = await fetch(`${API_BASE_URL}/api/flagged/${flagId}/resolve`, {
+                const response = await authFetch(`${API_BASE_URL}/api/flagged/${flagId}/resolve`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',

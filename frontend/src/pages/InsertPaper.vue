@@ -220,7 +220,7 @@ import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue';
 import * as pdfjsLib from 'pdfjs-dist';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'InsertPaper',
@@ -268,12 +268,12 @@ export default {
     async mounted() {
         try {
             // Fetch recent papers for the recent uploads section
-            const recentRes = await fetch(`${API_BASE_URL}/api/paper/recent`);
+            const recentRes = await authFetch(`${API_BASE_URL}/api/paper/recent`);
             const recentData = await recentRes.json();
             this.recentPapers = recentData.recent || [];
             
             // Fetch all papers for the answer extraction dropdown
-            const allRes = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
+            const allRes = await authFetch(`${API_BASE_URL}/api/paper/all-papers`);
             const allData = await allRes.json();
             this.allPapers = allData.papers || [];
 
@@ -327,8 +327,11 @@ export default {
                 this.answerExtractionProgress = '📄 Processing answer key with AI...';
                 this.answerExtractionPercent = 50;
 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_pdf`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_pdf`, {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: formData
                 });
 
@@ -445,9 +448,12 @@ export default {
                 console.log('📊 Processed answers:', processedAnswers.length);
                 console.log('📋 Processed answers preview:', processedAnswers.slice(0, 3));
 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/update_answer_keys_direct`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/update_answer_keys_direct`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.selectedPaperForAnswers,
                         answers: processedAnswers // Use processed answers
@@ -511,7 +517,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.questionsFile);
 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -546,7 +552,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.uploadedFile);
 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -569,7 +575,7 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", this.answerKeyFile);
 
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/get_pdf_page_count`, {
                     method: "POST",
                     body: formData,
                 });
@@ -585,7 +591,7 @@ export default {
         async loadRecentPaper(paperName) {
             try {
                 const encodedName = encodeURIComponent(paperName);
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
                 this.questionCount = data.questions.length;
                 this.paperName = paperName;
@@ -615,7 +621,7 @@ export default {
                 }));
 
                 if (this.form.uploadType === 'exam' && needsLabeling) {
-                    const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                    const labelRes = await authFetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -643,7 +649,7 @@ export default {
                     });
 
                     // Save to DB
-                    await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
+                    await authFetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -692,9 +698,12 @@ export default {
         async saveEditedMarkdown() {
             this.isSaving = true;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/paper/update-question-details`, {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/update-question-details`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.paperName,
                         content: this.markdownContent
@@ -748,7 +757,7 @@ export default {
                 this.progressMessage = "🔎 Checking for existing paper...";
                 this.progressPercent = 10;
 
-                const existsRes = await fetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(paperName)}`);
+                const existsRes = await authFetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(paperName)}`);
                 const { exists } = await existsRes.json();
                 if (exists) {
                     alert(`⚠️ Paper "${paperName}" already exists in the database.`);
@@ -764,8 +773,11 @@ export default {
                 const formData = new FormData();
                 formData.append("pdf", fileToProcess);
 
-                const uploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
+                const uploadRes = await authFetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
                     method: "POST",
+                    headers: {
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: formData,
                 });
                 const { pdf_id } = await uploadRes.json();
@@ -775,9 +787,12 @@ export default {
                 this.progressMessage = "🔍 Extracting questions with AI...";
                 this.progressPercent = 40;
 
-                const extractRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
+                const extractRes = await authFetch(`${API_BASE_URL}/api/mathpix/extract_questions_from_mmd`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: JSON.stringify({
                         pdf_id,
                         paper_name: this.paperName,
@@ -797,9 +812,12 @@ export default {
                 this.progressMessage = "📦 Uploading diagrams to S3...";
                 this.progressPercent = 60;
 
-                const uploadImagesRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
+                const uploadImagesRes = await authFetch(`${API_BASE_URL}/api/mathpix/upload_extracted_images_to_s3`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.paperName,
                         subject: this.form.subject,
@@ -822,8 +840,11 @@ export default {
                     const answerFormData = new FormData();
                     answerFormData.append("pdf", this.answerKeyFile);
 
-                    const answerUploadRes = await fetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
+                    const answerUploadRes = await authFetch(`${API_BASE_URL}/api/mathpix/upload_pdf_to_mathpix`, {
                         method: "POST",
+                        headers: {
+                            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                        },
                         body: answerFormData,
                     });
 
@@ -834,9 +855,12 @@ export default {
                         throw new Error("❌ Failed to upload answer key to Mathpix.");
                     }
 
-                    const matchRes = await fetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_mmd`, {
+                    const matchRes = await authFetch(`${API_BASE_URL}/api/mathpix/extract_answers_from_mmd`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                            "Content-Type": "application/json",
+                            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                        },
                         body: JSON.stringify({
                             pdf_id: answerPdfId,
                             paper_name: this.paperName

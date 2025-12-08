@@ -13,14 +13,12 @@ const pool = new Pool({
   },
 });
 
-// Fixed escapeLatex function that handles both strings and arrays
-const escapeLatex = (text) => {
-  // Handle null/undefined
+// Process text for storage (no longer encodes to base64 - plain LaTeX is stored directly)
+const processLatexForStorage = (text) => {
   if (!text) return text;
 
   // Handle arrays - convert to string first
   if (Array.isArray(text)) {
-    // Join array elements with a delimiter (e.g., comma and space)
     text = text.join(", ");
   }
 
@@ -29,8 +27,8 @@ const escapeLatex = (text) => {
     text = String(text);
   }
 
-  // Now safely apply string replacements
-  return text.replace(/\\/g, "\\\\") || "";
+  // Return text as-is (LaTeX is stored directly without encoding)
+  return text;
 };
 
 const insertJSONPayload = async (parsedJSON) => {
@@ -45,19 +43,19 @@ const insertJSONPayload = async (parsedJSON) => {
     for (const original of questions) {
       const item = {
         ...original,
-        question_text: original.question_text, // ✅ don't re-escape
+        question_text: processLatexForStorage(original.question_text),
         answer_key:
           typeof original.answer_key === "object" &&
           original.answer_key !== null
             ? {
                 ...original.answer_key,
-                correct_answer: escapeLatex(original.answer_key.correct_answer),
+                correct_answer: processLatexForStorage(original.answer_key.correct_answer),
               }
             : original.answer_key,
         answer_options: Array.isArray(original.answer_options)
           ? original.answer_options.map((opt) => ({
               ...opt,
-              text: escapeLatex(opt.text),
+              text: processLatexForStorage(opt.text),
             }))
           : [],
       };

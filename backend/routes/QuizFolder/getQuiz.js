@@ -1,6 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
+const { decodeLatex } = require("../../utils/latexBase64");
+
+// Helper function to decode LaTeX in a question object
+const decodeQuestionLatex = (question) => {
+  if (!question) return question;
+
+  const decoded = { ...question };
+
+  if (decoded.question_text) {
+    decoded.question_text = decodeLatex(decoded.question_text);
+  }
+
+  if (Array.isArray(decoded.answer_options)) {
+    decoded.answer_options = decoded.answer_options.map(opt => {
+      if (opt && typeof opt.text === 'string') {
+        return { ...opt, text: decodeLatex(opt.text) };
+      }
+      return opt;
+    });
+  }
+
+  if (decoded.answer_key && typeof decoded.answer_key === 'object') {
+    if (decoded.answer_key.correct_answer) {
+      decoded.answer_key = {
+        ...decoded.answer_key,
+        correct_answer: decodeLatex(decoded.answer_key.correct_answer)
+      };
+    }
+  }
+
+  return decoded;
+};
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -116,18 +148,21 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
     }
     
     const questionsWithSegments = questionRes.rows.map(question => {
+      // First decode LaTeX
+      const decodedQuestion = decodeQuestionLatex(question);
+
       if (segmentedQuestionsParsed && segmentedQuestionsParsed[question.id]) {
         const segmentData = segmentedQuestionsParsed[question.id];
         console.log(`✅ Found segmented data for question ${question.id}`);
         return {
-          ...question,
+          ...decodedQuestion,
           question_number: questionIds.indexOf(question.id) + 1, // Add question number for ordering
           questionParts: segmentData.questionParts || segmentData.parts // Handle both possible property names
         };
       }
       console.log(`⚠️ No segmented data for question ${question.id}`);
       return {
-        ...question,
+        ...decodedQuestion,
         question_number: questionIds.indexOf(question.id) + 1 // Add question number for ordering
       };
     });

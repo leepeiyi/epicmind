@@ -269,7 +269,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'MathsteryView',
@@ -401,7 +401,7 @@ export default {
         async loadExamPapers() {
             try {
                 this.isLoading = true;
-                const res = await fetch(`${API_BASE_URL}/api/mathstery/exam-papers`);
+                const res = await authFetch(`${API_BASE_URL}/api/mathstery/exam-papers`);
                 const data = await res.json();
                 this.allPapers = data.papers || [];
             } catch (err) {
@@ -415,7 +415,7 @@ export default {
         async loadExamPaper(paperName) {
             try {
                 const encodedName = encodeURIComponent(paperName);
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
 
                 this.currentPaperName = paperName;
@@ -584,7 +584,7 @@ export default {
                     answer_key: q.answer_key || ''
                 }));
 
-                const segmentResponse = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                const segmentResponse = await authFetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -599,7 +599,7 @@ export default {
                     this.segmentedQuestions = segmentResult.segmentedQuestions || {};
                 }
 
-                const response = await fetch(`${API_BASE_URL}/api/quiz/save`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/save`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -648,7 +648,7 @@ export default {
                 this.relatedQuestions = [];
 
                 const encodedTopic = encodeURIComponent(topicLabel);
-                const res = await fetch(`${API_BASE_URL}/api/mathstery/by-topic/${encodedTopic}`);
+                const res = await authFetch(`${API_BASE_URL}/api/mathstery/by-topic/${encodedTopic}`);
                 const data = await res.json();
 
                 // Filter out the currently selected question to avoid duplication

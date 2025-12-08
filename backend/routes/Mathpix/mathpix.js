@@ -294,12 +294,26 @@ router.post(
         }
       );
 
+      console.log("✅ Mathpix upload response:", uploadRes.data);
+
+      if (!uploadRes.data.pdf_id) {
+        console.error("❌ Mathpix response missing pdf_id:", uploadRes.data);
+        return res.status(500).json({
+          error: "Mathpix did not return a PDF ID",
+          response: uploadRes.data
+        });
+      }
+
       res.json({ pdf_id: uploadRes.data.pdf_id });
     } catch (err) {
-      console.error("❌ Mathpix upload error:", err);
+      console.error("❌ Mathpix upload error:", err.message);
+      console.error("❌ Mathpix error response:", err.response?.data);
       res
         .status(500)
-        .json({ error: "Failed to upload to Mathpix: " + err.message });
+        .json({
+          error: "Failed to upload to Mathpix: " + err.message,
+          details: err.response?.data || null
+        });
     }
   }
 );

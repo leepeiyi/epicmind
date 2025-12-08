@@ -194,7 +194,7 @@ import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import ImageUploader from '../components/ImageUploader.vue';
 import { marked } from 'marked';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'InsertMarkdown',
@@ -240,7 +240,7 @@ export default {
     },
     async mounted() {
         try {
-            const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
+            const res = await authFetch(`${API_BASE_URL}/api/paper/recent`);
             const data = await res.json();
             this.recentPapers = data.recent || [];
 
@@ -302,7 +302,7 @@ export default {
         async loadRecentPaper(paperName) {
             try {
                 const encodedName = encodeURIComponent(paperName);
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
 
                 this.paperName = paperName;
@@ -374,7 +374,7 @@ export default {
                 this.isGeneratingPreview = true;
 
                 // Step 1: Extract questions from markdown
-                const previewRes = await fetch(`${API_BASE_URL}/api/markdown/preview`, {
+                const previewRes = await authFetch(`${API_BASE_URL}/api/markdown/preview`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -400,7 +400,7 @@ export default {
                 // Step 2: Auto-label topics if exam paper
                 if (this.uploadType === "exam") {
                     try {
-                        const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                        const labelRes = await authFetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -416,7 +416,7 @@ export default {
 
                             // ✅ Step 3: Upload updated questions to update topic_label
                             try {
-                                const syllabusRes = await fetch(`${API_BASE_URL}/uploadSyllabus`, {
+                                const syllabusRes = await authFetch(`${API_BASE_URL}/uploadSyllabus`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({
@@ -525,7 +525,7 @@ export default {
                 this.progressMessage = "🔎 Checking for existing paper...";
                 this.progressPercent = 10;
 
-                const existsRes = await fetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(this.paperName)}`);
+                const existsRes = await authFetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(this.paperName)}`);
                 const { exists } = await existsRes.json();
                 if (exists) {
                     alert(`⚠️ Paper "${this.paperName}" already exists in the database.`);
@@ -538,7 +538,7 @@ export default {
                 this.progressMessage = "🖼️ Processing images and saving to database...";
                 this.progressPercent = 50;
 
-                const processRes = await fetch(`${API_BASE_URL}/api/markdown/process`, {
+                const processRes = await authFetch(`${API_BASE_URL}/api/markdown/process`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -613,9 +613,12 @@ export default {
         async saveProcessedMarkdown() {
             try {
                 this.isSaving = true;
-                const response = await fetch(`${API_BASE_URL}/api/paper/update-question-details`, {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/update-question-details`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+                    },
                     body: JSON.stringify({
                         paper_name: this.paperName,
                         content: this.outputMarkdown
@@ -626,7 +629,7 @@ export default {
                 if (response.ok) {
                     alert('✅ Markdown saved successfully!');
                     // Refresh recent papers
-                    const res = await fetch(`${API_BASE_URL}/api/paper/recent`);
+                    const res = await authFetch(`${API_BASE_URL}/api/paper/recent`);
                     const data = await res.json();
                     this.recentPapers = data.recent || [];
                 } else {

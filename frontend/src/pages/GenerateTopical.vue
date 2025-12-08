@@ -254,7 +254,7 @@
 import Navbar from '../components/Navbar.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
 import { mathTopicsData } from '../components/topicData';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'GenerateQuiz',
@@ -444,7 +444,7 @@ export default {
 
                 // Call the backend API to generate the quiz
                 console.log(this.favoritedQuestions);
-                const response = await fetch(`${API_BASE_URL}/api/quiz/generate`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/generate`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -525,7 +525,7 @@ export default {
 
             if (query.favoriteId) {
                 try {
-                    const res = await fetch(`${API_BASE_URL}/api/favourite/favquiz/${query.favoriteId}`);
+                    const res = await authFetch(`${API_BASE_URL}/api/favourite/favquiz/${query.favoriteId}`);
                     const data = await res.json();
                     console.log('Fetched favorited questions:', data);
                     this.favoritedQuestions = data.questions || []; // ✅ assign full question objects
@@ -557,7 +557,7 @@ export default {
                     answer_key: q.answer || ''
                 }));
 
-                const response = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -619,7 +619,7 @@ export default {
                         answer_key: q.answer || ''
                     }));
 
-                    const segmentResponse = await fetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
+                    const segmentResponse = await authFetch(`${API_BASE_URL}/api/quiz/segment-questions`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -638,7 +638,7 @@ export default {
                 this.loadingMessage = 'Saving quiz...';
                 this.progressPercent = 50;
 
-                const response = await fetch(`${API_BASE_URL}/api/quiz/save`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/save`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

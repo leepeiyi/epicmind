@@ -10,7 +10,7 @@
 </template>
 
 <script>
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -81,7 +81,7 @@ export default {
                     topic_label: this.topicLabel
                 });
 
-                const response = await fetch(`${API_BASE_URL}/api/favourite/check-question?${params}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/favourite/check-question?${params}`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }

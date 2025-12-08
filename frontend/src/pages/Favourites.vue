@@ -179,7 +179,7 @@
 import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import FavouriteButton from '../components/FavouriteButton.vue';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -306,7 +306,7 @@ export default {
             });
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/favourite/by-topic?${queryParams.toString()}`);
+                const response = await authFetch(`${API_BASE_URL}/api/favourite/by-topic?${queryParams.toString()}`);
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -359,7 +359,7 @@ export default {
             });
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/favourite?${queryParams.toString()}`);
+                const response = await authFetch(`${API_BASE_URL}/api/favourite?${queryParams.toString()}`);
 
                 if (!response.ok) throw new Error("Failed to load favorites");
 
@@ -414,7 +414,7 @@ export default {
             });
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/favourite/my-fav-topic?${queryParams.toString()}`);
+                const response = await authFetch(`${API_BASE_URL}/api/favourite/my-fav-topic?${queryParams.toString()}`);
 
                 if (!response.ok) {
                     const errorData = await response.json();
@@ -460,7 +460,7 @@ export default {
             try {
                 // Loop through each question in this favorite and delete them
                 for (const questionId of favorite.question_ids || []) {
-                    const response = await fetch(`${API_BASE_URL}/api/favourite/remove-question`, {
+                    const response = await authFetch(`${API_BASE_URL}/api/favourite/remove-question`, {
                         method: "DELETE",
                         headers: {
                             "Content-Type": "application/json"
@@ -505,7 +505,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/favourite/remove-question`, {
+                const response = await authFetch(`${API_BASE_URL}/api/favourite/remove-question`, {
                     method: "DELETE",
                     headers: {
                         "Content-Type": "application/json"

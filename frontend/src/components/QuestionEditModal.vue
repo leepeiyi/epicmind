@@ -140,7 +140,7 @@
 
 <script>
 import { marked } from 'marked';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import TopicSelector from './TopicSelector.vue';
 
@@ -280,7 +280,7 @@ export default {
         async fetchQuestion() {
             this.loading = true;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/question/${this.questionId}`);
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/question/${this.questionId}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.success && data.question) {
@@ -348,7 +348,7 @@ export default {
                     teacher_id: user.id
                 };
 
-                const response = await fetch(`${API_BASE_URL}/api/quiz/question/${this.editedQuestion.id}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/question/${this.editedQuestion.id}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'

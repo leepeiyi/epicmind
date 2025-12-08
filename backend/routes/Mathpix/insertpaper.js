@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 const requireTeacher = require("../../middleware/require-teacher");
+const { decodeLatex } = require("../../utils/latexBase64");
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -67,6 +68,60 @@ router.get("/all-papers", async (req, res) => {
   }
 });
 
+// Helper function to decode LaTeX in a question object
+const decodeQuestionLatex = (question) => {
+  if (!question) return question;
+
+  const decoded = { ...question };
+
+  // Decode question_text
+  if (decoded.question_text) {
+    decoded.question_text = decodeLatex(decoded.question_text);
+  }
+
+  // Parse and decode answer_options (PostgreSQL may return as JSON string)
+  let answerOptions = decoded.answer_options;
+  if (typeof answerOptions === 'string') {
+    try {
+      answerOptions = JSON.parse(answerOptions);
+    } catch (e) {
+      console.error('Failed to parse answer_options:', e);
+      answerOptions = [];
+    }
+  }
+  if (Array.isArray(answerOptions)) {
+    decoded.answer_options = answerOptions.map(opt => {
+      if (opt && typeof opt.text === 'string') {
+        return { ...opt, text: decodeLatex(opt.text) };
+      }
+      return opt;
+    });
+  }
+
+  // Parse and decode answer_key (PostgreSQL may return as JSON string)
+  let answerKey = decoded.answer_key;
+  if (typeof answerKey === 'string') {
+    try {
+      answerKey = JSON.parse(answerKey);
+    } catch (e) {
+      console.error('Failed to parse answer_key:', e);
+      answerKey = null;
+    }
+  }
+  if (answerKey && typeof answerKey === 'object') {
+    if (answerKey.correct_answer) {
+      decoded.answer_key = {
+        ...answerKey,
+        correct_answer: decodeLatex(answerKey.correct_answer)
+      };
+    } else {
+      decoded.answer_key = answerKey;
+    }
+  }
+
+  return decoded;
+};
+
 // GET questions by paper_name
 router.get("/questions/:paper_name", async (req, res) => {
   const { paper_name } = req.params;
@@ -77,7 +132,10 @@ router.get("/questions/:paper_name", async (req, res) => {
       [paper_name]
     );
     client.release();
-    res.json({ questions: result.rows });
+
+    // Decode LaTeX in all questions
+    const decodedQuestions = result.rows.map(decodeQuestionLatex);
+    res.json({ questions: decodedQuestions });
   } catch (err) {
     console.error("❌ Failed to fetch questions:", err.message);
     res.status(500).json({ error: "Internal server error" });

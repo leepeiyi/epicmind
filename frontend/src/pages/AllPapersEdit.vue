@@ -174,7 +174,7 @@ import ImageUploader from '../components/ImageUploader.vue';
 import PrintView from '../components/PrintView.vue';
 import ManualQuestionModal from '../components/ManualQuestionModal.vue';
 import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue'; // IMPORT THE COMPONENT
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'AllPapersView',
@@ -289,7 +289,7 @@ export default {
         async loadAllPapers() {
             try {
                 this.isLoading = true;
-                const res = await fetch(`${API_BASE_URL}/api/paper/all-papers`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/all-papers`);
                 const data = await res.json();
                 this.allPapers = data.papers || [];
                 console.log("📝 Loaded Papers:", JSON.parse(JSON.stringify(this.allPapers)));
@@ -307,7 +307,7 @@ export default {
         async loadPaper(paperName) {
             try {
                 const encodedName = encodeURIComponent(paperName);
-                const res = await fetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
+                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
                 const data = await res.json();
 
                 this.currentPaperName = paperName;
@@ -353,9 +353,8 @@ export default {
                     this.isLabeling = true;
 
                     try {
-                        const labelRes = await fetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                        const labelRes = await authFetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 questions: labeledQuestions.map(q => ({
                                     question_number: q.question_number,
@@ -381,9 +380,8 @@ export default {
                         });
 
                         // Step 3: Save to DB
-                        await fetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
+                        await authFetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 jsonData: labeledQuestions,
                                 subject: this.form.subject,
@@ -502,9 +500,8 @@ export default {
         async saveEditedMarkdown() {
             this.isSaving = true;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/paper/update-question-details`, {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/update-question-details`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         paper_name: this.currentPaperName,
                         content: this.markdownContent
@@ -541,7 +538,7 @@ export default {
             if (!this.currentPaperName) return;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/paper/next-question-number/${encodeURIComponent(this.currentPaperName)}`);
+                const response = await authFetch(`${API_BASE_URL}/api/paper/next-question-number/${encodeURIComponent(this.currentPaperName)}`);
                 const data = await response.json();
                 if (data.success) {
                     this.nextQuestionNumber = data.next_question_number;
@@ -583,11 +580,8 @@ export default {
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/paper/delete/${encodeURIComponent(paper.paper_name)}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/delete/${encodeURIComponent(paper.paper_name)}`, {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
                 });
 
                 const result = await response.json();

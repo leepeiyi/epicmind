@@ -283,7 +283,7 @@
 
 <script>
 import Navbar from '../components/Navbar.vue';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import AssignQuizModal from '../components/AssignQuiz.vue';
 import { toast } from 'vue-sonner';
 
@@ -451,7 +451,7 @@ export default {
 
                 if (this.userRole === 'student') {
                     // Students only see quizzes assigned to them
-                    response = await fetch(`${API_BASE_URL}/api/quiz/student/${this.userId}/assigned-quizzes`, {
+                    response = await authFetch(`${API_BASE_URL}/api/quiz/student/${this.userId}/assigned-quizzes`, {
                         headers: {
                             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                         }
@@ -478,7 +478,7 @@ export default {
                     }));
                 } else {
                     // Teachers see all quizzes they created
-                    response = await fetch(`${API_BASE_URL}/api/quiz/folders/all`, {
+                    response = await authFetch(`${API_BASE_URL}/api/quiz/folders/all`, {
                         headers: {
                             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                         }
@@ -532,7 +532,7 @@ export default {
 
             try {
                 // Fetch ALL students (both linked and not linked to this teacher)
-                const response = await fetch(`${API_BASE_URL}/api/quiz/students/all`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/students/all`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -557,7 +557,7 @@ export default {
 
         async fetchLinkedStudentIds() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -624,7 +624,7 @@ export default {
             try {
                 // Add new student links
                 if (this.studentLinksToAdd.length > 0) {
-                    const addResponse = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
+                    const addResponse = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -645,7 +645,7 @@ export default {
                 for (const studentId of this.studentLinksToRemove) {
                     console.log('Removing student:', studentId);
                     console.log('Teacher ID:', this.userId);
-                    const removeResponse = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
+                    const removeResponse = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
                         method: 'DELETE',
                         headers: {
                             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -720,7 +720,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/folders/${quizId}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/folders/${quizId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -750,7 +750,7 @@ export default {
             this.studentsError = null;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -799,7 +799,7 @@ export default {
         },
 
         async linkExistingStudent() {
-            const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
+            const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -820,7 +820,7 @@ export default {
 
         async createNewStudentAccount() {
             // First create the student account
-            const createResponse = await fetch(`${API_BASE_URL}/api/user/register`, {
+            const createResponse = await authFetch(`${API_BASE_URL}/api/user/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -853,7 +853,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${this.userId}/students/${studentId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -891,7 +891,7 @@ export default {
             this.assignmentsError = null;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/student/${studentId}/assigned-quizzes`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/student/${studentId}/assigned-quizzes`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -936,7 +936,7 @@ export default {
             this.timerValue = 1; // default
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/${quizId}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/${quizId}`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -961,7 +961,7 @@ export default {
 
             this.savingTimer = true;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/${this.timerQuizId}/set-timer`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/${this.timerQuizId}/set-timer`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

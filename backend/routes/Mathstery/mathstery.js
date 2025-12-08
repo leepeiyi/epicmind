@@ -3,6 +3,41 @@
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
+const { decodeLatex } = require("../../utils/latexBase64");
+
+// Helper function to decode LaTeX in a question object
+const decodeQuestionLatex = (question) => {
+  if (!question) return question;
+
+  const decoded = { ...question };
+
+  if (decoded.question_text) {
+    decoded.question_text = decodeLatex(decoded.question_text);
+  }
+  if (decoded.text) {
+    decoded.text = decodeLatex(decoded.text);
+  }
+
+  if (Array.isArray(decoded.answer_options)) {
+    decoded.answer_options = decoded.answer_options.map(opt => {
+      if (opt && typeof opt.text === 'string') {
+        return { ...opt, text: decodeLatex(opt.text) };
+      }
+      return opt;
+    });
+  }
+
+  if (decoded.answer_key && typeof decoded.answer_key === 'object') {
+    if (decoded.answer_key.correct_answer) {
+      decoded.answer_key = {
+        ...decoded.answer_key,
+        correct_answer: decodeLatex(decoded.answer_key.correct_answer)
+      };
+    }
+  }
+
+  return decoded;
+};
 
 // Create a PostgreSQL connection pool
 const pool = new Pool({
@@ -109,37 +144,40 @@ router.get("/by-topic/:topicLabel", async (req, res) => {
     const result = await pool.query(query, [topic_id || topicLabel]);
 
     const questions = result.rows.map((row) => {
+      // Decode LaTeX first
+      const decodedRow = decodeQuestionLatex(row);
+
       let answer_options = [];
       let answer_key = {};
 
       try {
         answer_options =
-          typeof row.answer_options === "string"
-            ? JSON.parse(row.answer_options)
-            : row.answer_options || [];
+          typeof decodedRow.answer_options === "string"
+            ? JSON.parse(decodedRow.answer_options)
+            : decodedRow.answer_options || [];
       } catch {
         answer_options = [];
       }
 
       try {
         answer_key =
-          typeof row.answer_key === "string"
-            ? JSON.parse(row.answer_key)
-            : row.answer_key || {};
+          typeof decodedRow.answer_key === "string"
+            ? JSON.parse(decodedRow.answer_key)
+            : decodedRow.answer_key || {};
       } catch {
         answer_key = {};
       }
 
       return {
-        id: row.id,
-        question_number: row.question_number,
-        question_text: row.question_text,
-        topic_label: row.topic_label,
-        paper_name: row.paper_name,
-        paper_type: row.paper_type,
-        difficulty_level: row.difficulty_level,
-        sub_topic: row.sub_topic,
-        image_paths: row.image_paths,
+        id: decodedRow.id,
+        question_number: decodedRow.question_number,
+        question_text: decodedRow.question_text,
+        topic_label: decodedRow.topic_label,
+        paper_name: decodedRow.paper_name,
+        paper_type: decodedRow.paper_type,
+        difficulty_level: decodedRow.difficulty_level,
+        sub_topic: decodedRow.sub_topic,
+        image_paths: decodedRow.image_paths,
         answer_options,
         answer_key,
       };

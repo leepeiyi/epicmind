@@ -2,6 +2,41 @@ const express = require("express");
 const router = express.Router();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Pool } = require("pg");
+const { decodeLatex } = require("../../utils/latexBase64");
+
+// Helper function to decode LaTeX in a question object
+const decodeQuestionLatex = (question) => {
+  if (!question) return question;
+
+  const decoded = { ...question };
+
+  if (decoded.question_text) {
+    decoded.question_text = decodeLatex(decoded.question_text);
+  }
+  if (decoded.text) {
+    decoded.text = decodeLatex(decoded.text);
+  }
+
+  if (Array.isArray(decoded.answer_options)) {
+    decoded.answer_options = decoded.answer_options.map(opt => {
+      if (opt && typeof opt.text === 'string') {
+        return { ...opt, text: decodeLatex(opt.text) };
+      }
+      return opt;
+    });
+  }
+
+  if (decoded.answer_key && typeof decoded.answer_key === 'object') {
+    if (decoded.answer_key.correct_answer) {
+      decoded.answer_key = {
+        ...decoded.answer_key,
+        correct_answer: decodeLatex(decoded.answer_key.correct_answer)
+      };
+    }
+  }
+
+  return decoded;
+};
 
 // Create a PostgreSQL connection pool
 const pool = new Pool({
@@ -164,7 +199,8 @@ router.post("/generate", async (req, res) => {
     queryParams.push(maxCandidates);
 
     const result = await pool.query(query, queryParams);
-    let candidateQuestions = result.rows;
+    // Decode LaTeX in fetched questions
+    let candidateQuestions = result.rows.map(decodeQuestionLatex);
     console.log(`Found ${candidateQuestions.length} database questions`);
     console.log("includeQuestions:", includeQuestions);
 
@@ -806,7 +842,8 @@ router.get("/question/:questionId", async (req, res) => {
       });
     }
 
-    const row = result.rows[0];
+    // Decode LaTeX in question
+    const row = decodeQuestionLatex(result.rows[0]);
 
     // Process answer options
     let options = [];

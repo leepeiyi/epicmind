@@ -55,7 +55,7 @@
 
 <script>
 import axios from 'axios';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 export default {
   name: 'AssignQuizModal',
@@ -120,7 +120,7 @@ export default {
         const teacherId = user.id;
 
         // Fetch students (assuming endpoint exists to get students for a teacher)
-        const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${teacherId}/students`, {
+        const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${teacherId}/students`, {
           headers: {
             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
           }
@@ -143,7 +143,7 @@ export default {
     async fetchAssignments() {
       try {
         // Fetch current assignments for this quiz
-        const response = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
+        const response = await authFetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
           headers: {
             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
           }
@@ -229,7 +229,7 @@ export default {
         const teacherId = user.id;
 
         // Save the assignments
-        const response = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
+        const response = await authFetch(`${API_BASE_URL}/api/quiz/${this.quizId}/assignments`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

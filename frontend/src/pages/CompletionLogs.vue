@@ -172,7 +172,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import { RefreshCw, Mail, Eye } from 'lucide-vue-next';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 
 export default {
     name: 'CompletionLogs',
@@ -260,7 +260,7 @@ export default {
 
         async fetchCompletionLogs() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/completion-log`, {
+                const response = await authFetch(`${API_BASE_URL}/api/completion-log`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -279,7 +279,7 @@ export default {
         async fetchStudents() {
             try {
                 const userId = JSON.parse(sessionStorage.getItem('user'))?.id;
-                const response = await fetch(`${API_BASE_URL}/api/quiz/teacher/${userId}/students`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/teacher/${userId}/students`, {
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     }
@@ -319,7 +319,7 @@ export default {
             log.sending_reminder = true;
             
             try {
-                const response = await fetch(`${API_BASE_URL}/api/completion-log/send-reminder`, {
+                const response = await authFetch(`${API_BASE_URL}/api/completion-log/send-reminder`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -349,7 +349,7 @@ export default {
             this.sendingBulkReminders = true;
             
             try {
-                const response = await fetch(`${API_BASE_URL}/api/completion-log/send-bulk-reminders`, {
+                const response = await authFetch(`${API_BASE_URL}/api/completion-log/send-bulk-reminders`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

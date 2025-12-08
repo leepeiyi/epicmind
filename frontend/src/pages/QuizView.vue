@@ -375,7 +375,7 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import { marked } from 'marked';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { authFetch } from '../config/api.js';
 import MathEditor from '../components/MathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
 import ReportQuestionModal from '../components/ReportQuestionModal.vue';
@@ -562,7 +562,7 @@ export default {
 
             try {
                 // Fetch quiz metadata
-                const metaResponse = await fetch(`${API_BASE_URL}/api/quiz/${this.quizId}`);
+                const metaResponse = await authFetch(`${API_BASE_URL}/api/quiz/${this.quizId}`);
                 if (!metaResponse.ok) {
                     throw new Error(`Quiz metadata fetch failed: ${metaResponse.status}`);
                 }
@@ -570,7 +570,7 @@ export default {
                 this.quiz = metaData;
 
                 // Fetch quiz questions
-                const questionsResponse = await fetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
+                const questionsResponse = await authFetch(`${API_BASE_URL}/api/quiz/folders/getQuestionsByFolderId?folderId=${this.quizId}`);
                 if (!questionsResponse.ok) {
                     throw new Error(`Question fetch failed: ${questionsResponse.status}`);
                 }
@@ -653,7 +653,7 @@ export default {
                 }
 
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
+                    const response = await authFetch(`${API_BASE_URL}/api/mathpix/gemini/split-question-parts`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -743,7 +743,7 @@ export default {
             }
             
             try {
-                const response = await fetch(`${API_BASE_URL}/api/quiz/folders/saveSegmentedQuestions`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/folders/saveSegmentedQuestions`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -766,7 +766,7 @@ export default {
 
         async checkAnswerWithGemini(userAnswer, correctAnswer, questionText = '') {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/mathpix/gemini/check-answer-similarity`, {
+                const response = await authFetch(`${API_BASE_URL}/api/mathpix/gemini/check-answer-similarity`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1048,7 +1048,7 @@ export default {
                 };
 
                 try {
-                    await fetch(`${API_BASE_URL}/api/quiz-assignment/complete`, {
+                    await authFetch(`${API_BASE_URL}/api/quiz-assignment/complete`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
