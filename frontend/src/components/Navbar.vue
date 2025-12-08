@@ -153,8 +153,7 @@ export default {
       navItems: [
         { icon: 'Shield', label: 'For Admin', route: '/admin-panel', requiresRole: 'admin' }, // This will have dropdown
         { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper', requiresRole: 'teacher' },
-        { icon: 'BookOpen', label: 'Mathstery', route: '/mathstery' },
-        { icon: 'FolderOpen', label: 'Topical Revision', route: '/generate-topical' },
+        { icon: 'BookOpen', label: 'Question Bank', route: '/question-bank' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' }, // This will have dropdown
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' }, // This will have dropdown
       ],

@@ -16,6 +16,7 @@ import Mathstery from "../pages/Mathstery.vue";
 import CompletionLogs from "../pages/CompletionLogs.vue";
 import AdminPanel from "../pages/AdminPanel.vue";
 import TopicTags from "../pages/TopicTags.vue";
+import QuestionBank from "../pages/QuestionBank.vue";
 
 const routes = [
   {
@@ -126,6 +127,12 @@ const routes = [
     component: TopicTags,
     meta: { requiresAuth: true, requiresRole: "teacher" },
   },
+  {
+    path: "/question-bank",
+    name: "QuestionBank",
+    component: QuestionBank,
+    meta: { requiresAuth: true },
+  },
 ];
 
 const router = createRouter({
@@ -165,7 +172,7 @@ router.beforeEach((to, from, next) => {
     } else if (user.role === 'teacher') {
       return next({ path: "/insert-paper" });
     } else {
-      return next({ path: "/mathstery" });
+      return next({ path: "/question-bank" });
     }
   }
 
@@ -176,7 +183,7 @@ router.beforeEach((to, from, next) => {
     } else if (user.role === 'teacher') {
       return next({ path: "/insert-paper" });
     } else {
-      return next({ path: "/mathstery" });
+      return next({ path: "/question-bank" });
     }
   }
 

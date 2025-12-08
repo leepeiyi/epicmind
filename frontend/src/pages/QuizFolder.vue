@@ -1034,8 +1034,52 @@ export default {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    padding: 0 3rem;
+    max-width: 1400px;
+    margin: 2rem auto 1.5rem auto;
 }
+
+.student-management-section {
+    margin-left: 3rem;
+    margin-right: 3rem;
+    max-width: 1400px;
+    background-color: #f9f9f9;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid #eee;
+}
+
+.quiz-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 3rem;
+    max-width: 1400px;
+    margin: 0 auto 2rem auto;
+}
+
+.quiz-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    padding: 0 3rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.loading-state,
+.error-state,
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    background-color: #f9f9f9;
+    border-radius: 10px;
+    margin: 1rem 3rem 0 3rem;
+    max-width: 1400px;
+    color: #666;
+}
+
 
 .main-title {
     font-size: 2rem;
@@ -1068,14 +1112,6 @@ export default {
     background-color: #003e8a;
 }
 
-/* Student Management Section */
-.student-management-section {
-    background-color: #f9f9f9;
-    border-radius: 10px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-    border: 1px solid #eee;
-}
 
 .student-management-section h2 {
     color: #0055B8;
@@ -1161,13 +1197,6 @@ export default {
     font-size: 0.9rem;
 }
 
-/* Quiz Management Section */
-.quiz-controls {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-}
 
 .search-bar {
     flex: 1;
@@ -1187,11 +1216,6 @@ export default {
     cursor: pointer;
 }
 
-.quiz-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
-}
 
 .quiz-card {
     border: 1px solid #eee;
@@ -1281,9 +1305,6 @@ export default {
     margin-top: auto;
 }
 
-.loading-state,
-.error-state,
-.empty-state,
 .loading-indicator {
     text-align: center;
     padding: 2rem;
