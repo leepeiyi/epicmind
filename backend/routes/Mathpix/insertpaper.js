@@ -854,6 +854,115 @@ router.get("/next-question-number/:paper_name", async (req, res) => {
   }
 });
 
+// SEARCH questions across all papers
+router.get("/search-questions", async (req, res) => {
+  const { query, subject, banding, level, topic_label, limit = 50, offset = 0 } = req.query;
+
+  if (!query || query.trim().length < 2) {
+    return res.status(400).json({
+      error: "Search query must be at least 2 characters"
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const searchTerm = `%${query.trim()}%`;
+
+    // Build dynamic WHERE clause
+    let whereConditions = [`(question_text ILIKE $1 OR topic_label ILIKE $1)`];
+    let params = [searchTerm];
+    let paramIndex = 2;
+
+    if (subject) {
+      whereConditions.push(`subject = $${paramIndex}`);
+      params.push(subject);
+      paramIndex++;
+    }
+    if (banding) {
+      whereConditions.push(`banding = $${paramIndex}`);
+      params.push(banding);
+      paramIndex++;
+    }
+    if (level) {
+      whereConditions.push(`level = $${paramIndex}`);
+      params.push(level);
+      paramIndex++;
+    }
+    if (topic_label) {
+      whereConditions.push(`topic_label ILIKE $${paramIndex}`);
+      params.push(`%${topic_label}%`);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+
+    // Get total count
+    const countResult = await client.query(
+      `SELECT COUNT(*) as total FROM question WHERE ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get paginated results
+    params.push(parseInt(limit), parseInt(offset));
+    const result = await client.query(
+      `SELECT
+        id,
+        paper_name,
+        question_number,
+        question_text,
+        topic_label,
+        subject,
+        banding,
+        level,
+        paper_type,
+        difficulty_level,
+        answer_key,
+        created_at
+      FROM question
+      WHERE ${whereClause}
+      ORDER BY created_at DESC, paper_name, question_number
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      params
+    );
+
+    // Decode LaTeX in results
+    const decodedResults = result.rows.map(q => {
+      const decoded = { ...q };
+      if (decoded.question_text) {
+        decoded.question_text = decodeLatex(decoded.question_text);
+      }
+      // Parse answer_key if it's a string
+      if (typeof decoded.answer_key === 'string') {
+        try {
+          decoded.answer_key = JSON.parse(decoded.answer_key);
+        } catch (e) {
+          // Keep as string if parse fails
+        }
+      }
+      return decoded;
+    });
+
+    res.json({
+      success: true,
+      questions: decodedResults,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      hasMore: parseInt(offset) + result.rows.length < total
+    });
+
+  } catch (err) {
+    console.error("❌ Error searching questions:", err.message);
+    res.status(500).json({
+      error: "Failed to search questions: " + err.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE route to delete a paper and all its questions
 router.delete("/delete/:paper_name", requireTeacher, async (req, res) => {
   const { paper_name } = req.params;

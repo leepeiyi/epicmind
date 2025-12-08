@@ -112,11 +112,11 @@ export default {
 
 /* Sidebar Styles */
 .sidebar {
-    width: 280px;
+    width: 200px;
     flex-shrink: 0;
     background: white;
     border-radius: 12px;
-    padding: 1.5rem;
+    padding: 1rem;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     height: fit-content;
     position: sticky;
@@ -124,28 +124,28 @@ export default {
 }
 
 .sidebar-title {
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #333;
-    margin: 0 0 1.5rem 0;
-    padding-bottom: 1rem;
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid #eee;
 }
 
 .sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
 }
 
 .sidebar-item {
     display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 1rem;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 0.75rem;
     border: none;
     background: transparent;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
     text-align: left;
     transition: all 0.2s ease;
@@ -162,11 +162,10 @@ export default {
 }
 
 .sidebar-icon {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     color: #666;
     flex-shrink: 0;
-    margin-top: 2px;
 }
 
 .sidebar-item.active .sidebar-icon {
@@ -176,12 +175,11 @@ export default {
 .sidebar-item-content {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
 }
 
 .sidebar-item-title {
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-weight: 500;
+    font-size: 0.85rem;
     color: #333;
 }
 
@@ -190,8 +188,7 @@ export default {
 }
 
 .sidebar-item-desc {
-    font-size: 0.8rem;
-    color: #888;
+    display: none;
 }
 
 /* Main Content Styles */

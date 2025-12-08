@@ -14,11 +14,42 @@
                 Browse and edit all papers in the database.
             </p>
 
+            <!-- Search Mode Toggle -->
+            <div class="search-mode-toggle">
+                <button
+                    :class="['mode-btn', { active: searchMode === 'papers' }]"
+                    @click="searchMode = 'papers'"
+                >
+                    Search Papers
+                </button>
+                <button
+                    :class="['mode-btn', { active: searchMode === 'questions' }]"
+                    @click="searchMode = 'questions'"
+                >
+                    Search Questions
+                </button>
+            </div>
+
             <!-- Search and Filter Section -->
             <div class="search-filter-section">
                 <div class="search-bar">
-                    <input v-model="searchQuery" type="text"
-                        placeholder="Search papers (try 'no answers' to find papers missing answer keys)..." class="search-input" />
+                    <input
+                        v-model="searchQuery"
+                        type="text"
+                        :placeholder="searchMode === 'papers'
+                            ? 'Search papers (try \'no answers\' to find papers missing answer keys)...'
+                            : 'Search question content (e.g., \'quadratic\', \'probability\', \'find the value\')...'"
+                        class="search-input"
+                        @keyup.enter="searchMode === 'questions' && searchQuestions()"
+                    />
+                    <button
+                        v-if="searchMode === 'questions'"
+                        @click="searchQuestions"
+                        class="search-btn"
+                        :disabled="isSearchingQuestions || searchQuery.length < 2"
+                    >
+                        {{ isSearchingQuestions ? 'Searching...' : 'Search' }}
+                    </button>
                 </div>
                 <div class="filter-controls">
                     <select v-model="filterSubject" class="filter-select">
@@ -39,11 +70,85 @@
                             {{ level }}
                         </option>
                     </select>
+                    <button
+                        v-if="searchMode === 'questions' && questionSearchResults.length > 0"
+                        @click="clearQuestionSearch"
+                        class="clear-search-btn"
+                    >
+                        Clear Results
+                    </button>
                 </div>
             </div>
 
-            <!-- Papers List -->
-            <div v-if="filteredPapers.length" class="all-papers">
+            <!-- Question Search Results -->
+            <div v-if="searchMode === 'questions' && questionSearchResults.length > 0" class="question-search-results">
+                <div class="search-results-header">
+                    <h3>Question Results ({{ questionSearchTotal }} found)</h3>
+                    <p class="search-hint">Click on a question to open its paper for editing</p>
+                </div>
+
+                <div class="question-results-grid">
+                    <div
+                        v-for="question in questionSearchResults"
+                        :key="question.id"
+                        class="question-result-card"
+                    >
+                        <div class="question-result-header">
+                            <span class="question-badge">Q{{ question.question_number }}</span>
+                            <span class="topic-badge">{{ question.topic_label || 'No topic' }}</span>
+                            <span v-if="question.difficulty_level" :class="['difficulty-badge', question.difficulty_level.toLowerCase()]">
+                                {{ question.difficulty_level }}
+                            </span>
+                        </div>
+                        <div class="question-result-text" v-html="highlightSearchTerm(truncateText(question.question_text, 200))"></div>
+                        <div class="question-result-meta">
+                            <span class="paper-link">{{ question.paper_name }}</span>
+                            <span class="meta-separator">•</span>
+                            <span>{{ question.subject }} {{ question.level }}</span>
+                        </div>
+                        <div v-if="question.answer_key?.correct_answer" class="question-result-answer">
+                            <strong>Answer:</strong> {{ truncateText(question.answer_key.correct_answer, 100) }}
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="question-result-actions">
+                            <FavouriteButton
+                                :question-id="question.id"
+                                :subject="question.subject || ''"
+                                :banding="question.banding || ''"
+                                :level="question.level || ''"
+                                :topic-label="question.topic_label || ''"
+                                size="small"
+                                @click.stop
+                            />
+                            <button
+                                class="edit-question-btn"
+                                @click.stop="openEditModal(question)"
+                                title="Edit this question"
+                            >
+                                <Edit3 class="btn-icon" />
+                                Edit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Load More Button -->
+                <div v-if="questionSearchHasMore" class="load-more-section">
+                    <button @click="loadMoreQuestions" class="load-more-btn" :disabled="isSearchingQuestions">
+                        {{ isSearchingQuestions ? 'Loading...' : `Load More (${questionSearchResults.length} of ${questionSearchTotal})` }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- No Results State for Question Search -->
+            <div v-else-if="searchMode === 'questions' && hasSearchedQuestions && questionSearchResults.length === 0" class="empty-state">
+                <p>No questions found matching "{{ lastSearchQuery }}"</p>
+                <p class="hint">Try different keywords or adjust your filters</p>
+            </div>
+
+            <!-- Papers List (only show when in papers mode) -->
+            <div v-if="searchMode === 'papers' && filteredPapers.length" class="all-papers">
                 <h3>All Papers ({{ filteredPapers.length }})</h3>
                 <div v-if="filteredPapers.some(p => !p.has_answer_key)" class="warning-legend">
                     <span class="no-answer-warning">!</span> = Paper has no answer keys
@@ -101,12 +206,12 @@
             </div>
 
             <!-- Loading State -->
-            <div v-else-if="isLoading" class="loading-state">
+            <div v-else-if="searchMode === 'papers' && isLoading" class="loading-state">
                 <EpicMindLoader text="Loading papers..." />
             </div>
 
-            <!-- Empty State -->
-            <div v-else class="empty-state">
+            <!-- Empty State for Papers -->
+            <div v-else-if="searchMode === 'papers' && !filteredPapers.length" class="empty-state">
                 <p>No papers found matching your criteria.</p>
             </div>
             <br>
@@ -160,6 +265,17 @@
         <ManualQuestionModal :show="showAddQuestionModal" :paper-name="currentPaperName"
             :next-question-number="nextQuestionNumber" :paper-metadata="form" @close="showAddQuestionModal = false"
             @question-added="onQuestionAdded" />
+
+        <!-- Question Edit Modal (for search results) -->
+        <QuestionEditModal
+            :is-open="showEditModal"
+            :question="editingQuestion"
+            :question-id="editingQuestion?.id"
+            :detected-level="editingQuestion?.level || ''"
+            :detected-subject="editingQuestion?.subject || ''"
+            @close="closeEditModal"
+            @saved="onQuestionSaved"
+        />
     </div>
 </template>
 
@@ -169,6 +285,9 @@ import ImageUploader from './ImageUploader.vue';
 import ManualQuestionModal from './ManualQuestionModal.vue';
 import MarkdownEditorPreview from './MarkdownEditorPreview.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
+import FavouriteButton from './FavouriteButton.vue';
+import QuestionEditModal from './QuestionEditModal.vue';
+import { Star, Edit3 } from 'lucide-vue-next';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
@@ -179,7 +298,11 @@ export default {
         ImageUploader,
         ManualQuestionModal,
         MarkdownEditorPreview,
-        EpicMindLoader
+        EpicMindLoader,
+        FavouriteButton,
+        QuestionEditModal,
+        Star,
+        Edit3
     },
     data() {
         return {
@@ -204,7 +327,19 @@ export default {
                 banding: '',
                 level: '',
                 uploadType: ''
-            }
+            },
+            // Question search state
+            searchMode: 'papers', // 'papers' or 'questions'
+            questionSearchResults: [],
+            questionSearchTotal: 0,
+            questionSearchHasMore: false,
+            questionSearchOffset: 0,
+            isSearchingQuestions: false,
+            hasSearchedQuestions: false,
+            lastSearchQuery: '',
+            // Question edit modal state
+            showEditModal: false,
+            editingQuestion: null
         };
     },
     computed: {
@@ -405,7 +540,7 @@ export default {
                     if (!hasImagesInText && q.image_paths && q.image_paths.length > 0) {
                         // Only add images if question_text doesn't already have them
                         images = q.image_paths
-                            .map((imgObj, index) => {
+                            .map((imgObj) => {
                                 const img = typeof imgObj === 'string' ? imgObj : imgObj.url;
                                 const isAnswer = typeof imgObj === 'object' && imgObj.is_answer;
                                 const label = isAnswer ? 'AnswerKey' : `Diagram`;
@@ -579,6 +714,149 @@ export default {
             } catch (error) {
                 console.error('Error deleting paper:', error);
                 toast.error('Failed to delete paper. Please try again.');
+            }
+        },
+
+        // Question Search Methods
+        async searchQuestions() {
+            if (this.searchQuery.length < 2) {
+                toast.warning('Please enter at least 2 characters to search');
+                return;
+            }
+
+            this.isSearchingQuestions = true;
+            this.questionSearchOffset = 0;
+            this.lastSearchQuery = this.searchQuery;
+
+            try {
+                const params = new URLSearchParams({
+                    query: this.searchQuery,
+                    limit: 20,
+                    offset: 0
+                });
+
+                if (this.filterSubject) params.append('subject', this.filterSubject);
+                if (this.filterBanding) params.append('banding', this.filterBanding);
+                if (this.filterLevel) params.append('level', this.filterLevel);
+
+                const response = await authFetch(`${API_BASE_URL}/api/paper/search-questions?${params}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    this.questionSearchResults = data.questions;
+                    this.questionSearchTotal = data.total;
+                    this.questionSearchHasMore = data.hasMore;
+                    this.questionSearchOffset = data.questions.length;
+                    this.hasSearchedQuestions = true;
+
+                    if (data.questions.length === 0) {
+                        toast.info('No questions found matching your search');
+                    }
+                } else {
+                    toast.error(data.error || 'Search failed');
+                }
+            } catch (error) {
+                console.error('Question search error:', error);
+                toast.error('Failed to search questions');
+            } finally {
+                this.isSearchingQuestions = false;
+            }
+        },
+
+        async loadMoreQuestions() {
+            if (!this.questionSearchHasMore || this.isSearchingQuestions) return;
+
+            this.isSearchingQuestions = true;
+
+            try {
+                const params = new URLSearchParams({
+                    query: this.lastSearchQuery,
+                    limit: 20,
+                    offset: this.questionSearchOffset
+                });
+
+                if (this.filterSubject) params.append('subject', this.filterSubject);
+                if (this.filterBanding) params.append('banding', this.filterBanding);
+                if (this.filterLevel) params.append('level', this.filterLevel);
+
+                const response = await authFetch(`${API_BASE_URL}/api/paper/search-questions?${params}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    this.questionSearchResults = [...this.questionSearchResults, ...data.questions];
+                    this.questionSearchHasMore = data.hasMore;
+                    this.questionSearchOffset += data.questions.length;
+                } else {
+                    toast.error(data.error || 'Failed to load more results');
+                }
+            } catch (error) {
+                console.error('Load more questions error:', error);
+                toast.error('Failed to load more results');
+            } finally {
+                this.isSearchingQuestions = false;
+            }
+        },
+
+        clearQuestionSearch() {
+            this.questionSearchResults = [];
+            this.questionSearchTotal = 0;
+            this.questionSearchHasMore = false;
+            this.questionSearchOffset = 0;
+            this.hasSearchedQuestions = false;
+            this.lastSearchQuery = '';
+            this.searchQuery = '';
+        },
+
+        async openQuestionInPaper(question) {
+            // Load the paper and scroll to the question
+            await this.loadPaper(question.paper_name);
+
+            // After loading, scroll to the specific question in the editor
+            this.$nextTick(() => {
+                // Find and highlight the question in the markdown content
+                const questionMarker = `### Q${question.question_number}`;
+                if (this.markdownContent.includes(questionMarker)) {
+                    toast.success(`Opened paper at Q${question.question_number}`);
+                }
+            });
+        },
+
+        truncateText(text, maxLength) {
+            if (!text) return '';
+            // Strip markdown formatting for display
+            const stripped = text
+                .replace(/!\[.*?\]\(.*?\)/g, '[image]') // Replace images
+                .replace(/\*\*/g, '') // Remove bold
+                .replace(/\$/g, '') // Remove LaTeX delimiters
+                .replace(/\n+/g, ' ') // Replace newlines with spaces
+                .trim();
+            if (stripped.length <= maxLength) return stripped;
+            return stripped.substring(0, maxLength) + '...';
+        },
+
+        highlightSearchTerm(text) {
+            if (!this.lastSearchQuery || !text) return text;
+            const regex = new RegExp(`(${this.lastSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<mark>$1</mark>');
+        },
+
+        // Question Edit Modal Methods
+        openEditModal(question) {
+            this.editingQuestion = question;
+            this.showEditModal = true;
+        },
+
+        closeEditModal() {
+            this.showEditModal = false;
+            this.editingQuestion = null;
+        },
+
+        async onQuestionSaved() {
+            toast.success('Question updated successfully!');
+            this.closeEditModal();
+            // Refresh the search results to show updated data
+            if (this.hasSearchedQuestions && this.lastSearchQuery) {
+                await this.searchQuestions();
             }
         }
     }
@@ -936,5 +1214,278 @@ export default {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Search Mode Toggle */
+.search-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.mode-btn {
+    padding: 0.75rem 1.5rem;
+    border: 2px solid #66CC99;
+    background-color: white;
+    color: #333;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mode-btn:hover {
+    background-color: #f0f8f4;
+}
+
+.mode-btn.active {
+    background-color: #66CC99;
+    color: white;
+}
+
+/* Search Bar Updates */
+.search-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.search-bar .search-input {
+    flex: 1;
+}
+
+.search-btn {
+    padding: 0.75rem 1.5rem;
+    background-color: #66CC99;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.2s ease;
+}
+
+.search-btn:hover:not(:disabled) {
+    background-color: #4CAF50;
+}
+
+.search-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.clear-search-btn {
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+    background-color: #ffebee;
+    border-color: #ff6b6b;
+}
+
+/* Question Search Results */
+.question-search-results {
+    margin-bottom: 2rem;
+}
+
+.search-results-header {
+    margin-bottom: 1rem;
+}
+
+.search-results-header h3 {
+    color: #333;
+    margin: 0 0 0.25rem 0;
+}
+
+.search-hint {
+    color: #666;
+    font-size: 14px;
+    margin: 0;
+}
+
+.question-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1rem;
+}
+
+.question-result-card {
+    background: white;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.question-result-card:hover {
+    border-color: #66CC99;
+    box-shadow: 0 4px 12px rgba(102, 204, 153, 0.15);
+    transform: translateY(-2px);
+}
+
+.question-result-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.question-badge {
+    background-color: #66CC99;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.topic-badge {
+    background-color: rgba(102, 204, 153, 0.1);
+    color: #66CC99;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.difficulty-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.difficulty-badge.easy {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.difficulty-badge.medium {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.difficulty-badge.hard {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.question-result-text {
+    color: #333;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+    word-break: break-word;
+}
+
+.question-result-text :deep(mark) {
+    background-color: #ffeb3b;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.question-result-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 12px;
+    color: #666;
+    flex-wrap: wrap;
+}
+
+.paper-link {
+    color: #4A90E2;
+    font-weight: 500;
+}
+
+.meta-separator {
+    color: #ccc;
+}
+
+.question-result-answer {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #eee;
+    font-size: 13px;
+    color: #555;
+}
+
+.load-more-section {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.load-more-btn {
+    padding: 0.75rem 2rem;
+    background-color: white;
+    border: 2px solid #66CC99;
+    color: #66CC99;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.load-more-btn:hover:not(:disabled) {
+    background-color: #66CC99;
+    color: white;
+}
+
+.load-more-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.empty-state .hint {
+    font-size: 14px;
+    color: #888;
+    margin-top: 0.5rem;
+}
+
+/* Question Result Action Buttons */
+.question-result-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #eee;
+}
+
+.edit-question-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.75rem;
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    color: #495057;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.edit-question-btn:hover {
+    background-color: #e8f5e9;
+    border-color: #66CC99;
+    color: #2e7d32;
+}
+
+.edit-question-btn .btn-icon {
+    width: 14px;
+    height: 14px;
 }
 </style>
