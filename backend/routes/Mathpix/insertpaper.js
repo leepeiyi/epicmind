@@ -858,25 +858,40 @@ router.get("/next-question-number/:paper_name", async (req, res) => {
 router.get("/search-questions", async (req, res) => {
   const { query, subject, banding, level, topic_label, limit = 50, offset = 0 } = req.query;
 
-  if (!query || query.trim().length < 2) {
+  console.log("🔍 Search request:", { query, subject, banding, level, topic_label, limit, offset });
+
+  // Allow search with just filters (topic, subject, level, banding) OR with a text query
+  const hasTextQuery = query && query.trim().length >= 2;
+  const hasFilters = subject || banding || level || topic_label;
+
+  console.log("🔍 hasTextQuery:", hasTextQuery, "hasFilters:", hasFilters);
+
+  if (!hasTextQuery && !hasFilters) {
     return res.status(400).json({
-      error: "Search query must be at least 2 characters"
+      error: "Please enter a search query or select at least one filter"
     });
   }
 
   const client = await pool.connect();
 
   try {
-    const searchTerm = `%${query.trim()}%`;
-
     // Build dynamic WHERE clause
-    let whereConditions = [`(question_text ILIKE $1 OR topic_label ILIKE $1)`];
-    let params = [searchTerm];
-    let paramIndex = 2;
+    let whereConditions = [];
+    let params = [];
+    let paramIndex = 1;
+
+    // Add text search if provided
+    if (hasTextQuery) {
+      const searchTerm = `%${query.trim()}%`;
+      whereConditions.push(`(question_text ILIKE $${paramIndex} OR topic_label ILIKE $${paramIndex})`);
+      params.push(searchTerm);
+      paramIndex++;
+    }
 
     if (subject) {
-      whereConditions.push(`subject = $${paramIndex}`);
-      params.push(subject);
+      // Use ILIKE for flexible matching (e.g., "Math" matches "Math / E-Math")
+      whereConditions.push(`subject ILIKE $${paramIndex}`);
+      params.push(`%${subject}%`);
       paramIndex++;
     }
     if (banding) {
@@ -897,12 +912,16 @@ router.get("/search-questions", async (req, res) => {
 
     const whereClause = whereConditions.join(' AND ');
 
+    console.log("🔍 WHERE clause:", whereClause);
+    console.log("🔍 Params:", params);
+
     // Get total count
     const countResult = await client.query(
       `SELECT COUNT(*) as total FROM question WHERE ${whereClause}`,
       params
     );
     const total = parseInt(countResult.rows[0].total);
+    console.log("🔍 Total results found:", total);
 
     // Get paginated results
     params.push(parseInt(limit), parseInt(offset));

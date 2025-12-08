@@ -52,8 +52,12 @@ router.get("/folders/all", async (req, res) => {
     // Assuming your table is named 'quiz_folders'
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT * FROM quiz_folders ORDER BY created_at DESC"
+      `SELECT *,
+        COALESCE(array_length(question_ids, 1), 0) as question_count
+       FROM quiz_folders
+       ORDER BY created_at DESC`
     );
+    client.release();
     res.json({ folders: result.rows });
   } catch (error) {
     console.error("Error fetching folders:", error);
@@ -126,9 +130,9 @@ router.get("/folders/getQuestionsByFolderId", async (req, res) => {
       return res.status(200).json([]); // Return empty list if no questions
     }
 
-    // Step 2: Fetch question details
+    // Step 2: Fetch question details (including topic_label and paper_name for teachers)
     const questionRes = await client.query(
-      `SELECT id, question_text, answer_key, answer_options, image_paths
+      `SELECT id, question_text, answer_key, answer_options, image_paths, topic_label, paper_name
        FROM question
        WHERE id = ANY($1::int[])`,
       [questionIds]

@@ -160,7 +160,18 @@
             <div class="question-container">
                 <div class="question-content">
                     <div class="question-header">
-                        <h2>Question {{ currentQuestion.question_number }}</h2>
+                        <div class="question-title-row">
+                            <h2>Question {{ currentQuestion.question_number }}</h2>
+                            <!-- Teacher-only: Show topic label and paper name -->
+                            <div v-if="isTeacher" class="question-meta-info">
+                                <span v-if="currentQuestion.topic_label" class="meta-tag topic-tag">
+                                    {{ currentQuestion.topic_label }}
+                                </span>
+                                <span v-if="currentQuestion.paper_name" class="meta-tag paper-tag">
+                                    {{ currentQuestion.paper_name }}
+                                </span>
+                            </div>
+                        </div>
                         <div class="question-actions-header">
                             <button
                                 v-if="isTeacher"
@@ -1293,14 +1304,52 @@ export default {
 .question-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.question-title-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.question-title-row h2 {
+    margin: 0;
+}
+
+.question-meta-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.meta-tag {
+    padding: 0.25rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.meta-tag.topic-tag {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+
+.meta-tag.paper-tag {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    border: 1px solid #90caf9;
 }
 
 .question-actions-header {
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .report-question-btn {

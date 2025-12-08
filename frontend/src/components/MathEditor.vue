@@ -3,7 +3,7 @@
         <div class="editor-header">
             <h4>Math Editor</h4>
             <div class="editor-actions">
-                <button @click="toggleMode" class="mode-toggle" :class="{ active: showLatex }">
+                <button type="button" @click="toggleMode" class="mode-toggle" :class="{ active: showLatex }">
                     {{ showLatex ? 'Visual' : 'Code' }}
                 </button>
             </div>
@@ -13,7 +13,7 @@
         <div v-if="!showLatex" class="visual-mode">
             <!-- Category Buttons -->
             <div class="category-tabs">
-                <button v-for="cat in symbolCategories" :key="cat.key"
+                <button type="button" v-for="cat in symbolCategories" :key="cat.key"
                     :class="['category-tab', { active: activeCategory === cat.key }]" @click="activeCategory = cat.key">
                     {{ cat.label }}
                 </button>
@@ -25,7 +25,7 @@
 
                 <!-- Quick Templates: full-width stacked -->
                 <div v-if="currentCategory?.key === 'templates'" class="template-grid">
-                    <button v-for="symbol in currentCategory.symbols" :key="symbol.latex"
+                    <button type="button" v-for="symbol in currentCategory.symbols" :key="symbol.latex"
                         @click="insertSymbol(symbol.latex)" class="templates-btn" :title="symbol.description">
                         <span v-html="symbol.display" class="symbol-latex"></span>
                     </button>
@@ -33,7 +33,7 @@
 
                 <!-- Other symbols: grid layout -->
                 <div v-else class="symbol-grid">
-                    <button v-for="symbol in currentCategory.symbols" :key="symbol.latex"
+                    <button type="button" v-for="symbol in currentCategory.symbols" :key="symbol.latex"
                         @click="insertSymbol(symbol.latex)" class="symbol-btn" :title="symbol.description">
                         <span v-html="symbol.display" class="symbol-latex"></span>
                     </button>
@@ -51,8 +51,8 @@
                         :placeholder="showLatex ? 'Enter LaTeX code here... (e.g., \\frac{a}{b})' : 'Type your answer or click symbols above'"
                         class="latex-input" :class="{ 'latex-mode': showLatex }" rows="4" />
                     <div class="input-actions">
-                        <button @click="clearInput" class="clear-btn" title="Clear all">🗑️</button>
-                        <button @click="undoLast" class="undo-btn" title="Undo last action">↶</button>
+                        <button type="button" @click="clearInput" class="clear-btn" title="Clear all">🗑️</button>
+                        <button type="button" @click="undoLast" class="undo-btn" title="Undo last action">↶</button>
                     </div>
                 </div>
             </div>

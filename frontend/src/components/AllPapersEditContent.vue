@@ -46,13 +46,13 @@
                         v-if="searchMode === 'questions'"
                         @click="searchQuestions"
                         class="search-btn"
-                        :disabled="isSearchingQuestions || searchQuery.length < 2"
+                        :disabled="isSearchingQuestions || (!hasSearchCriteria)"
                     >
                         {{ isSearchingQuestions ? 'Searching...' : 'Search' }}
                     </button>
                 </div>
                 <div class="filter-controls">
-                    <select v-model="filterSubject" class="filter-select">
+                    <select v-model="filterSubject" class="filter-select" @change="onSubjectChange">
                         <option value="">All Subjects</option>
                         <option v-for="subject in availableSubjects" :key="subject" :value="subject">
                             {{ subject }}
@@ -64,7 +64,7 @@
                             {{ banding }}
                         </option>
                     </select>
-                    <select v-model="filterLevel" class="filter-select">
+                    <select v-model="filterLevel" class="filter-select" @change="onLevelChange">
                         <option value="">All Levels</option>
                         <option v-for="level in availableLevels" :key="level" :value="level">
                             {{ level }}
@@ -77,6 +77,33 @@
                     >
                         Clear Results
                     </button>
+                </div>
+
+                <!-- Topic Tags Filter (only show in question search mode) -->
+                <div v-if="searchMode === 'questions'" class="topic-tags-section">
+                    <div class="topic-tags-header">
+                        <span class="topic-tags-label">Filter by Topic:</span>
+                        <button
+                            v-if="filterTopic"
+                            @click="filterTopic = ''"
+                            class="clear-topic-btn"
+                        >
+                            Clear topic filter
+                        </button>
+                    </div>
+                    <div v-if="availableTopics.length > 0" class="topic-tags-list">
+                        <button
+                            v-for="topic in availableTopics"
+                            :key="topic"
+                            :class="['topic-tag', { active: filterTopic === topic }]"
+                            @click="toggleTopicFilter(topic)"
+                        >
+                            {{ topic }}
+                        </button>
+                    </div>
+                    <p v-else class="topic-tags-hint">
+                        {{ filterSubject || filterLevel ? 'No topics found for selected filters' : 'Select a subject or level to see available topics' }}
+                    </p>
                 </div>
             </div>
 
@@ -339,7 +366,11 @@ export default {
             lastSearchQuery: '',
             // Question edit modal state
             showEditModal: false,
-            editingQuestion: null
+            editingQuestion: null,
+            // Topic filter state
+            filterTopic: '',
+            availableTopics: [],
+            topicsHierarchy: {}
         };
     },
     computed: {
@@ -352,6 +383,12 @@ export default {
         },
         availableLevels() {
             return [...new Set(this.allPapers.map(p => p.level).filter(Boolean))].sort();
+        },
+        hasSearchCriteria() {
+            // Check if there's a text query (2+ chars) OR any filter selected
+            const hasTextQuery = this.searchQuery.length >= 2;
+            const hasFilters = this.filterSubject || this.filterBanding || this.filterLevel || this.filterTopic;
+            return hasTextQuery || hasFilters;
         },
         filteredPapers() {
             return this.allPapers.filter(paper => {
@@ -388,7 +425,10 @@ export default {
     },
     async mounted() {
         try {
-            await this.loadAllPapers();
+            await Promise.all([
+                this.loadAllPapers(),
+                this.loadTopicsHierarchy()
+            ]);
             // REMOVED: configureMathJax() - now handled by component
         } catch (err) {
             console.error('Failed to load papers:', err);
@@ -428,6 +468,98 @@ export default {
                 toast.error('Failed to load papers. Please try again.');
             } finally {
                 this.isLoading = false;
+            }
+        },
+
+        async loadTopicsHierarchy() {
+            try {
+                const res = await authFetch(`${API_BASE_URL}/api/topics/hierarchy`);
+                this.topicsHierarchy = await res.json();
+                console.log('Loaded topics hierarchy:', this.topicsHierarchy);
+            } catch (err) {
+                console.error('Failed to load topics hierarchy:', err);
+            }
+        },
+
+        updateAvailableTopics() {
+            // Get topics based on selected subject and level
+            const topics = new Set();
+
+            if (this.filterSubject && this.filterLevel) {
+                // Map subject/level to hierarchy key format
+                const levelKey = this.getLevelKey(this.filterSubject, this.filterLevel);
+                const subjectKey = this.getSubjectKey(this.filterSubject);
+
+                if (this.topicsHierarchy[subjectKey] && this.topicsHierarchy[subjectKey][levelKey]) {
+                    this.topicsHierarchy[subjectKey][levelKey].forEach(t => {
+                        if (t.label) topics.add(t.label);
+                    });
+                }
+            } else if (this.filterSubject) {
+                // Show all topics for the subject
+                const subjectKey = this.getSubjectKey(this.filterSubject);
+                if (this.topicsHierarchy[subjectKey]) {
+                    Object.values(this.topicsHierarchy[subjectKey]).forEach(levelTopics => {
+                        levelTopics.forEach(t => {
+                            if (t.label) topics.add(t.label);
+                        });
+                    });
+                }
+            } else if (this.filterLevel) {
+                // Show topics matching this level across all subjects
+                Object.values(this.topicsHierarchy).forEach(subjectData => {
+                    Object.entries(subjectData).forEach(([levelKey, levelTopics]) => {
+                        if (levelKey.includes(this.filterLevel.replace(/\s+/g, ''))) {
+                            levelTopics.forEach(t => {
+                                if (t.label) topics.add(t.label);
+                            });
+                        }
+                    });
+                });
+            }
+
+            this.availableTopics = Array.from(topics).sort();
+        },
+
+        getSubjectKey(subject) {
+            // Map display subject names to hierarchy keys
+            // Handle formats like "Math / E-Math", "A-Math", etc.
+            const subjectLower = subject.toLowerCase();
+
+            if (subjectLower.includes('a-math') || subjectLower.includes('additional')) {
+                return 'amath';
+            }
+            if (subjectLower.includes('math') || subjectLower.includes('e-math')) {
+                return 'math';
+            }
+
+            // Fallback to cleaning the string
+            return subject.toLowerCase().replace(/[^a-z]/g, '');
+        },
+
+        getLevelKey(subject, level) {
+            // Map to hierarchy level keys like "mathSec1", "amathSec3"
+            const subjectPrefix = this.getSubjectKey(subject);
+            const levelMatch = level.match(/(\d+)/);
+            const levelNum = levelMatch ? levelMatch[1] : '';
+            return `${subjectPrefix}Sec${levelNum}`;
+        },
+
+        onSubjectChange() {
+            this.filterTopic = '';
+            this.updateAvailableTopics();
+        },
+
+        onLevelChange() {
+            this.filterTopic = '';
+            this.updateAvailableTopics();
+        },
+
+        toggleTopicFilter(topic) {
+            if (this.filterTopic === topic) {
+                this.filterTopic = '';
+            } else {
+                this.filterTopic = topic;
             }
         },
 
@@ -719,8 +851,11 @@ export default {
 
         // Question Search Methods
         async searchQuestions() {
-            if (this.searchQuery.length < 2) {
-                toast.warning('Please enter at least 2 characters to search');
+            const hasTextQuery = this.searchQuery.length >= 2;
+            const hasFilters = this.filterSubject || this.filterBanding || this.filterLevel || this.filterTopic;
+
+            if (!hasTextQuery && !hasFilters) {
+                toast.warning('Please enter a search query or select at least one filter');
                 return;
             }
 
@@ -730,14 +865,19 @@ export default {
 
             try {
                 const params = new URLSearchParams({
-                    query: this.searchQuery,
                     limit: 20,
                     offset: 0
                 });
 
+                // Only add query if it has content
+                if (hasTextQuery) {
+                    params.append('query', this.searchQuery);
+                }
+
                 if (this.filterSubject) params.append('subject', this.filterSubject);
                 if (this.filterBanding) params.append('banding', this.filterBanding);
                 if (this.filterLevel) params.append('level', this.filterLevel);
+                if (this.filterTopic) params.append('topic_label', this.filterTopic);
 
                 const response = await authFetch(`${API_BASE_URL}/api/paper/search-questions?${params}`);
                 const data = await response.json();
@@ -778,6 +918,7 @@ export default {
                 if (this.filterSubject) params.append('subject', this.filterSubject);
                 if (this.filterBanding) params.append('banding', this.filterBanding);
                 if (this.filterLevel) params.append('level', this.filterLevel);
+                if (this.filterTopic) params.append('topic_label', this.filterTopic);
 
                 const response = await authFetch(`${API_BASE_URL}/api/paper/search-questions?${params}`);
                 const data = await response.json();
@@ -805,6 +946,7 @@ export default {
             this.hasSearchedQuestions = false;
             this.lastSearchQuery = '';
             this.searchQuery = '';
+            this.filterTopic = '';
         },
 
         async openQuestionInPaper(question) {
@@ -1451,6 +1593,79 @@ export default {
     font-size: 14px;
     color: #888;
     margin-top: 0.5rem;
+}
+
+/* Topic Tags Filter */
+.topic-tags-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed #dee2e6;
+}
+
+.topic-tags-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.topic-tags-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.9rem;
+}
+
+.clear-topic-btn {
+    background: none;
+    border: none;
+    color: #dc3545;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+}
+
+.clear-topic-btn:hover {
+    text-decoration: underline;
+}
+
+.topic-tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 0.25rem;
+}
+
+.topic-tag {
+    padding: 0.4rem 0.75rem;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    color: #495057;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.topic-tag:hover {
+    background-color: #e8f5e9;
+    border-color: #66CC99;
+    color: #2e7d32;
+}
+
+.topic-tag.active {
+    background-color: #66CC99;
+    border-color: #66CC99;
+    color: white;
+}
+
+.topic-tags-hint {
+    color: #888;
+    font-size: 0.85rem;
+    font-style: italic;
+    margin: 0;
 }
 
 /* Question Result Action Buttons */

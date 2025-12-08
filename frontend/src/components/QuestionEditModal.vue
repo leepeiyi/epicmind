@@ -14,7 +14,16 @@
                 <form v-else @submit.prevent="saveQuestion">
                     <!-- Question Text -->
                     <div class="form-group">
-                        <label>Question Text</label>
+                        <div class="label-row">
+                            <label>Question Text</label>
+                            <button
+                                type="button"
+                                @click="showQuestionMathEditor = !showQuestionMathEditor"
+                                class="toggle-math-editor-btn"
+                            >
+                                {{ showQuestionMathEditor ? 'Hide Math Editor' : 'Show Math Editor' }}
+                            </button>
+                        </div>
                         <textarea
                             v-model="editedQuestion.question_text"
                             rows="6"
@@ -22,6 +31,19 @@
                             class="question-textarea"
                         ></textarea>
                         <small class="hint">Supports LaTeX: Use $ for inline math and $$ for display math</small>
+
+                        <!-- Math Editor for Question Text -->
+                        <div v-if="showQuestionMathEditor" class="math-editor-wrapper">
+                            <MathEditor v-model="mathEditorInput" />
+                            <button
+                                type="button"
+                                @click="insertMathToQuestion"
+                                class="insert-math-btn"
+                                :disabled="!mathEditorInput"
+                            >
+                                Insert into Question Text
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Answer Options (for MCQ) -->
@@ -62,7 +84,17 @@
 
                     <!-- Correct Answer -->
                     <div class="form-group">
-                        <label>Correct Answer</label>
+                        <div class="label-row">
+                            <label>Correct Answer</label>
+                            <button
+                                v-if="!hasOptions"
+                                type="button"
+                                @click="showAnswerMathEditor = !showAnswerMathEditor"
+                                class="toggle-math-editor-btn"
+                            >
+                                {{ showAnswerMathEditor ? 'Hide Math Editor' : 'Show Math Editor' }}
+                            </button>
+                        </div>
                         <div v-if="hasOptions" class="correct-answer-select">
                             <select v-model="editedQuestion.correct_answer">
                                 <option value="">Select correct answer</option>
@@ -75,13 +107,27 @@
                                 </option>
                             </select>
                         </div>
-                        <textarea
-                            v-else
-                            v-model="editedQuestion.correct_answer"
-                            rows="4"
-                            placeholder="Enter the correct answer..."
-                            class="answer-textarea"
-                        ></textarea>
+                        <template v-else>
+                            <textarea
+                                v-model="editedQuestion.correct_answer"
+                                rows="4"
+                                placeholder="Enter the correct answer..."
+                                class="answer-textarea"
+                            ></textarea>
+
+                            <!-- Math Editor for Answer -->
+                            <div v-if="showAnswerMathEditor" class="math-editor-wrapper">
+                                <MathEditor v-model="mathEditorInput" />
+                                <button
+                                    type="button"
+                                    @click="insertMathToAnswer"
+                                    class="insert-math-btn"
+                                    :disabled="!mathEditorInput"
+                                >
+                                    Insert into Answer
+                                </button>
+                            </div>
+                        </template>
                     </div>
 
                     <!-- Difficulty Level -->
@@ -144,12 +190,14 @@ import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import TopicSelector from './TopicSelector.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
+import MathEditor from './MathEditor.vue';
 
 export default {
     name: 'QuestionEditModal',
     components: {
         TopicSelector,
-        EpicMindLoader
+        EpicMindLoader,
+        MathEditor
     },
     props: {
         isOpen: {
@@ -186,7 +234,10 @@ export default {
                 difficulty_level: 'Medium',
                 topic_label: '',
                 sub_topic: []
-            }
+            },
+            showQuestionMathEditor: false,
+            showAnswerMathEditor: false,
+            mathEditorInput: ''
         };
     },
     computed: {
@@ -396,6 +447,21 @@ export default {
         handleTopicUpdate(selection) {
             this.editedQuestion.topic_label = selection.topic;
             this.editedQuestion.sub_topic = selection.subTopics;
+        },
+
+        insertMathToQuestion() {
+            if (!this.mathEditorInput) return;
+            // Wrap in $$ for display math or $ for inline
+            const mathText = `$$${this.mathEditorInput}$$`;
+            this.editedQuestion.question_text += (this.editedQuestion.question_text ? '\n\n' : '') + mathText;
+            this.mathEditorInput = '';
+        },
+
+        insertMathToAnswer() {
+            if (!this.mathEditorInput) return;
+            const mathText = `$$${this.mathEditorInput}$$`;
+            this.editedQuestion.correct_answer += (this.editedQuestion.correct_answer ? '\n\n' : '') + mathText;
+            this.mathEditorInput = '';
         }
     },
     updated() {
@@ -681,6 +747,65 @@ export default {
 .save-btn:disabled,
 .cancel-btn:disabled {
     opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Label Row with Toggle Button */
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.label-row label {
+    margin-bottom: 0;
+}
+
+.toggle-math-editor-btn {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+
+.toggle-math-editor-btn:hover {
+    background: #e8f5e9;
+    border-color: #66CC99;
+    color: #2e7d32;
+}
+
+/* Math Editor Wrapper */
+.math-editor-wrapper {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.insert-math-btn {
+    margin-top: 0.75rem;
+    background: #66CC99;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.insert-math-btn:hover:not(:disabled) {
+    background: #55bb88;
+}
+
+.insert-math-btn:disabled {
+    background: #ccc;
     cursor: not-allowed;
 }
 
