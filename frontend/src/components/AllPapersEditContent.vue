@@ -723,11 +723,15 @@ export default {
         },
 
         printQuiz(paper) {
-            // Open print view in a new window
-            const printWindow = window.open(`#/print?paper_name=${encodeURIComponent(paper.paper_name)}`, '_blank');
-            if (!printWindow) {
-                toast.warning('Please allow pop-ups to print the quiz');
-            }
+            // Navigate to the print view page
+            this.$router.push({
+                path: '/print-view',
+                query: {
+                    paper_name: paper.paper_name,
+                    subject: paper.subject || '',
+                    level: paper.level || ''
+                }
+            });
         },
 
         closeEditor() {

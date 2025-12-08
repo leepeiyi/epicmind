@@ -10,21 +10,6 @@
                 Paste markdown content from Mathpix webapp to extract questions and process images.
             </p>
 
-            <div v-if="recentPapers.length" class="recent-papers">
-                <h3>Recent Uploads</h3>
-                <ul>
-                    <li v-for="p in recentPapers" :key="p.paper_name" class="recent-item"
-                        @click.prevent="loadRecentPaper(p.paper_name)">
-                        <div class="recent-item-row">
-                            <span class="paper-name">{{ p.paper_name }}</span>
-                            <span v-if="p.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
-                            <span v-else-if="p.topic_label" class="paper-topic">{{ p.topic_label }}</span>
-                            <span class="upload-time">– uploaded {{ new Date(p.last_uploaded).toLocaleString() }}</span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
-
             <div class="type-toggle">
                 <button :class="{ active: uploadType === 'exam' }" @click="uploadType = 'exam'">Exam Paper</button>
                 <button :class="{ active: uploadType === 'topical' }" @click="uploadType = 'topical'">Topical

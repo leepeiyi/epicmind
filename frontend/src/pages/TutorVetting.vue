@@ -132,6 +132,11 @@
                     </div>
                 </div>
 
+                <!-- Answer Key Display -->
+                <div v-if="q.answer_key" class="answer-key-section">
+                    <strong>Answer Key:</strong>
+                    <div v-html="prepareMathContent(formatAnswerKey(q.answer_key))" class="answer-key-content"></div>
+                </div>
 
                 <div class="difficulty-buttons">
                     <label>Difficulty:</label>
@@ -858,6 +863,18 @@ export default {
             } catch {
                 return flag.answer_key || '';
             }
+        },
+
+        formatAnswerKey(answerKey) {
+            if (!answerKey) return '';
+            try {
+                const parsed = typeof answerKey === 'string'
+                    ? JSON.parse(answerKey)
+                    : answerKey;
+                return parsed.correct_answer || JSON.stringify(parsed);
+            } catch {
+                return answerKey;
+            }
         }
     }
 }
@@ -1274,6 +1291,25 @@ export default {
     border: 1px dashed #ddd;
     border-radius: 8px;
     background: #fafafa;
+}
+
+.answer-key-section {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: #e8f5e9;
+    border-left: 4px solid #66CC99;
+    border-radius: 8px;
+}
+
+.answer-key-section strong {
+    color: #2e7d32;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.answer-key-content {
+    color: #333;
+    line-height: 1.6;
 }
 
 .image-container {

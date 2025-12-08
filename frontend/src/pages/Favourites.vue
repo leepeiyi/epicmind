@@ -565,14 +565,22 @@ export default {
         },
 
         parseImagePaths(paths) {
+            let parsed = paths;
             if (typeof paths === 'string') {
                 try {
-                    return JSON.parse(paths);
+                    parsed = JSON.parse(paths);
                 } catch {
                     return [];
                 }
             }
-            return Array.isArray(paths) ? paths : [];
+            if (!Array.isArray(parsed)) return [];
+
+            // Extract URL from objects if needed (handles both string URLs and {url, is_answer} objects)
+            return parsed.map(img => {
+                if (typeof img === 'string') return img;
+                if (typeof img === 'object' && img.url) return img.url;
+                return null;
+            }).filter(Boolean);
         },
 
         parseAnswerKey(answerKey) {
