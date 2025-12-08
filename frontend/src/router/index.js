@@ -17,6 +17,7 @@ import CompletionLogs from "../pages/CompletionLogs.vue";
 import AdminPanel from "../pages/AdminPanel.vue";
 import TopicTags from "../pages/TopicTags.vue";
 import QuestionBank from "../pages/QuestionBank.vue";
+import PaperManagement from "../pages/PaperManagement.vue";
 
 const routes = [
   {
@@ -133,6 +134,12 @@ const routes = [
     component: QuestionBank,
     meta: { requiresAuth: true },
   },
+  {
+    path: "/paper-management",
+    name: "PaperManagement",
+    component: PaperManagement,
+    meta: { requiresAuth: true, requiresRole: "teacher" },
+  },
 ];
 
 const router = createRouter({
@@ -170,7 +177,7 @@ router.beforeEach((to, from, next) => {
     if (user.role === 'admin') {
       return next({ path: "/admin-panel" });
     } else if (user.role === 'teacher') {
-      return next({ path: "/insert-paper" });
+      return next({ path: "/paper-management" });
     } else {
       return next({ path: "/question-bank" });
     }
@@ -181,7 +188,7 @@ router.beforeEach((to, from, next) => {
     if (user.role === 'admin') {
       return next({ path: "/admin-panel" });
     } else if (user.role === 'teacher') {
-      return next({ path: "/insert-paper" });
+      return next({ path: "/paper-management" });
     } else {
       return next({ path: "/question-bank" });
     }

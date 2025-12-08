@@ -8,31 +8,11 @@
     <!-- Right: Nav Items -->
     <div class="nav-right">
       <div v-for="item in filteredNavItems" :key="item.label" class="nav-item-wrapper">
-        <!-- Special handling for Insert Paper with dropdown -->
-        <div v-if="item.label === 'Insert Paper'" class="nav-item-dropdown" @mouseenter="showInsertDropdown = true"
-          @mouseleave="showInsertDropdown = false">
-          <div class="dropdown-trigger">
-            <component :is="item.icon" class="icon" />
-            <span class="label">{{ item.label }}</span>
-            <ChevronDown class="dropdown-arrow" />
-          </div>
-
-          <!-- Insert Paper Dropdown Menu -->
-          <div v-show="showInsertDropdown" class="dropdown-menu">
-            <router-link to="/insert-paper" class="dropdown-item" @click="showInsertDropdown = false">
-              <Upload class="dropdown-icon" />
-              <span>Upload Files</span>
-            </router-link>
-            <router-link to="/markdown-insertpaper" class="dropdown-item" @click="showInsertDropdown = false">
-              <FileText class="dropdown-icon" />
-              <span>From Mathpix</span>
-            </router-link>
-            <router-link to="/all-papers-edit" class="dropdown-item" @click="showInsertDropdown = false">
-              <FolderOpen class="dropdown-icon" />
-              <span>View All Papers</span>
-            </router-link>
-          </div>
-        </div>
+        <!-- Regular nav item for Paper Management (uses sidebar internally) -->
+        <router-link v-if="item.label === 'Paper Management'" :to="item.route" class="nav-item">
+          <component :is="item.icon" class="icon" />
+          <span class="label">{{ item.label }}</span>
+        </router-link>
 
         <!-- Special handling for Quiz Folder with dropdown -->
         <div v-else-if="item.label === 'Quiz Folder'" class="nav-item-dropdown" @mouseenter="showQuizDropdown = true"
@@ -152,7 +132,7 @@ export default {
       showAdminDropdown: false,
       navItems: [
         { icon: 'Shield', label: 'For Admin', route: '/admin-panel', requiresRole: 'admin' }, // This will have dropdown
-        { icon: 'FileText', label: 'Insert Paper', route: '/insert-paper', requiresRole: 'teacher' },
+        { icon: 'FileText', label: 'Paper Management', route: '/paper-management', requiresRole: 'teacher' },
         { icon: 'BookOpen', label: 'Question Bank', route: '/question-bank' },
         { icon: 'HelpCircle', label: 'Quiz Folder', route: '/quiz-folder' }, // This will have dropdown
         { icon: 'FilePlus', label: 'For Tutors', route: '/tutor-vetting', requiresRole: 'teacher' }, // This will have dropdown
