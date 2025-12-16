@@ -3,6 +3,7 @@ const router = express.Router();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Pool } = require("pg");
 const { decodeLatex } = require("../../utils/latexBase64");
+const { dbConfig } = require("../../utils/db-config");
 
 // Helper function to decode LaTeX in a question object
 const decodeQuestionLatex = (question) => {
@@ -39,17 +40,7 @@ const decodeQuestionLatex = (question) => {
 };
 
 // Create a PostgreSQL connection pool
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 // Test database connection
 pool.query("SELECT NOW()", (err, res) => {

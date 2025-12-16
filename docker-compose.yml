@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: epicmind-postgres
+    environment:
+      POSTGRES_USER: epicmind
+      POSTGRES_PASSWORD: kippy100
+      POSTGRES_DB: epicmind
+    volumes:
+      - /volume1/docker/epicmind/postgres:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U epicmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: node:20-alpine
+    container_name: epicmind-backend
+    working_dir: /app
+    volumes:
+      - /volume1/docker/epicmind/backend:/app
+      - /volume1/epicmind/uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    environment:
+      # Database (local PostgreSQL)
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=epicmind
+      - DB_PASSWORD=kippy100
+      - DB_DATABASE=epicmind
+      - DB_SSL=false
+      # Storage (local instead of S3)
+      - STORAGE_TYPE=local
+      - LOCAL_STORAGE_PATH=/app/uploads
+      - PUBLIC_URL_BASE=https://api.YOURDOMAIN.com/uploads
+      # Auth
+      - JWT_SECRET=3p!cMind100
+      # Email (Brevo)
+      - BREVO_API_KEY=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
+      - RESET_PASSWORD_URL=https://YOURDOMAIN.com/reset-password
+      - FRONTEND_BASE_URL=https://YOURDOMAIN.com
+      # AI/OCR APIs
+      - MATHPIX_APP_ID=epicmind_ea67bf_090d09
+      - MATHPIX_APP_KEY=4d48a1bde193de62bd411aa8fba663421a47fcde7b3a65db2d184d9ee410a1c4
+      - GEMINI_API_KEY=AIzaSyAK4Mdm6iEEVlDuMI87FVjfqKZEKxFPNWI
+      - GOOGLE_API_KEY=AIzaSyAK4Mdm6iEEVlDuMI87FVjfqKZEKxFPNWI
+    command: sh -c "npm install && npm start"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped

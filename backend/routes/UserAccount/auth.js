@@ -6,20 +6,11 @@ const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const SibApiV3Sdk = require("sib-api-v3-sdk"); 
+const SibApiV3Sdk = require("sib-api-v3-sdk");
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || "http://localhost:5173";
+const { dbConfig } = require("../../utils/db-config");
 
-const client = new Client({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const client = new Client(dbConfig);
 
 client.connect((err) => {
   if (err) {

@@ -4,18 +4,9 @@ const { Pool } = require("pg");
 const SibApiV3Sdk = require("sib-api-v3-sdk");
 const verifyToken = require("../../middleware/verify-token");
 const { verify } = require("crypto");
+const { dbConfig } = require("../../utils/db-config");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 // Configure Brevo API
 const defaultClient = SibApiV3Sdk.ApiClient.instance;

@@ -5,20 +5,11 @@ const axios = require("axios");
 // const topicData = require("../../data/topicData"); // DEPRECATED: Now using database
 const { Pool } = require("pg");
 const requireTeacher = require("../../middleware/require-teacher");
+const { dbConfig } = require("../../utils/db-config");
 
 require("dotenv").config();
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 function getSectionKeys(level, subject, paperType) {
   const normalized = level.toLowerCase();

@@ -5,19 +5,10 @@ const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 const verifyToken = require("../../middleware/verify-token"); // Adjust path if needed
+const { dbConfig } = require("../../utils/db-config");
 
 // Database connection pool for better performance
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 //======================================================
 // TEACHER-STUDENT RELATIONSHIP ENDPOINTS

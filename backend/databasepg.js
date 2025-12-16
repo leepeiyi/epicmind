@@ -3,6 +3,11 @@ const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
+// ✅ SSL config - disabled for local PostgreSQL (NAS), enabled for cloud (AWS RDS)
+const sslConfig = process.env.DB_SSL === 'false'
+  ? false
+  : { require: true, rejectUnauthorized: false };
+
 // ✅ Initialize PostgreSQL client
 const client = new Client({
   host: process.env.DB_HOST,
@@ -10,10 +15,7 @@ const client = new Client({
   port: process.env.DB_PORT,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
+  ssl: sslConfig,
 });
 
 // ✅ List of SQL files to execute

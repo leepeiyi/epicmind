@@ -1,7 +1,6 @@
 // === Simulated Markdown OCR Route with Gemini Full Context Extraction + Mathpix + Polling ===
 const express = require("express");
 const router = express.Router();
-const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() });
 const insertJSONPayload = require("../Mathpix/insertPostgresql");
@@ -16,25 +15,11 @@ const path = require("path");
 const { Pool } = require("pg");
 const requireTeacher = require("../../middleware/require-teacher");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+// Use storage abstraction (supports both S3 and local)
+const storage = require("../../utils/storage");
+const { dbConfig } = require("../../utils/db-config");
 
-const s3 = new S3Client({
-  region: process.env.S3_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+const pool = new Pool(dbConfig);
 
 // Switch to Flash-Lite for better availability (less overloaded) - still very capable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -1161,7 +1146,7 @@ function extractUrlsFromText(text) {
   return [...new Set(matches)]; // Remove duplicates
 }
 
-// ✅ Helper function to upload images to S3 and create mappings
+// ✅ Helper function to upload images to storage (S3 or local) and create mappings
 async function uploadImagesToS3(urls, paperName, questionNumber) {
   const urlMappings = new Map();
 
@@ -1172,29 +1157,13 @@ async function uploadImagesToS3(urls, paperName, questionNumber) {
         `📥 Downloading ${index + 1}/${urls.length}: ${url.substring(0, 60)}...`
       );
 
-      const response = await axios.get(url, {
-        responseType: "arraybuffer",
-        timeout: 30000,
-      });
-      const buffer = Buffer.from(response.data, "binary");
-
       const fileName = `page-custom_diagram_${questionNumber}_${index}.png`;
       const key = `${paperName}/${fileName}`;
 
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: key,
-          Body: buffer,
-          ContentType: "image/png",
-        })
-      );
+      // Use storage abstraction (works for both S3 and local)
+      const uploadedUrl = await storage.uploadFromUrl(url, key, "image/png");
 
-      const s3Url = `https://${process.env.S3_BUCKET_NAME}.s3.${
-        process.env.S3_REGION
-      }.amazonaws.com/${encodeURIComponent(paperName)}/${fileName}`;
-
-      urlMappings.set(url, s3Url);
+      urlMappings.set(url, uploadedUrl);
       console.log(`✅ Uploaded: ${fileName}`);
     } catch (err) {
       console.warn(`⚠️ Failed to upload image ${index + 1}: ${err.message}`);
@@ -2052,25 +2021,15 @@ router.post("/image_to_s3", requireTeacher, upload.single("image"), async (req, 
     if (question_number) keyParts.push(`Q${question_number}`);
     keyParts.push(`${uuidv4()}_${cleanName}`);
 
-    const s3Key = keyParts.join("/");
+    const key = keyParts.join("/");
 
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME,
-        Key: s3Key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      })
-    );
-
-    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
-      process.env.S3_REGION
-    }.amazonaws.com/${encodeURIComponent(s3Key)}`;
+    // Use storage abstraction (works for both S3 and local)
+    const imageUrl = await storage.uploadFile(file.buffer, key, file.mimetype);
 
     res.json({ imageUrl });
   } catch (err) {
-    console.error("❌ Failed to upload image to S3:", err);
-    res.status(500).json({ error: "Upload to S3 failed", detail: err.message });
+    console.error("❌ Failed to upload image:", err);
+    res.status(500).json({ error: "Upload failed", detail: err.message });
   }
 });
 

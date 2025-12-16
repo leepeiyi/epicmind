@@ -1,19 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const { dbConfig } = require("../../utils/db-config");
 
 // PostgreSQL connection pool
-const pool = new Pool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    port: process.env.DB_PORT,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-    ssl: {
-        require: true,
-        rejectUnauthorized: false,
-    },
-});
+const pool = new Pool(dbConfig);
 
 // Create the flagged_questions table if it doesn't exist
 const createTableIfNotExists = async () => {

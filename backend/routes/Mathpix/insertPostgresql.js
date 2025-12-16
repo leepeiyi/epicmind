@@ -1,17 +1,8 @@
 require("dotenv").config();
 const { Pool } = require("pg");
+const { dbConfig } = require("../../utils/db-config");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 // Process text for storage (no longer encodes to base64 - plain LaTeX is stored directly)
 const processLatexForStorage = (text) => {

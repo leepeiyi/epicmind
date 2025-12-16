@@ -1,7 +1,6 @@
 // backend/routes/markdown.js
 const express = require("express");
 const router = express.Router();
-const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const insertJSONPayload = require("../Mathpix/insertPostgresql");
 const axios = require("axios");
@@ -9,15 +8,8 @@ const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const requireTeacher = require("../../middleware/require-teacher");
+const storage = require("../../utils/storage");
 require("dotenv").config();
-
-const s3 = new S3Client({
-  region: process.env.S3_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
 
 // Switch to Flash-Lite for better availability (less overloaded) - still capable for markdown parsing
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -62,7 +54,7 @@ function sanitizeFilename(filename) {
     .toLowerCase();
 }
 
-// Helper function to download and upload image to S3
+// Helper function to download and upload image to storage
 async function downloadAndUploadImage(
   mathpixUrl,
   paperName,
@@ -72,30 +64,14 @@ async function downloadAndUploadImage(
   try {
     console.log(`📥 Downloading image: ${mathpixUrl}`);
 
-    const response = await axios.get(mathpixUrl, {
-      responseType: "arraybuffer",
-      timeout: 30000, // 30 second timeout
-    });
-
-    const buffer = Buffer.from(response.data, "binary");
     const fileName = `diagram_q${questionNumber}_${imageIndex}.png`;
     const key = `${paperName}/${fileName}`;
 
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME,
-        Key: key,
-        Body: buffer,
-        ContentType: "image/png",
-      })
-    );
+    // Use storage abstraction (works for both S3 and local)
+    const imageUrl = await storage.uploadFromUrl(mathpixUrl, key, "image/png");
 
-    const s3Url = `https://${process.env.S3_BUCKET_NAME}.s3.${
-      process.env.S3_REGION
-    }.amazonaws.com/${encodeURIComponent(paperName)}/${fileName}`;
-
-    console.log(`✅ Uploaded image to S3: ${s3Url}`);
-    return s3Url;
+    console.log(`✅ Uploaded image: ${imageUrl}`);
+    return imageUrl;
   } catch (err) {
     console.warn(`⚠️ Failed to upload image: ${err.message}`);
     return mathpixUrl; // Return original URL as fallback
@@ -315,22 +291,8 @@ router.post("/upload/image", requireTeacher, upload.single("image"), async (req,
     const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
     const key = `${folder}/${fileName}`;
 
-    // Upload to S3
-    const uploadCommand = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ContentDisposition: "inline", // Allow direct viewing in browser
-      CacheControl: "max-age=31536000", // 1 year cache
-    });
-
-    await s3.send(uploadCommand);
-
-    // Generate S3 URL
-    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
-      process.env.S3_REGION
-    }.amazonaws.com/${encodeURIComponent(key)}`;
+    // Upload using storage abstraction (works for both S3 and local)
+    const imageUrl = await storage.uploadFile(req.file.buffer, key, req.file.mimetype);
 
     console.log(`✅ Image uploaded successfully: ${imageUrl}`);
 
@@ -342,7 +304,7 @@ router.post("/upload/image", requireTeacher, upload.single("image"), async (req,
       originalName: req.file.originalname,
       size: req.file.size,
       mimetype: req.file.mimetype,
-      s3Key: key,
+      storageKey: key,
     });
   } catch (error) {
     console.error("❌ Image upload error:", error);
@@ -389,22 +351,8 @@ router.post("/upload/images", requireTeacher, upload.array("images", 10), async 
         const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
         const key = `${folder}/${fileName}`;
 
-        // Upload to S3
-        const uploadCommand = new PutObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: key,
-          Body: file.buffer,
-          ContentType: file.mimetype,
-          ContentDisposition: "inline",
-          CacheControl: "max-age=31536000",
-        });
-
-        await s3.send(uploadCommand);
-
-        // Generate S3 URL
-        const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${
-          process.env.S3_REGION
-        }.amazonaws.com/${encodeURIComponent(key)}`;
+        // Upload using storage abstraction (works for both S3 and local)
+        const imageUrl = await storage.uploadFile(file.buffer, key, file.mimetype);
 
         uploadResults.push({
           success: true,
@@ -413,7 +361,7 @@ router.post("/upload/images", requireTeacher, upload.array("images", 10), async 
           originalName: file.originalname,
           size: file.size,
           mimetype: file.mimetype,
-          s3Key: key,
+          storageKey: key,
         });
 
         console.log(`✅ Uploaded: ${fileName}`);
@@ -456,8 +404,7 @@ router.get("/upload/info", (req, res) => {
       "image/bmp",
     ],
     maxFiles: 10,
-    bucket: process.env.S3_BUCKET_NAME,
-    region: process.env.S3_REGION,
+    storageType: storage.getStorageType(),
   });
 });
 

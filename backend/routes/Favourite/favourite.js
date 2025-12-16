@@ -2,18 +2,9 @@
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
+const { dbConfig } = require("../../utils/db-config");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  port: process.env.DB_PORT,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false,
-  },
-});
+const pool = new Pool(dbConfig);
 
 // GET /api/favorites - Get all favorite topics for a user
 // GET /api/favorites?user_id=1
