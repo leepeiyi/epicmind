@@ -99,27 +99,6 @@ Example format expected:
                         <button @click="clearPreview" class="clear-preview-btn">Edit Markdown</button>
                     </div>
                 </div>
-                <!-- Final Output Section (shows after processing and saving) -->
-                <div v-if="outputMarkdown && saveSuccess" class="output-wrapper">
-                    <!-- Show LaTeX and Image Uploader only AFTER save -->
-                    <LatexConverter />
-
-                    <div class="image-uploader-wrapper" style="margin-top: 20px;">
-                        <h3>Upload Diagrams or Figures</h3>
-                        <label>
-                            Select Question Number:
-                            <select v-model="selectedQuestionNumber">
-                                <option disabled value="">-- Choose --</option>
-                                <option v-for="q in extractedQuestions" :key="q.question_number"
-                                    :value="q.question_number">
-                                    Q{{ q.question_number }}
-                                </option>
-                            </select>
-                        </label>
-                        <ImageUploader :paper-name="paperName" :question-number="selectedQuestionNumber" />
-                    </div>
-                </div>
-
                 <div class="preview-content">
 
                     <div class="editor">
@@ -149,32 +128,12 @@ Example format expected:
                     <p v-if="processedImages > 0">Downloaded {{ processedImages }} images</p>
                 </div>
             </div>
-
-            <!-- Final Output Section (shows after processing) -->
-            <div v-if="outputMarkdown" class="output-wrapper">
-                <div class="editor">
-                    <h3>Final Output (Editable)</h3>
-                    <textarea v-model="outputMarkdown" class="markdown-editor" />
-                </div>
-
-                <div class="preview">
-                    <h3>Preview</h3>
-                    <div :key="compiledMarkdown" v-html="compiledMarkdown"></div>
-                </div>
-            </div> <!-- end of output-wrapper -->
-
-            <!-- Save Section -->
-            <div v-if="outputMarkdown" class="save-section">
-                <button class="save-btn" @click="saveProcessedMarkdown">Save to Database</button>
-            </div>
         </div>
     </div>
 </template>
 
 <script>
 import PaperDetails from './PaperDetails.vue';
-import LatexConverter from './LatexConverter.vue';
-import ImageUploader from './ImageUploader.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
 import { marked } from 'marked';
 import API_BASE_URL, { authFetch } from '../config/api.js';
@@ -182,7 +141,8 @@ import { toast } from 'vue-sonner';
 
 export default {
     name: 'MarkdownInsertPaperContent',
-    components: { PaperDetails, LatexConverter, ImageUploader, EpicMindLoader },
+    emits: ['upload-success'],
+    components: { PaperDetails, EpicMindLoader },
     data() {
         return {
             uploadType: '',
@@ -195,11 +155,9 @@ export default {
             },
             markdownInput: '',
             previewMarkdown: '',
-            outputMarkdown: '',
             paperName: '',
             progressMessage: '',
             progressPercent: 0,
-            recentPapers: [],
             isSaving: false,
             isGeneratingPreview: false,
             extractedQuestions: [],
@@ -208,46 +166,18 @@ export default {
             processedImages: 0,
             separateAnswerKey: false,
             answerKeyInput: '',
-            selectedQuestionNumber: '',
-            saveSuccess: false,
-
-
         };
     },
     computed: {
         compiledPreviewMarkdown() {
             return marked(this.previewMarkdown || '');
-        },
-        compiledMarkdown() {
-            return marked(this.outputMarkdown || '');
         }
     },
-    async mounted() {
-        try {
-            const res = await authFetch(`${API_BASE_URL}/api/paper/recent`);
-            const data = await res.json();
-            this.recentPapers = data.recent || [];
-
-            // Configure MathJax for LaTeX rendering
-            this.configureMathJax();
-        } catch (err) {
-            console.error('Failed to fetch recent papers:', err);
-        }
+    mounted() {
+        // Configure MathJax for LaTeX rendering
+        this.configureMathJax();
     },
     watch: {
-        compiledMarkdown() {
-            this.$nextTick(() => {
-                if (window.MathJax && window.MathJax.typesetPromise) {
-                    window.MathJax.typesetPromise()
-                        .then(() => {
-                            console.log('MathJax rendering complete');
-                        })
-                        .catch(err => {
-                            console.error('MathJax error:', err);
-                        });
-                }
-            });
-        },
         compiledPreviewMarkdown() {
             this.$nextTick(() => {
                 if (window.MathJax && window.MathJax.typesetPromise) {
@@ -283,44 +213,7 @@ export default {
             }
         },
 
-        async loadRecentPaper(paperName) {
-            try {
-                const encodedName = encodeURIComponent(paperName);
-                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
-                const data = await res.json();
-
-                this.paperName = paperName;
-                this.outputMarkdown = data.questions.map((q) => {
-                    const options = (q.answer_options || [])
-                        .map((opt) => `- **${opt.option}** ${opt.text}`)
-                        .join('\n');
-
-                    const images = (q.image_paths || [])
-                        .map((img) => `![Diagram](${img.image_url || img})`)
-                        .join('\n');
-
-                    let answer = '';
-                    if (q.answer_key) {
-                        try {
-                            const parsedAnswer = typeof q.answer_key === 'string'
-                                ? JSON.parse(q.answer_key)
-                                : q.answer_key;
-
-                            const cleanAnswer = parsedAnswer.correct_answer || '';
-                            answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
-                        } catch (error) {
-                            console.error('Failed to parse answer_key:', q.answer_key);
-                        }
-                    }
-
-                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
-                }).join('\n\n---\n\n');
-
-            } catch (err) {
-                console.error('Failed to load recent paper content:', err);
-                toast.error('Failed to load paper content');
-            }
-        }, cleanMarkdownContent(content) {
+        cleanMarkdownContent(content) {
             return content
                 // Remove table markup errors but preserve useful content
                 .replace(/Unknown environment 'tabular'/g, '')
@@ -546,43 +439,19 @@ export default {
                 this.processedQuestions = processData.questions || [];
                 this.processedImages = processData.images_processed || 0;
 
-                // Step 3: Generate final output markdown
-                this.progressMessage = "Generating final output...";
-                this.progressPercent = 90;
-
-                this.outputMarkdown = this.processedQuestions.map((q) => {
-                    const options = (q.answer_options || [])
-                        .map((opt) => `- **${opt.option}** ${opt.text}`)
-                        .join('\n');
-
-                    const images = Array.isArray(q.image_path)
-                        ? q.image_path.map((img) => `![Diagram](${img})`)
-                        : [];
-
-                    let answer = '';
-                    if (q.answer_key) {
-                        const cleanAnswer = typeof q.answer_key === 'string'
-                            ? (JSON.parse(q.answer_key).correct_answer || '')
-                            : (q.answer_key.correct_answer || '');
-                        answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
-                    }
-
-                    return `### Q${q.question_number} (${q.topic_label|| 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
-                }).join('\n\n---\n\n');
-
                 this.progressMessage = "Processing complete!";
                 this.progressPercent = 100;
 
-                // Clear preview and show final result
-                this.clearPreview();
-                this.saveSuccess = true;
+                // Show success toast
+                toast.success(`Paper "${this.paperName}" uploaded successfully! Redirecting to View All Papers...`);
 
-
-                // Clear progress after a moment
+                // Clear progress and reset form after a moment, then emit success
                 setTimeout(() => {
                     this.progressMessage = "";
                     this.progressPercent = 0;
-                }, 2000);
+                    this.resetForm();
+                    this.$emit('upload-success');
+                }, 1500);
 
             } catch (error) {
                 console.error("handleMarkdownSubmit error:", error);
@@ -594,37 +463,18 @@ export default {
             }
         },
 
-        async saveProcessedMarkdown() {
-            try {
-                this.isSaving = true;
-                const response = await authFetch(`${API_BASE_URL}/api/paper/update-question-details`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                    },
-                    body: JSON.stringify({
-                        paper_name: this.paperName,
-                        content: this.outputMarkdown
-                    })
-                });
-
-                const result = await response.json();
-                if (response.ok) {
-                    toast.success('Markdown saved successfully!');
-                    // Refresh recent papers
-                    const res = await authFetch(`${API_BASE_URL}/api/paper/recent`);
-                    const data = await res.json();
-                    this.recentPapers = data.recent || [];
-                } else {
-                    toast.error(`Save failed: ${result.error}`);
-                }
-            } catch (error) {
-                console.error('Save error:', error);
-                toast.error('Failed to save markdown');
-            } finally {
-                this.isSaving = false;
-            }
+        resetForm() {
+            this.uploadType = '';
+            this.form = { subject: '', banding: '', level: '', topic_label: '', year: null };
+            this.markdownInput = '';
+            this.previewMarkdown = '';
+            this.paperName = '';
+            this.extractedQuestions = [];
+            this.totalImages = 0;
+            this.processedQuestions = [];
+            this.processedImages = 0;
+            this.separateAnswerKey = false;
+            this.answerKeyInput = '';
         }
     }
 };

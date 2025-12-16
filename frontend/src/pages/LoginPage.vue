@@ -109,9 +109,9 @@ export default {
         if (user.role === 'admin') {
           this.$router.push('/admin-panel');
         } else if (user.role === 'teacher') {
-          this.$router.push('/insert-paper');
+          this.$router.push('/paper-management');
         } else {
-          this.$router.push('/mathstery');
+          this.$router.push('/quiz-folder');
         }
       } catch (err) {
         toast.error(err.response?.data?.error || 'Login failed');

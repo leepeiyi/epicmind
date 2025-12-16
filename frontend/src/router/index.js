@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import LoginPage from "../pages/LoginPage.vue";
 import CreateAccount from "../pages/CreateAccount.vue";
-import InsertPaper from "../pages/InsertPaper.vue";
 import ResetPassword from "../pages/ResetPassword.vue";
 import ForgetPassword from "../pages/ForgetPassword.vue";
 import GenerateTopical from "../pages/GenerateTopical.vue";
@@ -31,12 +30,6 @@ const routes = [
     name: "Register",
     component: CreateAccount,
     meta: { requiresAuth: false },
-  },
-  {
-    path: "/insert-paper",
-    name: "InsertPaper",
-    component: InsertPaper,
-    meta: { requiresAuth: true },
   },
   {
     path: "/reset-password",
@@ -179,7 +172,7 @@ router.beforeEach((to, from, next) => {
     } else if (user.role === 'teacher') {
       return next({ path: "/paper-management" });
     } else {
-      return next({ path: "/question-bank" });
+      return next({ path: "/quiz-folder" });
     }
   }
 
@@ -190,7 +183,7 @@ router.beforeEach((to, from, next) => {
     } else if (user.role === 'teacher') {
       return next({ path: "/paper-management" });
     } else {
-      return next({ path: "/question-bank" });
+      return next({ path: "/quiz-folder" });
     }
   }
 

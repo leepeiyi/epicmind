@@ -139,8 +139,8 @@
 
             <!-- Loading Indicator -->
             <div v-if="loading" class="loading-indicator">
-                <EpicMindLoader :text="loadingMessage" />
-                <div class="progress-bar" style="margin-top: 1rem;">
+                <p class="loading-message">{{ loadingMessage }}</p>
+                <div class="progress-bar">
                     <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
                 </div>
                 <p>{{ progressPercent }}%</p>
@@ -254,7 +254,6 @@
 <script>
 import Navbar from '../components/Navbar.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
-import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { mathTopicsData } from '../components/topicData';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
@@ -263,8 +262,7 @@ export default {
     name: 'GenerateQuiz',
     components: {
         Navbar,
-        QuestionEditModal,
-        EpicMindLoader
+        QuestionEditModal
     },
     data() {
         return {
@@ -973,6 +971,14 @@ h1 {
 
 .loading-indicator {
     margin-bottom: 2rem;
+    text-align: center;
+}
+
+.loading-message {
+    font-size: 1rem;
+    color: #666;
+    margin-bottom: 1rem;
+    font-weight: 500;
 }
 
 .progress-bar {

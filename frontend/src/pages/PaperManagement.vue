@@ -25,10 +25,10 @@
             <!-- Main Content Area -->
             <main class="main-content">
                 <!-- Upload Files Section -->
-                <InsertPaperContent v-if="activeTab === 'upload'" />
+                <InsertPaperContent v-if="activeTab === 'upload'" @upload-success="handleUploadSuccess" />
 
                 <!-- From Mathpix Section -->
-                <MarkdownInsertPaperContent v-else-if="activeTab === 'mathpix'" />
+                <MarkdownInsertPaperContent v-else-if="activeTab === 'mathpix'" @upload-success="handleUploadSuccess" />
 
                 <!-- View All Papers Section -->
                 <AllPapersEditContent v-else-if="activeTab === 'view-all'" />
@@ -91,6 +91,12 @@ export default {
         activeTab(newTab) {
             // Update URL without navigation
             this.$router.replace({ query: { tab: newTab } });
+        }
+    },
+    methods: {
+        handleUploadSuccess() {
+            // Switch to view-all tab after successful upload
+            this.activeTab = 'view-all';
         }
     }
 };

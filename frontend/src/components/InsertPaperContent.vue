@@ -174,33 +174,12 @@
                 </div>
                 <p>{{ progressMessage }} ({{ progressPercent }}%)</p>
             </div>
-
-            <!-- LaTeX Converter -->
-            <LatexConverter v-if="markdownContent" />
-
-            <!-- Markdown Editor and Preview -->
-            <MarkdownEditorPreview
-                v-if="markdownContent"
-                v-model="markdownContent"
-                :editor-title="`Preview: ${paperName || 'Document'}`"
-                :original-question-data="{}"
-                :allow-image-toggle="false"
-                :allow-image-management="false"
-                :show-close-button="false"
-                placeholder="Generated markdown will appear here after processing..."
-            />
-
-            <div v-if="markdownContent" class="save-section">
-                <button class="save-btn" @click="saveEditedMarkdown">Save Markdown</button>
-            </div>
         </div>
     </div>
 </template>
 
 <script>
 import PaperDetails from './PaperDetails.vue';
-import LatexConverter from './LatexConverter.vue';
-import MarkdownEditorPreview from './MarkdownEditorPreview.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
 import * as pdfjsLib from 'pdfjs-dist';
 import API_BASE_URL, { authFetch } from '../config/api.js';
@@ -208,10 +187,9 @@ import { toast } from 'vue-sonner';
 
 export default {
     name: 'InsertPaperContent',
+    emits: ['upload-success'],
     components: {
         PaperDetails,
-        LatexConverter,
-        MarkdownEditorPreview,
         EpicMindLoader
     },
     data() {
@@ -220,12 +198,9 @@ export default {
             form: { subject: '', banding: '', level: '', topic_label: '', year: null },
             uploadedFile: null,
             pdfPreviewUrl: '',
-            markdownContent: '',
-            questionCount: 0,
             paperName: '',
             progressMessage: '',
             progressPercent: 0,
-            recentPapers: [],
             allPapers: [],
             paperSearchQuery: '',
             pdfPageCount: 0,
@@ -251,11 +226,6 @@ export default {
     },
     async mounted() {
         try {
-            // Fetch recent papers for the recent uploads section
-            const recentRes = await authFetch(`${API_BASE_URL}/api/paper/recent`);
-            const recentData = await recentRes.json();
-            this.recentPapers = recentData.recent || [];
-
             // Fetch all papers for the answer extraction dropdown
             const allRes = await authFetch(`${API_BASE_URL}/api/paper/all-papers`);
             const allData = await allRes.json();
@@ -572,142 +542,6 @@ export default {
             }
         },
 
-        async loadRecentPaper(paperName) {
-            try {
-                const encodedName = encodeURIComponent(paperName);
-                const res = await authFetch(`${API_BASE_URL}/api/paper/questions/${encodedName}`);
-                const data = await res.json();
-                this.questionCount = data.questions.length;
-                this.paperName = paperName;
-
-                if (data.questions.length > 0) {
-                    const first = data.questions[0];
-                    this.form.subject = first.subject || '';
-                    this.form.banding = first.banding || '';
-                    this.form.level = first.level || '';
-                    this.form.uploadType = first.paper_type || '';
-                }
-
-                console.log(`Loaded recent paper: ${this.form.uploadType}`);
-
-                const needsLabeling = data.questions.some(q =>
-                    !q.topic_label || typeof q.topic_label !== 'string' || q.topic_label.trim() === ''
-                );
-
-                // Add topic labels (only if exam type)
-                let labeledQuestions = data.questions.map(q => ({
-                    question_number: q.question_number,
-                    question_text: q.question_text,
-                    answer_options: q.answer_options || [],
-                    image_paths: q.image_paths || [],
-                    answer_key: q.answer_key || null,
-                    topic_label: q.topic_label || ''
-                }));
-
-                if (this.form.uploadType === 'exam' && needsLabeling) {
-                    const labelRes = await authFetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            questions: labeledQuestions.map(q => ({
-                                question_number: q.question_number,
-                                question_text: q.question_text
-                            })),
-                            subject: this.form.subject,
-                            banding: this.form.banding,
-                            level: this.form.level,
-                            paper_type: 'exam'
-                        })
-                    });
-
-                    const labelData = await labelRes.json();
-                    if (!labelRes.ok) throw new Error(labelData.error);
-
-                    // Merge new topic_label into existing labeledQuestions
-                    labeledQuestions = labeledQuestions.map(q => {
-                        const updated = labelData.questions.find(lq => lq.question_number === q.question_number);
-                        return {
-                            ...q,
-                            topic_label: updated?.topic_label || q.topic_label
-                        };
-                    });
-
-                    // Save to DB
-                    await authFetch(`${API_BASE_URL}/api/topic-label/uploadSyllabus`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            jsonData: labeledQuestions,
-                            subject: this.form.subject,
-                            banding: this.form.banding,
-                            level: this.form.level,
-                            paper_name: this.form.paperName // Add paper_name to prevent cross-paper updates
-                        })
-                    });
-                }
-
-                // Convert labeled questions to markdown
-                this.markdownContent = labeledQuestions.map((q) => {
-                    const options = (q.answer_options || [])
-                        .map((opt) => `- **${opt.option}** ${opt.text}`)
-                        .join('\n');
-
-                    const images = (q.image_paths || [])
-                        .map((img) => `![Diagram](${img.image_url || img})`)
-                        .join('\n');
-
-                    let answer = '';
-                    if (q.answer_key) {
-                        try {
-                            const parsedAnswer = typeof q.answer_key === 'string'
-                                ? JSON.parse(q.answer_key)
-                                : q.answer_key;
-
-                            const cleanAnswer = parsedAnswer.correct_answer || '';
-                            answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
-                        } catch (error) {
-                            console.error('Failed to parse answer_key:', q.answer_key);
-                        }
-                    }
-
-                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
-                }).join('\n\n---\n\n');
-
-            } catch (err) {
-                console.error('Failed to load recent paper content:', err);
-                toast.error('Error loading paper: ' + err.message);
-            }
-        },
-
-        async saveEditedMarkdown() {
-            this.isSaving = true;
-            try {
-                const response = await authFetch(`${API_BASE_URL}/api/paper/update-question-details`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionStorage.getItem('token')}`
-                    },
-                    body: JSON.stringify({
-                        paper_name: this.paperName,
-                        content: this.markdownContent
-                    })
-                });
-
-                const result = await response.json();
-                if (response.ok) {
-                    toast.success('Markdown saved successfully!');
-                } else {
-                    toast.error(`Save failed: ${result.error}`);
-                }
-            } catch (error) {
-                console.error('Save error:', error);
-                toast.error('Failed to save markdown');
-            } finally {
-                this.isSaving = false;
-            }
-        },
-
         // Simplified submission handler - NO BATCH PROCESSING
         async handleSubmit() {
             // Validate inputs
@@ -871,38 +705,19 @@ export default {
                     }
                 }
 
-                // Step 5: Generate markdown preview
-                this.progressMessage = "Generating markdown preview...";
-                this.progressPercent = 90;
-
-                this.markdownContent = this.processedQuestions.map((q) => {
-                    const options = (q.answer_options || [])
-                        .map((opt) => `- **${opt.option}** ${opt.text}`)
-                        .join('\n');
-
-                    const images = Array.isArray(q.image_path)
-                        ? q.image_path.map((img) => `![Diagram](${img})`)
-                        : [];
-
-                    let answer = '';
-                    if (q.answer_key) {
-                        const cleanAnswer = typeof q.answer_key === 'string'
-                            ? (JSON.parse(q.answer_key).correct_answer || '')
-                            : (q.answer_key.correct_answer || '');
-                        answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
-                    }
-
-                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
-                }).join('\n\n---\n\n');
-
                 this.progressMessage = "All done!";
                 this.progressPercent = 100;
 
-                // Clear progress after a moment
+                // Show success toast
+                toast.success(`Paper "${this.paperName}" uploaded successfully! Redirecting to View All Papers...`);
+
+                // Clear progress and reset form after a moment, then emit success
                 setTimeout(() => {
                     this.progressMessage = "";
                     this.progressPercent = 0;
-                }, 2000);
+                    this.resetForm();
+                    this.$emit('upload-success');
+                }, 1500);
 
             } catch (error) {
                 console.error("handleSubmit error:", error);
@@ -910,6 +725,23 @@ export default {
                 this.progressMessage = "";
                 this.progressPercent = 0;
             }
+        },
+
+        resetForm() {
+            this.uploadType = '';
+            this.form = { subject: '', banding: '', level: '', topic_label: '', year: null };
+            this.uploadedFile = null;
+            this.pdfPreviewUrl = '';
+            this.paperName = '';
+            this.pdfPageCount = 0;
+            this.processedQuestions = [];
+            this.hasSeparateAnswerKey = false;
+            this.questionsFile = null;
+            this.answerKeyFile = null;
+            this.questionsPdfPreviewUrl = '';
+            this.answerKeyPdfPreviewUrl = '';
+            this.questionsPdfPageCount = 0;
+            this.answerKeyPdfPageCount = 0;
         }
     }
 };

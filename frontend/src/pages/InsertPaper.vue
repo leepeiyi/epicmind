@@ -2,7 +2,8 @@
     <div>
         <Navbar />
         <div v-if="isSaving" class="overlay-spinner">
-            <EpicMindLoader size="large" text="Saving Markdown..." />
+            <div class="spinner"></div>
+            <p>Saving Markdown...</p>
         </div>
 
         <div class="upload-page">
@@ -218,7 +219,6 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import LatexConverter from '../components/LatexConverter.vue';
 import MarkdownEditorPreview from '../components/MarkdownEditorPreview.vue';
-import EpicMindLoader from '../components/EpicMindLoader.vue';
 import * as pdfjsLib from 'pdfjs-dist';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
@@ -229,8 +229,7 @@ export default {
         Navbar,
         PaperDetails,
         LatexConverter,
-        MarkdownEditorPreview,
-        EpicMindLoader
+        MarkdownEditorPreview
     },
     data() {
         return {

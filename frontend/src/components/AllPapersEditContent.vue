@@ -127,14 +127,14 @@
                                 {{ question.difficulty_level }}
                             </span>
                         </div>
-                        <div class="question-result-text" v-html="highlightSearchTerm(truncateText(question.question_text, 200))"></div>
+                        <div class="question-result-text" v-html="highlightSearchTerm(prepareForLatex(question.question_text, 200))"></div>
                         <div class="question-result-meta">
                             <span class="paper-link">{{ question.paper_name }}</span>
                             <span class="meta-separator">•</span>
                             <span>{{ question.subject }} {{ question.level }}</span>
                         </div>
                         <div v-if="question.answer_key?.correct_answer" class="question-result-answer">
-                            <strong>Answer:</strong> {{ truncateText(question.answer_key.correct_answer, 100) }}
+                            <strong>Answer:</strong> <span v-html="prepareForLatex(question.answer_key.correct_answer, 100)"></span>
                         </div>
 
                         <!-- Action Buttons -->
@@ -370,7 +370,10 @@ export default {
             // Topic filter state
             filterTopic: '',
             availableTopics: [],
-            topicsHierarchy: {}
+            topicsHierarchy: {},
+            // MathJax state
+            mathJaxReady: false,
+            mathJaxTimeout: null
         };
     },
     computed: {
@@ -427,11 +430,16 @@ export default {
         try {
             await Promise.all([
                 this.loadAllPapers(),
-                this.loadTopicsHierarchy()
+                this.loadTopicsHierarchy(),
+                this.initializeMathJax()
             ]);
-            // REMOVED: configureMathJax() - now handled by component
         } catch (err) {
             console.error('Failed to load papers:', err);
+        }
+    },
+    beforeUnmount() {
+        if (this.mathJaxTimeout) {
+            clearTimeout(this.mathJaxTimeout);
         }
     },
     watch: {
@@ -447,6 +455,15 @@ export default {
         },
         filterLevel() {
             this.currentPage = 1;
+        },
+        // Re-render MathJax when search results change
+        questionSearchResults: {
+            handler() {
+                this.$nextTick(() => {
+                    this.renderMathJax();
+                });
+            },
+            deep: true
         }
     },
     methods: {
@@ -478,6 +495,109 @@ export default {
                 console.log('Loaded topics hierarchy:', this.topicsHierarchy);
             } catch (err) {
                 console.error('Failed to load topics hierarchy:', err);
+            }
+        },
+
+        // MathJax initialization methods
+        async initializeMathJax() {
+            console.log('🔧 Initializing MathJax for AllPapersEditContent...');
+
+            await this.$nextTick();
+
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                console.log('♻️ MathJax already exists, marking ready');
+                this.mathJaxReady = true;
+                return;
+            }
+
+            // Configure MathJax before loading
+            window.MathJax = {
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                    processEscapes: true,
+                    processEnvironments: true,
+                    packages: {'[+]': ['amsmath', 'amsfonts', 'amssymb']}
+                },
+                options: {
+                    enableMenu: false,
+                    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+                },
+                loader: {
+                    load: ['input/tex', 'output/svg', 'ui/menu']
+                },
+                startup: {
+                    ready: () => {
+                        console.log('✅ MathJax startup ready');
+                        window.MathJax.startup.defaultReady();
+                        this.mathJaxReady = true;
+                    }
+                }
+            };
+
+            await this.loadMathJaxScript();
+        },
+
+        loadMathJaxScript() {
+            return new Promise((resolve, reject) => {
+                // Check if script is already loading/loaded
+                if (document.querySelector('script[src*="mathjax"]')) {
+                    console.log('✅ MathJax script already present');
+                    resolve();
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+                script.async = true;
+
+                script.onload = () => {
+                    console.log('✅ MathJax script loaded');
+                    resolve();
+                };
+
+                script.onerror = (error) => {
+                    console.error('❌ Failed to load MathJax script:', error);
+                    reject(error);
+                };
+
+                document.head.appendChild(script);
+            });
+        },
+
+        renderMathJax() {
+            if (!this.mathJaxReady || !window.MathJax || !window.MathJax.typesetPromise) {
+                console.log('⏳ MathJax not ready yet, will retry...');
+                // Retry after a short delay
+                clearTimeout(this.mathJaxTimeout);
+                this.mathJaxTimeout = setTimeout(() => {
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        this.mathJaxReady = true;
+                        this.renderMathJax();
+                    }
+                }, 500);
+                return;
+            }
+
+            console.log('🎨 Rendering MathJax for search results...');
+
+            try {
+                // Find the question results container
+                const container = this.$el.querySelector('.question-results-grid');
+                if (!container) {
+                    console.log('⚠️ No question results container found');
+                    return;
+                }
+
+                window.MathJax.typesetPromise([container])
+                    .then(() => {
+                        console.log('✅ MathJax rendering complete for search results');
+                    })
+                    .catch(err => {
+                        console.error('❌ MathJax rendering error:', err);
+                    });
+            } catch (error) {
+                console.error('❌ MathJax render exception:', error);
             }
         },
 
@@ -967,17 +1087,93 @@ export default {
             });
         },
 
+        // Wrap LaTeX commands with $ delimiters for MathJax rendering
+        wrapLatex(text) {
+            if (!text) return '';
+
+            // Don't double-wrap already wrapped content
+            if (text.includes('$')) return text;
+
+            // Check if the text contains LaTeX-like content
+            const hasLatex = /\\[a-zA-Z]+/.test(text);
+            if (!hasLatex) return text;
+
+            // Use a simple but effective approach:
+            // Find sequences that start with \ and include their balanced {} arguments
+            let result = '';
+            let i = 0;
+
+            while (i < text.length) {
+                // Check if we're at a LaTeX command
+                if (text[i] === '\\' && i + 1 < text.length && /[a-zA-Z]/.test(text[i + 1])) {
+                    // Find the extent of this LaTeX expression
+                    let start = i;
+                    let j = i + 1;
+
+                    // Skip the command name
+                    while (j < text.length && /[a-zA-Z]/.test(text[j])) {
+                        j++;
+                    }
+
+                    // Skip any braced arguments
+                    while (j < text.length && text[j] === '{') {
+                        let braceCount = 1;
+                        j++;
+                        while (j < text.length && braceCount > 0) {
+                            if (text[j] === '{') braceCount++;
+                            else if (text[j] === '}') braceCount--;
+                            j++;
+                        }
+                    }
+
+                    // Check if there are more LaTeX commands immediately after (e.g., \frac{}{}\frac{}{})
+                    while (j < text.length && text[j] === '\\' && j + 1 < text.length && /[a-zA-Z]/.test(text[j + 1])) {
+                        // Skip the next command name
+                        j++;
+                        while (j < text.length && /[a-zA-Z]/.test(text[j])) {
+                            j++;
+                        }
+                        // Skip its braced arguments
+                        while (j < text.length && text[j] === '{') {
+                            let braceCount = 1;
+                            j++;
+                            while (j < text.length && braceCount > 0) {
+                                if (text[j] === '{') braceCount++;
+                                else if (text[j] === '}') braceCount--;
+                                j++;
+                            }
+                        }
+                    }
+
+                    // Wrap the LaTeX expression
+                    result += '$' + text.slice(start, j) + '$';
+                    i = j;
+                } else {
+                    result += text[i];
+                    i++;
+                }
+            }
+
+            return result;
+        },
+
         truncateText(text, maxLength) {
             if (!text) return '';
-            // Strip markdown formatting for display
+            // Strip markdown formatting for display but KEEP LaTeX content
             const stripped = text
                 .replace(/!\[.*?\]\(.*?\)/g, '[image]') // Replace images
                 .replace(/\*\*/g, '') // Remove bold
-                .replace(/\$/g, '') // Remove LaTeX delimiters
+                // KEEP LaTeX delimiters and commands for MathJax rendering
                 .replace(/\n+/g, ' ') // Replace newlines with spaces
                 .trim();
             if (stripped.length <= maxLength) return stripped;
             return stripped.substring(0, maxLength) + '...';
+        },
+
+        // Prepare text for display with LaTeX rendering
+        prepareForLatex(text, maxLength = 200) {
+            const truncated = this.truncateText(text, maxLength);
+            return this.wrapLatex(truncated);
         },
 
         highlightSearchTerm(text) {
