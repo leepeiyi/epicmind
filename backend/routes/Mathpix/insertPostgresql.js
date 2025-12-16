@@ -81,7 +81,10 @@ const insertJSONPayload = async (parsedJSON) => {
           banding,
           level,
           parsedJSON.paper_type, // Add paper_type from parsedJSON
-          parsedJSON.topic_label, // Changed from topic
+          // Extract just the label string if topic_label is an object
+          typeof parsedJSON.topic_label === 'object' && parsedJSON.topic_label?.label
+            ? parsedJSON.topic_label.label
+            : parsedJSON.topic_label,
         ]
       );
     }
