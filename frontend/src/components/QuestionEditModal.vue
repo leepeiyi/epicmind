@@ -11,160 +11,185 @@
                     <EpicMindLoader size="small" text="Loading question..." />
                 </div>
 
-                <form v-else @submit.prevent="saveQuestion">
-                    <!-- Question Text -->
-                    <div class="form-group">
-                        <div class="label-row">
-                            <label>Question Text</label>
-                            <button
-                                type="button"
-                                @click="showQuestionMathEditor = !showQuestionMathEditor"
-                                class="toggle-math-editor-btn"
-                            >
-                                {{ showQuestionMathEditor ? 'Hide Math Editor' : 'Show Math Editor' }}
-                            </button>
-                        </div>
-                        <textarea
-                            v-model="editedQuestion.question_text"
-                            rows="6"
-                            placeholder="Enter the question text..."
-                            class="question-textarea"
-                        ></textarea>
-                        <small class="hint">Supports LaTeX: Use $ for inline math and $$ for display math</small>
+                <form v-else @submit.prevent="saveQuestion" class="editor-form">
+                    <div class="side-by-side">
+                        <!-- Left: Editor Panel -->
+                        <div class="editor-panel">
+                            <!-- Question Text with Mode Toggle -->
+                            <div class="form-group">
+                                <div class="editor-mode-toggle">
+                                    <label>Question Text</label>
+                                    <div class="mode-buttons">
+                                        <button
+                                            type="button"
+                                            :class="['mode-btn', { active: editorMode === 'visual' }]"
+                                            @click="editorMode = 'visual'"
+                                        >
+                                            Visual Mode
+                                        </button>
+                                        <button
+                                            type="button"
+                                            :class="['mode-btn', { active: editorMode === 'source' }]"
+                                            @click="editorMode = 'source'"
+                                        >
+                                            Source Mode
+                                        </button>
+                                    </div>
+                                </div>
 
-                        <!-- Math Editor for Question Text -->
-                        <div v-if="showQuestionMathEditor" class="math-editor-wrapper">
-                            <MathEditor v-model="mathEditorInput" />
-                            <button
-                                type="button"
-                                @click="insertMathToQuestion"
-                                class="insert-math-btn"
-                                :disabled="!mathEditorInput"
-                            >
-                                Insert into Question Text
-                            </button>
-                        </div>
-                    </div>
+                                <!-- Visual Mode: Contenteditable with rendered math -->
+                                <div v-if="editorMode === 'visual'" class="visual-editor-container">
+                                    <div
+                                        ref="visualEditor"
+                                        class="visual-editor"
+                                        contenteditable="true"
+                                        @input="onVisualEditorInput"
+                                        @blur="onVisualEditorBlur"
+                                        v-html="renderedQuestionHtml"
+                                    ></div>
+                                    <small class="hint">Click to edit. Use $ for inline math, $$ for display math.</small>
+                                </div>
 
-                    <!-- Answer Options (for MCQ) -->
-                    <div v-if="hasOptions" class="form-group">
-                        <label>Answer Options</label>
-                        <div class="options-editor">
-                            <div
-                                v-for="(option, index) in editedQuestion.answer_options"
-                                :key="index"
-                                class="option-row"
-                            >
-                                <span class="option-label">{{ option.option }}</span>
-                                <input
-                                    type="text"
-                                    v-model="option.text"
-                                    placeholder="Option text..."
-                                    class="option-input"
+                                <!-- Source Mode: Raw LaTeX textarea -->
+                                <div v-else>
+                                    <textarea
+                                        v-model="editedQuestion.question_text"
+                                        rows="5"
+                                        placeholder="Enter the question text..."
+                                        class="question-textarea"
+                                    ></textarea>
+                                    <small class="hint">LaTeX source: Use $ for inline math and $$ for display math</small>
+                                </div>
+                            </div>
+
+                            <!-- Math Editor Helper (for inserting new math) -->
+                            <div class="math-editor-helper">
+                                <div class="helper-header" @click="showMathHelper = !showMathHelper">
+                                    <span>Math Helper</span>
+                                    <span class="toggle-icon">{{ showMathHelper ? '−' : '+' }}</span>
+                                </div>
+                                <div v-if="showMathHelper" class="helper-body">
+                                    <VisualMathEditor v-model="mathEditorInput" />
+                                    <div class="math-insert-row">
+                                        <button
+                                            type="button"
+                                            @click="insertMathToQuestion"
+                                            class="insert-math-btn"
+                                            :disabled="!mathEditorInput"
+                                        >
+                                            Insert to Question
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="insertMathToAnswer"
+                                            class="insert-math-btn secondary"
+                                            :disabled="!mathEditorInput || hasOptions"
+                                        >
+                                            Insert to Answer
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Answer Options (for MCQ) -->
+                            <div v-if="hasOptions" class="form-group">
+                                <label>Answer Options</label>
+                                <div class="options-editor">
+                                    <div
+                                        v-for="(option, index) in editedQuestion.answer_options"
+                                        :key="index"
+                                        class="option-row"
+                                    >
+                                        <span class="option-label">{{ option.option }}</span>
+                                        <input
+                                            type="text"
+                                            v-model="option.text"
+                                            placeholder="Option text..."
+                                            class="option-input"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="remove-option-btn"
+                                            @click="removeOption(index)"
+                                            v-if="editedQuestion.answer_options.length > 2"
+                                        >
+                                            &times;
+                                        </button>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="add-option-btn"
+                                        @click="addOption"
+                                        v-if="editedQuestion.answer_options.length < 6"
+                                    >
+                                        + Add Option
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Correct Answer -->
+                            <div class="form-group">
+                                <label>Correct Answer</label>
+                                <div v-if="hasOptions" class="correct-answer-select">
+                                    <select v-model="editedQuestion.correct_answer">
+                                        <option value="">Select correct answer</option>
+                                        <option
+                                            v-for="option in editedQuestion.answer_options"
+                                            :key="option.option"
+                                            :value="option.option"
+                                        >
+                                            {{ option.option }}: {{ option.text }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <textarea
+                                    v-else
+                                    v-model="editedQuestion.correct_answer"
+                                    rows="3"
+                                    placeholder="Enter the correct answer..."
+                                    class="answer-textarea"
+                                ></textarea>
+                            </div>
+
+                            <!-- Difficulty Level -->
+                            <div class="form-group">
+                                <label>Difficulty Level</label>
+                                <select v-model="editedQuestion.difficulty_level" class="difficulty-select">
+                                    <option value="Easy">Easy</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="Hard">Hard</option>
+                                </select>
+                            </div>
+
+                            <!-- Topic Selection -->
+                            <div class="form-group">
+                                <label>Topic & Sub-Topics</label>
+                                <TopicSelector
+                                    :initial-topic="editedQuestion.topic_label"
+                                    :initial-sub-topics="editedQuestion.sub_topic || []"
+                                    :detected-level="detectedLevel"
+                                    :detected-subject="detectedSubject"
+                                    @update="handleTopicUpdate"
                                 />
-                                <button
-                                    type="button"
-                                    class="remove-option-btn"
-                                    @click="removeOption(index)"
-                                    v-if="editedQuestion.answer_options.length > 2"
-                                >
-                                    &times;
-                                </button>
                             </div>
-                            <button
-                                type="button"
-                                class="add-option-btn"
-                                @click="addOption"
-                                v-if="editedQuestion.answer_options.length < 6"
-                            >
-                                + Add Option
-                            </button>
                         </div>
-                    </div>
 
-                    <!-- Correct Answer -->
-                    <div class="form-group">
-                        <div class="label-row">
-                            <label>Correct Answer</label>
-                            <button
-                                v-if="!hasOptions"
-                                type="button"
-                                @click="showAnswerMathEditor = !showAnswerMathEditor"
-                                class="toggle-math-editor-btn"
-                            >
-                                {{ showAnswerMathEditor ? 'Hide Math Editor' : 'Show Math Editor' }}
-                            </button>
-                        </div>
-                        <div v-if="hasOptions" class="correct-answer-select">
-                            <select v-model="editedQuestion.correct_answer">
-                                <option value="">Select correct answer</option>
-                                <option
-                                    v-for="option in editedQuestion.answer_options"
-                                    :key="option.option"
-                                    :value="option.option"
-                                >
-                                    {{ option.option }}: {{ option.text }}
-                                </option>
-                            </select>
-                        </div>
-                        <template v-else>
-                            <textarea
-                                v-model="editedQuestion.correct_answer"
-                                rows="4"
-                                placeholder="Enter the correct answer..."
-                                class="answer-textarea"
-                            ></textarea>
-
-                            <!-- Math Editor for Answer -->
-                            <div v-if="showAnswerMathEditor" class="math-editor-wrapper">
-                                <MathEditor v-model="mathEditorInput" />
-                                <button
-                                    type="button"
-                                    @click="insertMathToAnswer"
-                                    class="insert-math-btn"
-                                    :disabled="!mathEditorInput"
-                                >
-                                    Insert into Answer
-                                </button>
+                        <!-- Right: Live Preview Panel -->
+                        <div class="preview-panel">
+                            <div class="preview-header">
+                                <h3>Live Preview</h3>
                             </div>
-                        </template>
-                    </div>
-
-                    <!-- Difficulty Level -->
-                    <div class="form-group">
-                        <label>Difficulty Level</label>
-                        <select v-model="editedQuestion.difficulty_level" class="difficulty-select">
-                            <option value="Easy">Easy</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Hard">Hard</option>
-                        </select>
-                    </div>
-
-                    <!-- Topic Selection -->
-                    <div class="form-group">
-                        <label>Topic & Sub-Topics</label>
-                        <TopicSelector
-                            :initial-topic="editedQuestion.topic_label"
-                            :initial-sub-topics="editedQuestion.sub_topic || []"
-                            :detected-level="detectedLevel"
-                            :detected-subject="detectedSubject"
-                            @update="handleTopicUpdate"
-                        />
-                    </div>
-
-                    <!-- Preview Section -->
-                    <div class="preview-section">
-                        <h3>Preview</h3>
-                        <div class="preview-content">
-                            <div class="preview-question" v-html="formattedQuestionText"></div>
-                            <div v-if="hasOptions" class="preview-options">
-                                <div
-                                    v-for="option in editedQuestion.answer_options"
-                                    :key="option.option"
-                                    class="preview-option"
-                                    :class="{ 'correct': option.option === editedQuestion.correct_answer }"
-                                >
-                                    <strong>{{ option.option }}.</strong> {{ option.text }}
+                            <div class="preview-content" ref="previewContent">
+                                <div class="preview-question" v-html="formattedQuestionText"></div>
+                                <div v-if="hasOptions" class="preview-options">
+                                    <div
+                                        v-for="option in editedQuestion.answer_options"
+                                        :key="option.option"
+                                        class="preview-option"
+                                        :class="{ 'correct': option.option === editedQuestion.correct_answer }"
+                                    >
+                                        <strong>{{ option.option }}.</strong> {{ option.text }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -190,14 +215,14 @@ import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import TopicSelector from './TopicSelector.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
-import MathEditor from './MathEditor.vue';
+import VisualMathEditor from './VisualMathEditor.vue';
 
 export default {
     name: 'QuestionEditModal',
     components: {
         TopicSelector,
         EpicMindLoader,
-        MathEditor
+        VisualMathEditor
     },
     props: {
         isOpen: {
@@ -235,9 +260,9 @@ export default {
                 topic_label: '',
                 sub_topic: []
             },
-            showQuestionMathEditor: false,
-            showAnswerMathEditor: false,
-            mathEditorInput: ''
+            mathEditorInput: '',
+            editorMode: 'visual', // 'visual' or 'source'
+            showMathHelper: false
         };
     },
     computed: {
@@ -246,6 +271,11 @@ export default {
         },
         formattedQuestionText() {
             if (!this.editedQuestion.question_text) return '';
+            return marked(this.editedQuestion.question_text);
+        },
+        renderedQuestionHtml() {
+            // For the visual editor - render the question with MathJax-ready content
+            if (!this.editedQuestion.question_text) return '<p>Click here to start typing...</p>';
             return marked(this.editedQuestion.question_text);
         },
         isValid() {
@@ -319,12 +349,16 @@ export default {
         extractCorrectAnswer(q) {
             // Try different formats
             if (q.answer_key && typeof q.answer_key === 'object') {
-                return q.answer_key.correct_answer || '';
+                const ans = q.answer_key.correct_answer;
+                if (typeof ans === 'object') return JSON.stringify(ans);
+                return ans || '';
             }
             if (q.answer) {
+                if (typeof q.answer === 'object') return JSON.stringify(q.answer);
                 return q.answer;
             }
             if (q.correct_answer) {
+                if (typeof q.correct_answer === 'object') return JSON.stringify(q.correct_answer);
                 return q.correct_answer;
             }
             return '';
@@ -462,13 +496,41 @@ export default {
             const mathText = `$$${this.mathEditorInput}$$`;
             this.editedQuestion.correct_answer += (this.editedQuestion.correct_answer ? '\n\n' : '') + mathText;
             this.mathEditorInput = '';
+        },
+
+        onVisualEditorInput(event) {
+            // When editing in visual mode, extract the text content
+            // This preserves the LaTeX delimiters that were in the original
+            const editor = event.target;
+            // Get text content - this will lose the rendered math but keep the structure
+            let text = editor.innerText || editor.textContent;
+            // Clean up extra whitespace but preserve newlines
+            text = text.replace(/\n{3,}/g, '\n\n').trim();
+            this.editedQuestion.question_text = text;
+        },
+
+        onVisualEditorBlur() {
+            // Re-render MathJax after editing
+            this.$nextTick(() => {
+                if (window.MathJax && window.MathJax.typesetPromise && this.$refs.visualEditor) {
+                    window.MathJax.typesetClear([this.$refs.visualEditor]);
+                    window.MathJax.typesetPromise([this.$refs.visualEditor]);
+                }
+            });
         }
     },
     updated() {
         // Re-render MathJax when content updates
         this.$nextTick(() => {
             if (window.MathJax && window.MathJax.typesetPromise) {
-                window.MathJax.typesetPromise();
+                const elements = [];
+                if (this.$refs.previewContent) elements.push(this.$refs.previewContent);
+                if (this.$refs.visualEditor && this.editorMode === 'visual') elements.push(this.$refs.visualEditor);
+
+                if (elements.length > 0) {
+                    window.MathJax.typesetClear(elements);
+                    window.MathJax.typesetPromise(elements);
+                }
             }
         });
     }
@@ -492,8 +554,8 @@ export default {
 .modal-content {
     background: white;
     border-radius: 12px;
-    width: 90%;
-    max-width: 800px;
+    width: 95%;
+    max-width: 1100px;
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
@@ -571,6 +633,171 @@ export default {
     color: #888;
     font-size: 0.85rem;
     margin-top: 0.3rem;
+}
+
+/* Side-by-side Layout */
+.side-by-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.preview-panel {
+    background: #f8faf9;
+    border: 1px solid #d4edda;
+    border-radius: 8px;
+    position: sticky;
+    top: 0;
+    max-height: calc(90vh - 180px);
+    overflow-y: auto;
+}
+
+.preview-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.75rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.preview-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.preview-panel .preview-content {
+    padding: 1rem;
+    background: white;
+    min-height: 200px;
+}
+
+@media (max-width: 800px) {
+    .side-by-side {
+        grid-template-columns: 1fr;
+    }
+
+    .preview-panel {
+        position: relative;
+        max-height: none;
+    }
+}
+
+/* Editor Mode Toggle */
+.editor-mode-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.mode-buttons {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.mode-btn {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid #ddd;
+    background: #f8f9fa;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #666;
+    transition: all 0.2s;
+}
+
+.mode-btn:hover {
+    background: #e9ecef;
+}
+
+.mode-btn.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* Visual Editor */
+.visual-editor-container {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.visual-editor {
+    min-height: 120px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 1rem;
+    background: white;
+    font-size: 1rem;
+    line-height: 1.6;
+    outline: none;
+}
+
+.visual-editor:focus {
+    box-shadow: inset 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.visual-editor:empty::before {
+    content: 'Click here to start typing...';
+    color: #999;
+}
+
+/* Math Editor Helper */
+.math-editor-helper {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8f9fa;
+}
+
+.helper-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    background: linear-gradient(135deg, #66CC99 0%, #4CAF50 100%);
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.helper-header:hover {
+    opacity: 0.95;
+}
+
+.toggle-icon {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.helper-body {
+    border-top: 1px solid #e0e0e0;
+}
+
+.math-insert-row {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: #f0f0f0;
+    border-top: 1px solid #e0e0e0;
+}
+
+.insert-math-btn.secondary {
+    background: #6c757d;
+}
+
+.insert-math-btn.secondary:hover:not(:disabled) {
+    background: #5a6268;
 }
 
 /* Options Editor */
@@ -661,21 +888,7 @@ export default {
     border-radius: 6px;
 }
 
-/* Preview Section */
-.preview-section {
-    margin-top: 2rem;
-    padding: 1rem;
-    background: #f0f8f4;
-    border-radius: 8px;
-    border: 1px solid #d4edda;
-}
-
-.preview-section h3 {
-    margin: 0 0 1rem 0;
-    color: #155724;
-    font-size: 1rem;
-}
-
+/* Preview Content */
 .preview-content {
     background: white;
     padding: 1rem;
@@ -750,46 +963,7 @@ export default {
     cursor: not-allowed;
 }
 
-/* Label Row with Toggle Button */
-.label-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-
-.label-row label {
-    margin-bottom: 0;
-}
-
-.toggle-math-editor-btn {
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    color: #495057;
-    transition: all 0.2s ease;
-}
-
-.toggle-math-editor-btn:hover {
-    background: #e8f5e9;
-    border-color: #66CC99;
-    color: #2e7d32;
-}
-
-/* Math Editor Wrapper */
-.math-editor-wrapper {
-    margin-top: 1rem;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 1px solid #e9ecef;
-}
-
 .insert-math-btn {
-    margin-top: 0.75rem;
     background: #66CC99;
     color: white;
     border: none;
@@ -797,6 +971,7 @@ export default {
     border-radius: 6px;
     cursor: pointer;
     font-weight: 500;
+    font-size: 0.85rem;
     transition: background-color 0.2s ease;
 }
 
