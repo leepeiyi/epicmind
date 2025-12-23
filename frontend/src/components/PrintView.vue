@@ -2,7 +2,7 @@
     <div class="print-wrapper">
         <div class="print-header">
             <img src="../assets/epic-mind-logo.png" class="print-logo" />
-            <h2>{{ quizTitle }}</h2>
+            <h2>{{ quizTitle }}<span v-if="showAnswers" class="answer-key-label"> - Answer Key</span></h2>
             <p><strong>Subject:</strong> {{ subject }} | <strong>Level:</strong> {{ level }}</p>
         </div>
 
@@ -11,6 +11,7 @@
                 <tr>
                     <th style="width: 5%">#</th>
                     <th>Question</th>
+                    <th v-if="showAnswers" style="width: 30%">Answer</th>
                 </tr>
             </thead>
             <tbody>
@@ -21,6 +22,9 @@
                         <div v-if="q.image_paths?.length">
                             <img v-for="(img, index) in q.image_paths" :key="index" :src="img" class="print-diagram" />
                         </div>
+                    </td>
+                    <td v-if="showAnswers" class="answer-cell">
+                        <div v-html="formatAnswerText(getAnswerFromQuestion(q))"></div>
                     </td>
                 </tr>
             </tbody>
@@ -39,10 +43,38 @@ export default {
             questions: [],
             quizTitle: '',
             subject: '',
-            level: ''
+            level: '',
+            showAnswers: false
         };
     },
     methods: {
+        getAnswerFromQuestion(question) {
+            // The API returns answer_key which may be an object or JSON string
+            if (question.answer_key) {
+                let answerKey = question.answer_key;
+
+                // If it's a string, try to parse it as JSON
+                if (typeof answerKey === 'string') {
+                    try {
+                        answerKey = JSON.parse(answerKey);
+                    } catch (e) {
+                        // If parsing fails, it might be the answer itself
+                        return answerKey;
+                    }
+                }
+
+                // Now answerKey should be an object, extract correct_answer
+                if (typeof answerKey === 'object' && answerKey.correct_answer) {
+                    return answerKey.correct_answer;
+                }
+            }
+            // Fallback to correct_answer if it exists directly
+            if (question.correct_answer) {
+                return question.correct_answer;
+            }
+            return null;
+        },
+
         formatQuestionText(text) {
             if (!text) return '';
 
@@ -78,6 +110,46 @@ export default {
             return marked(text);
         },
 
+        formatAnswerText(answer) {
+            if (!answer) return '<em>No answer provided</em>';
+
+            // Handle object type (in case correct_answer is an object)
+            if (typeof answer === 'object') {
+                answer = JSON.stringify(answer);
+            }
+
+            // Ensure math delimiters are present for LaTeX expressions
+            let text = String(answer);
+
+            // Check if text contains LaTeX commands but no delimiters
+            const mathPatterns = ['\\frac', '\\sqrt', '\\sum', '\\int', '\\lim', '\\prod', '^{', '_{', '\\pi', '\\theta'];
+            const hasLatex = mathPatterns.some(p => text.includes(p));
+            const hasDelimiters = text.includes('$') || text.includes('\\(') || text.includes('\\[');
+
+            // If has LaTeX but no delimiters, wrap each line/part appropriately
+            if (hasLatex && !hasDelimiters) {
+                // Check for multi-part answers like (a) ... (b) ...
+                const partPattern = /\(([a-z]|[iv]+)\)\s*/gi;
+                if (partPattern.test(text)) {
+                    // Reset regex
+                    partPattern.lastIndex = 0;
+                    // Split by parts and wrap each answer in $
+                    text = text.replace(/(\([a-z]|[iv]+\)\s*)([^()]+?)(?=\([a-z]|[iv]+\)|$)/gi, (match, label, content) => {
+                        const trimmedContent = content.trim();
+                        if (trimmedContent && !trimmedContent.startsWith('$')) {
+                            return `${label}$${trimmedContent}$ `;
+                        }
+                        return match;
+                    });
+                } else {
+                    // Single answer - wrap entire thing
+                    text = `$${text}$`;
+                }
+            }
+
+            return marked(text);
+        },
+
         renderMathJax() {
             if (window.MathJax?.typesetPromise) {
                 return window.MathJax.typesetPromise();
@@ -102,6 +174,7 @@ export default {
         this.quizTitle = query.folder_name || query.paper_name || 'Untitled Quiz';
         this.subject = query.subject || '';
         this.level = query.level || '';
+        this.showAnswers = query.showAnswers === 'true';
 
         const folderId = query.folderId;
         const paperName = query.paper_name;
@@ -111,7 +184,13 @@ export default {
                 .then(res => res.json())
                 .then(data => {
                     this.questions = data;
-                    this.triggerPrint();
+                    // Only auto-print if not showing answer key
+                    if (!this.showAnswers) {
+                        this.triggerPrint();
+                    } else {
+                        // Just render MathJax without printing
+                        setTimeout(() => this.renderMathJax(), 300);
+                    }
                 })
                 .catch(err => console.error('❌ Error fetching quiz by folderId:', err));
         } else if (paperName) {
@@ -119,7 +198,13 @@ export default {
                 .then(res => res.json())
                 .then(data => {
                     this.questions = data.questions;
-                    this.triggerPrint();
+                    // Only auto-print if not showing answer key
+                    if (!this.showAnswers) {
+                        this.triggerPrint();
+                    } else {
+                        // Just render MathJax without printing
+                        setTimeout(() => this.renderMathJax(), 300);
+                    }
                 })
                 .catch(err => console.error('❌ Error fetching quiz by paper_name:', err));
         }
@@ -176,5 +261,19 @@ export default {
 .print-diagram {
     margin-top: 0.5rem;
     max-width: 300px;
+}
+
+.answer-key-label {
+    color: #FF9800;
+    font-weight: bold;
+}
+
+.answer-cell {
+    background-color: #fffde7;
+    font-size: 0.95rem;
+}
+
+.answer-cell div {
+    word-wrap: break-word;
 }
 </style>
