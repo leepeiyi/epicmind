@@ -188,7 +188,7 @@
                                 {{ paper.paper_name }}
                             </span>
                             <span v-if="paper.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
-                            <span v-else class="paper-topic">{{ paper.topic_label || 'Topical' }}</span>
+                            <span v-else class="paper-topic">{{ getTopicLabel(paper.topic_label) }}</span>
 
                         </div>
                         <div class="paper-details">
@@ -815,7 +815,7 @@ export default {
                         }
                     }
 
-                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
+                    return `### Q${q.question_number} (${this.getTopicLabel(q.topic_label)})\n\n${q.question_text}\n\n${options}\n\n${images}${answer}`;
                 }).join('\n\n---\n\n');
 
                 // Get next available question number
@@ -1180,6 +1180,32 @@ export default {
             if (!this.lastSearchQuery || !text) return text;
             const regex = new RegExp(`(${this.lastSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
             return text.replace(regex, '<mark>$1</mark>');
+        },
+
+        // Extract just the label string if topic_label is an object or JSON string
+        getTopicLabel(topicLabel) {
+            if (!topicLabel) return 'Topical';
+
+            // If it's already a plain string (not JSON), return it
+            if (typeof topicLabel === 'string') {
+                // Check if it looks like JSON
+                if (topicLabel.startsWith('{') || topicLabel.startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(topicLabel);
+                        return parsed.label || topicLabel;
+                    } catch (e) {
+                        return topicLabel;
+                    }
+                }
+                return topicLabel;
+            }
+
+            // If it's an object, extract the label
+            if (typeof topicLabel === 'object' && topicLabel.label) {
+                return topicLabel.label;
+            }
+
+            return 'Topical';
         },
 
         // Question Edit Modal Methods

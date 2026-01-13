@@ -222,6 +222,62 @@ router.post("/folders/saveSegmentedQuestions", async (req, res) => {
   }
 });
 
+// DELETE /api/quiz/folders/:folderId - Delete a quiz folder
+router.delete("/folders/:folderId", async (req, res) => {
+  const { folderId } = req.params;
+  console.log("🗑️ Received request to delete folder ID:", folderId);
+
+  if (!folderId) {
+    return res.status(400).json({ message: "❌ Folder ID is required" });
+  }
+
+  const folderIdInt = parseInt(folderId, 10);
+  if (isNaN(folderIdInt)) {
+    return res.status(400).json({ message: "❌ Invalid folder ID format" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // First check if folder exists
+    const checkRes = await client.query(
+      `SELECT id FROM quiz_folders WHERE id = $1`,
+      [folderIdInt]
+    );
+
+    if (checkRes.rows.length === 0) {
+      return res.status(404).json({ message: "❌ Folder not found" });
+    }
+
+    // Delete any quiz assignments associated with this folder
+    await client.query(
+      `DELETE FROM quiz_assignments WHERE quiz_id = $1`,
+      [folderIdInt]
+    );
+
+    // Delete the folder
+    const deleteRes = await client.query(
+      `DELETE FROM quiz_folders WHERE id = $1 RETURNING *`,
+      [folderIdInt]
+    );
+
+    console.log("✅ Folder deleted successfully:", deleteRes.rows[0]);
+    res.status(200).json({
+      success: true,
+      message: "Quiz folder deleted successfully",
+      deleted: deleteRes.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error deleting folder:", error);
+    res.status(500).json({
+      message: "Failed to delete folder",
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 
 

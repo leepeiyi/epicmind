@@ -124,8 +124,9 @@
                     Assigned by: {{ quiz.teacher_name }}
                 </div>
                 <div class="quiz-actions">
-                    <button class="open-btn" @click="openQuiz(quiz.id)">Open Quiz</button>
+                    <button class="open-btn" @click="openQuiz(quiz.id)">Open</button>
                     <button v-if="userRole === 'teacher'" @click="printQuiz(quiz)" class="print-btn">Print</button>
+                    <button v-if="userRole === 'teacher'" @click="printAnswerKey(quiz)" class="answer-key-btn">Answers</button>
                 </div>
             </div>
         </div>
@@ -714,6 +715,19 @@ export default {
             });
         },
 
+        printAnswerKey(quiz) {
+            this.$router.push({
+                path: '/print-view',
+                query: {
+                    folderId: quiz.id,
+                    folder_name: quiz.name || quiz.title || 'Untitled Quiz',
+                    subject: quiz.subject,
+                    level: quiz.level,
+                    showAnswers: 'true'
+                }
+            });
+        },
+
         async deleteQuiz(quizId) {
             if (!confirm('Are you sure you want to delete this quiz?')) {
                 this.activeDropdown = null;
@@ -721,7 +735,7 @@ export default {
             }
 
             try {
-                const response = await authFetch(`${API_BASE_URL}/api/folders/${quizId}`, {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/folders/${quizId}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
@@ -1263,46 +1277,61 @@ export default {
     margin: 0 0.4rem;
 }
 
-.open-btn {
-    margin-top: auto;
-    align-self: flex-start;
-    padding: 0.5rem 1rem;
-    background-color: white;
-    color: #66CC99;
-    border: 2px solid #66CC99;
+.open-btn,
+.print-btn,
+.answer-key-btn {
+    padding: 0.4rem 0.75rem;
     border-radius: 6px;
-    font-weight: bold;
+    font-size: 0.8rem;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
 }
 
-.open-btn:hover {
+.open-btn {
     background-color: #66CC99;
     color: white;
 }
 
-.print-btn {
-    margin-top: 0.5rem;
-    align-self: flex-start;
-    padding: 0.5rem 1rem;
-    background-color: white;
-    color: #0055B8;
-    border: 2px solid #0055B8;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: background 0.2s;
+.open-btn:hover {
+    background-color: #52b386;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(102, 204, 153, 0.3);
 }
 
-.print-btn:hover {
+.print-btn {
     background-color: #0055B8;
     color: white;
 }
 
+.print-btn:hover {
+    background-color: #004494;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 85, 184, 0.3);
+}
+
+.answer-key-btn {
+    background-color: #FF9800;
+    color: white;
+}
+
+.answer-key-btn:hover {
+    background-color: #e68900;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+}
+
 .quiz-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid #eee;
 }
 
 .loading-indicator {

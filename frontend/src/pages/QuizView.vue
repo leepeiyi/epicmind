@@ -225,7 +225,7 @@
                             </button>
 
                             <div v-if="showMathEditor" class="math-editor-section">
-                                <MathEditor v-model="mathInput" />
+                                <VisualMathEditor v-model="mathInput" />
                             </div>
 
                             <textarea v-model="userAnswer" placeholder="Enter your answer here..."
@@ -265,7 +265,7 @@
                                         </button>
 
                                         <div v-if="partMathEditors[partIndex]" class="math-editor-section">
-                                            <MathEditor v-model="partMathInputs[partIndex]" />
+                                            <VisualMathEditor v-model="partMathInputs[partIndex]" />
                                         </div>
 
                                         <textarea 
@@ -389,13 +389,13 @@ import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { marked } from 'marked';
 import API_BASE_URL, { authFetch } from '../config/api.js';
 import { toast } from 'vue-sonner';
-import MathEditor from '../components/MathEditor.vue';
+import VisualMathEditor from '../components/VisualMathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
 import ReportQuestionModal from '../components/ReportQuestionModal.vue';
 
 export default {
     name: 'QuizView',
-    components: { Navbar, EpicMindLoader, MathEditor, QuestionEditModal, ReportQuestionModal },
+    components: { Navbar, EpicMindLoader, VisualMathEditor, QuestionEditModal, ReportQuestionModal },
     data() {
         return {
             quizId: null,
