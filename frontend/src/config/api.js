@@ -1,6 +1,6 @@
 // API Configuration
 const API_BASE_URL = import.meta.env.PROD
-  ? 'https://epic-mind-backend.onrender.com'  // Production
+  ? 'https://api.theepicmind.com.sg'          // Production (NAS)
   : 'http://localhost:5008';                   // Local development
 
 export default API_BASE_URL;

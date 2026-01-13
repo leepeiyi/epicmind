@@ -41,13 +41,13 @@ services:
       # Storage (local instead of S3)
       - STORAGE_TYPE=local
       - LOCAL_STORAGE_PATH=/app/uploads
-      - PUBLIC_URL_BASE=https://api.YOURDOMAIN.com/uploads
+      - PUBLIC_URL_BASE=https://api.theepicmind.com.sg/uploads
       # Auth
       - JWT_SECRET=3p!cMind100
       # Email (Brevo)
       - BREVO_API_KEY=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
-      - RESET_PASSWORD_URL=https://YOURDOMAIN.com/reset-password
-      - FRONTEND_BASE_URL=https://YOURDOMAIN.com
+      - RESET_PASSWORD_URL=https://epic-mind-frontend.vercel.app/reset-password
+      - FRONTEND_BASE_URL=https://epic-mind-frontend.vercel.app
       # AI/OCR APIs
       - MATHPIX_APP_ID=epicmind_ea67bf_090d09
       - MATHPIX_APP_KEY=4d48a1bde193de62bd411aa8fba663421a47fcde7b3a65db2d184d9ee410a1c4
@@ -58,3 +58,11 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: epicmind-tunnel
+    command: tunnel --no-autoupdate run --token eyJhIjoiN2M1NmMyMTRiMWNhZGJjMjNmMjMzNjc5OTA4ZTA0MTgiLCJ0IjoiOTE5NGMyZDItNTAxNC00ZDlhLWJlNWMtNDNhNTA4ODc4ODBlIiwicyI6IllUUmtOamczT1RndE1EUXdOaTAwWXpBMUxUa3lNbVl0WkRFME56azJaV0pqTW1NeCJ9
+    restart: unless-stopped
+    depends_on:
+      - backend
