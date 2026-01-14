@@ -1,0 +1,203 @@
+<!-- frontend/src/components/FavoriteButton.vue -->
+<template>
+    <button @click="toggleFavorite" :disabled="loading" class="favorite-btn"
+        :class="{ 'is-favorited': isFavorited, 'loading': loading }"
+        :title="isFavorited ? 'Remove from favorites' : 'Add to favorites'">
+        <span v-if="loading">⏳</span>
+        <span v-else-if="isFavorited">⭐</span>
+        <span v-else>☆</span>
+    </button>
+</template>
+
+<script>
+import API_BASE_URL, { authFetch, getToken, getUser } from '../config/api.js';
+import { toast } from 'vue-sonner';
+
+export default {
+    name: 'FavoriteButton',
+    props: {
+        questionId: {
+            type: [Number, String],
+            required: true
+        },
+        subject: {
+            type: String,
+            required: true
+        },
+        banding: {
+            type: String,
+            required: true
+        },
+        level: {
+            type: String,
+            required: true
+        },
+        topicLabel: {
+            type: String,
+            required: true
+        },
+        size: {
+            type: String,
+            default: 'medium' // 'small', 'medium', 'large'
+        }
+    },
+    data() {
+        return {
+            isFavorited: false,
+            loading: false
+        };
+    },
+    async mounted() {
+        await this.checkFavoriteStatus();
+    },
+    methods: {
+        getUserId() {
+            const user = getUser();
+            return user?.id || null;
+        },
+
+        async checkFavoriteStatus() {
+            try {
+                const userId = this.getUserId();
+                if (!userId) {
+                    console.log('No user logged in, skipping favorite status check');
+                    return;
+                }
+
+                const params = new URLSearchParams({
+                    user_id: userId, // ✅ Added the missing user_id parameter
+                    question_id: this.questionId,
+                    subject: this.subject,
+                    banding: this.banding,
+                    level: this.level,
+                    topic_label: this.topicLabel
+                });
+
+                const response = await authFetch(`${API_BASE_URL}/api/favourite/check-question?${params}`);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.isFavorited = data.is_favorited;
+                } else {
+                    console.error('❌ Failed to check favorite status:', response.status);
+                }
+            } catch (error) {
+                console.error('❌ Error checking favorite status:', error);
+            }
+        },
+
+        async toggleFavorite() {
+            if (this.loading) return;
+
+            this.loading = true;
+            try {
+                const userId = this.getUserId();
+                if (!userId) {
+                    toast.error("User not logged in or session expired.");
+                    this.loading = false;
+                    return;
+                }
+
+                const url = this.isFavorited
+                    ? `${API_BASE_URL}/api/favourite/remove-question`
+                    : `${API_BASE_URL}/api/favourite/add-question`;
+
+                const method = this.isFavorited ? 'DELETE' : 'POST';
+
+                const response = await authFetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        question_id: parseInt(this.questionId),
+                        subject: this.subject,
+                        banding: this.banding,
+                        level: this.level,
+                        topic_label: this.topicLabel
+                    })
+                });
+
+                if (response.ok) {
+                    this.isFavorited = !this.isFavorited;
+
+                    // Emit event for parent components to listen to
+                    this.$emit('favoriteChanged', {
+                        questionId: this.questionId,
+                        isFavorited: this.isFavorited
+                    });
+                } else {
+                    const errorData = await response.json();
+                    console.error('❌ Server error:', errorData);
+                    throw new Error(errorData.error || 'Failed to update favorite status');
+                }
+            } catch (error) {
+                console.error('❌ Error toggling favorite:', error);
+                toast.error('Failed to update favorite. Please try again.');
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+};
+</script>
+
+<style scoped>
+.favorite-btn {
+    background: none;
+    border: 2px solid #ddd;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+/* Size variants */
+.favorite-btn {
+    width: 36px;
+    height: 36px;
+}
+
+.favorite-btn.small {
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+}
+
+.favorite-btn.large {
+    width: 44px;
+    height: 44px;
+    font-size: 1.4rem;
+}
+
+/* States */
+.favorite-btn:hover {
+    border-color: #ff9500;
+    background-color: #fff9e6;
+}
+
+.favorite-btn.is-favorited {
+    border-color: #ff9500;
+    background-color: #fff3cd;
+    color: #ff9500;
+}
+
+.favorite-btn.is-favorited:hover {
+    background-color: #ff9500;
+    color: white;
+}
+
+.favorite-btn.loading {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.favorite-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+</style>

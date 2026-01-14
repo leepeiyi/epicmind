@@ -1,0 +1,346 @@
+// Add this to your existing backend/routes/question.js file (or create a new route file)
+
+const express = require("express");
+const router = express.Router();
+const { Pool } = require("pg");
+const { decodeLatex } = require("../../utils/latexBase64");
+const { dbConfig } = require("../../utils/db-config");
+
+// Helper function to decode LaTeX in a question object
+const decodeQuestionLatex = (question) => {
+  if (!question) return question;
+
+  const decoded = { ...question };
+
+  if (decoded.question_text) {
+    decoded.question_text = decodeLatex(decoded.question_text);
+  }
+  if (decoded.text) {
+    decoded.text = decodeLatex(decoded.text);
+  }
+
+  if (Array.isArray(decoded.answer_options)) {
+    decoded.answer_options = decoded.answer_options.map(opt => {
+      if (opt && typeof opt.text === 'string') {
+        return { ...opt, text: decodeLatex(opt.text) };
+      }
+      return opt;
+    });
+  }
+
+  if (decoded.answer_key && typeof decoded.answer_key === 'object') {
+    if (decoded.answer_key.correct_answer) {
+      decoded.answer_key = {
+        ...decoded.answer_key,
+        correct_answer: decodeLatex(decoded.answer_key.correct_answer)
+      };
+    }
+  }
+
+  return decoded;
+};
+
+// Create a PostgreSQL connection pool
+const pool = new Pool(dbConfig);
+
+// Add these routes to your existing backend/routes/paper.js file
+
+// Route to get only exam papers
+router.get("/exam-papers", async (req, res) => {
+  try {
+    const query = `
+            SELECT
+                q.paper_name,
+                q.subject,
+                q.banding,
+                q.level,
+                q.paper_type,
+                MAX(q.created_at) AS last_uploaded,
+                MAX(q.year) AS year,
+                COUNT(*) AS question_count
+            FROM question q
+            WHERE q.paper_type = 'exam'
+            GROUP BY q.paper_name, q.subject, q.banding, q.level, q.paper_type
+            ORDER BY last_uploaded DESC
+        `;
+
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      papers: result.rows,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching exam papers:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch exam papers",
+    });
+  }
+});
+
+// Route to get ALL papers (exam + topical) with optional paper_type filter
+router.get("/all-papers", async (req, res) => {
+  try {
+    const { paper_type } = req.query; // Optional: 'exam', 'topical', or empty for all
+
+    let whereClause = "";
+    const params = [];
+
+    if (paper_type && (paper_type === "exam" || paper_type === "topical")) {
+      whereClause = "WHERE q.paper_type = $1";
+      params.push(paper_type);
+    }
+
+    const query = `
+      SELECT
+        q.paper_name,
+        q.subject,
+        q.banding,
+        q.level,
+        q.paper_type,
+        MAX(q.created_at) AS last_uploaded,
+        MAX(q.year) AS year,
+        COUNT(*) AS question_count
+      FROM question q
+      ${whereClause}
+      GROUP BY q.paper_name, q.subject, q.banding, q.level, q.paper_type
+      ORDER BY last_uploaded DESC
+    `;
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      papers: result.rows,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching all papers:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch papers",
+    });
+  }
+});
+
+router.get("/by-topic/:topicLabel", async (req, res) => {
+  const { topicLabel } = req.params;
+  const { topic_id } = req.query; // Optional: use topic_id for more precise queries
+
+  try {
+    // If topic_id is provided, use it for faster lookup
+    // Otherwise fall back to topic_label text matching
+    const query = topic_id ? `
+      SELECT
+        q.id,
+        q.question_number,
+        q.question_text,
+        q.topic_label,
+        q.topic_id,
+        q.paper_name,
+        q.paper_type,
+        q.difficulty_level,
+        q.sub_topic,
+        q.image_paths,
+        q.answer_options,
+        q.answer_key,
+        t.label as topic_name,
+        t.hashtag as topic_hashtag
+      FROM question q
+      LEFT JOIN topics t ON q.topic_id = t.id
+      WHERE q.topic_id = $1
+      ORDER BY
+        CASE WHEN q.paper_type = 'exam' THEN 1 ELSE 2 END,
+        q.question_number ASC
+    ` : `
+      SELECT
+        q.id,
+        q.question_number,
+        q.question_text,
+        q.topic_label,
+        q.topic_id,
+        q.paper_name,
+        q.paper_type,
+        q.difficulty_level,
+        q.sub_topic,
+        q.image_paths,
+        q.answer_options,
+        q.answer_key,
+        t.label as topic_name,
+        t.hashtag as topic_hashtag
+      FROM question q
+      LEFT JOIN topics t ON q.topic_id = t.id
+      WHERE q.topic_label = $1
+      ORDER BY
+        CASE WHEN q.paper_type = 'exam' THEN 1 ELSE 2 END,
+        q.question_number ASC
+    `;
+
+    const result = await pool.query(query, [topic_id || topicLabel]);
+
+    const questions = result.rows.map((row) => {
+      // Decode LaTeX first
+      const decodedRow = decodeQuestionLatex(row);
+
+      let answer_options = [];
+      let answer_key = {};
+
+      try {
+        answer_options =
+          typeof decodedRow.answer_options === "string"
+            ? JSON.parse(decodedRow.answer_options)
+            : decodedRow.answer_options || [];
+      } catch {
+        answer_options = [];
+      }
+
+      try {
+        answer_key =
+          typeof decodedRow.answer_key === "string"
+            ? JSON.parse(decodedRow.answer_key)
+            : decodedRow.answer_key || {};
+      } catch {
+        answer_key = {};
+      }
+
+      return {
+        id: decodedRow.id,
+        question_number: decodedRow.question_number,
+        question_text: decodedRow.question_text,
+        topic_label: decodedRow.topic_label,
+        paper_name: decodedRow.paper_name,
+        paper_type: decodedRow.paper_type,
+        difficulty_level: decodedRow.difficulty_level,
+        sub_topic: decodedRow.sub_topic,
+        image_paths: decodedRow.image_paths,
+        answer_options,
+        answer_key,
+      };
+    });
+
+    res.json({
+      success: true,
+      questions,
+      count: questions.length,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching questions by topic:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch questions by topic",
+    });
+  }
+});
+
+// Route to get all unique topics for filtering/search
+router.get("/topics", async (req, res) => {
+  try {
+    const { subject, level, banding } = req.query;
+
+    let query = `
+            SELECT DISTINCT topic_label
+            FROM question q
+            LEFT JOIN paper p ON q.paper_name = p.paper_name
+            WHERE topic_label IS NOT NULL AND topic_label != ''
+        `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (subject) {
+      query += ` AND q.subject = ${paramIndex}`;
+      params.push(subject);
+      paramIndex++;
+    }
+
+    if (level) {
+      query += ` AND q.level = ${paramIndex}`;
+      params.push(level);
+      paramIndex++;
+    }
+
+    if (banding) {
+      query += ` AND q.banding = ${paramIndex}`;
+      params.push(banding);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY topic_label ASC`;
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      topics: result.rows.map((row) => row.topic_label),
+    });
+  } catch (error) {
+    console.error("❌ Error fetching topics:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch topics",
+    });
+  }
+});
+
+// Route to get question statistics by topic
+router.get("/topic-stats/:topicLabel", async (req, res) => {
+  try {
+    const { topicLabel } = req.params;
+
+    const query = `
+            SELECT 
+                q.paper_type,
+                q.difficulty_level,
+                COUNT(*) as count
+            FROM question q
+            WHERE q.topic_label = $1
+            GROUP BY q.paper_type, q.difficulty_level
+            ORDER BY q.paper_type, q.difficulty_level
+        `;
+
+    const result = await pool.query(query, [topicLabel]);
+
+    // Organize the stats
+    const stats = {
+      total: 0,
+      by_type: {
+        exam: 0,
+        topical: 0,
+      },
+      by_difficulty: {
+        Easy: 0,
+        Medium: 0,
+        Hard: 0,
+      },
+    };
+
+    result.rows.forEach((row) => {
+      const count = parseInt(row.count);
+      stats.total += count;
+
+      if (row.paper_type) {
+        stats.by_type[row.paper_type] =
+          (stats.by_type[row.paper_type] || 0) + count;
+      }
+
+      if (row.difficulty_level) {
+        stats.by_difficulty[row.difficulty_level] =
+          (stats.by_difficulty[row.difficulty_level] || 0) + count;
+      }
+    });
+
+    res.json({
+      success: true,
+      topic: topicLabel,
+      stats: stats,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching topic stats:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch topic statistics",
+    });
+  }
+});
+
+module.exports = router;

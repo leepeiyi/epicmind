@@ -1,0 +1,937 @@
+<template>
+    <div class="markdown-insert-content">
+        <div v-if="isSaving" class="overlay-spinner">
+            <EpicMindLoader size="large" text="Processing Markdown..." />
+        </div>
+
+        <div class="upload-page">
+            <h1>Insert Paper from Markdown</h1>
+            <p class="subtitle">
+                Paste markdown content from Mathpix webapp to extract questions and process images.
+            </p>
+
+            <div class="type-toggle">
+                <button :class="{ active: uploadType === 'exam' }" @click="uploadType = 'exam'">Exam Paper</button>
+                <button :class="{ active: uploadType === 'topical' }" @click="uploadType = 'topical'">Topical
+                    Revision</button>
+            </div>
+
+            <!-- Paper Details Component -->
+            <PaperDetails v-if="uploadType" v-model:subject="form.subject" v-model:banding="form.banding"
+                v-model:level="form.level" v-model:topic_label="form.topic_label" v-model:year="form.year"
+                :uploadType="uploadType" />
+            <!-- Paper Name input (shown once a type is selected) -->
+            <div v-if="uploadType" class="form-group" style="margin-bottom: 1rem;">
+                <label for="paperName" style="font-weight: bold; display: block; margin-bottom: 0.5rem;">
+                    Name Your Paper
+                </label>
+                <input id="paperName" v-model="paperName" type="text" placeholder="e.g., 2024_Sec3_Algebra_Quiz"
+                    class="markdown-input-textarea" style="min-height: auto; height: auto;" />
+            </div>
+
+
+
+            <!-- Markdown Input Area -->
+            <div v-if="uploadType" class="markdown-input-section">
+                <div class="answer-key-toggle">
+                    <label>
+                        <input type="checkbox" v-model="separateAnswerKey" />
+                        My answer key is separate from the questions
+                    </label>
+                </div>
+
+                <div v-if="separateAnswerKey" class="markdown-input-section">
+                    <h3>Paste Separate Answer Key</h3>
+                    <textarea v-model="answerKeyInput" class="markdown-input-textarea"
+                        placeholder="Paste your answer key content here..." rows="10"></textarea>
+                </div>
+
+                <h3>Paste Mathpix Markdown Content</h3>
+                <p class="input-help">
+                    Copy the markdown content from Mathpix webapp and paste it below.
+                    The system will automatically extract questions and process images.
+                </p>
+                <div class="input-controls">
+                    <button @click="cleanInputContent" class="clean-btn" v-if="markdownInput.trim()">
+                        Clean Content
+                    </button>
+                    <button @click="markdownInput = ''" class="clear-btn" v-if="markdownInput.trim()">
+                        Clear
+                    </button>
+                </div>
+                <textarea v-model="markdownInput" class="markdown-input-textarea" placeholder="Paste your Mathpix markdown content here...
+
+Example format expected:
+1. Question text with LaTeX: $\frac{x}{2} = 4$
+
+   (A) $x = 8$
+   (B) $x = 4$
+   (C) $x = 2$
+   (D) $x = 1$
+
+   ![image](https://cdn.mathpix.com/cropped/...)
+
+2. Next question...
+" rows="20">
+                </textarea>
+                <div class="input-stats">
+                    <span>Characters: {{ markdownInput.length }}</span>
+                    <span>Lines: {{ markdownInput.split('\n').length }}</span>
+                </div>
+            </div>
+
+            <!-- Preview Button -->
+            <button v-if="uploadType && markdownInput.trim() && !previewMarkdown" class="preview-btn"
+                @click="generatePreview" :disabled="isGeneratingPreview">
+                {{ isGeneratingPreview ? 'Generating Preview...' : 'Preview Questions' }}
+            </button>
+
+            <!-- Preview Section (shows before processing) -->
+            <div v-if="previewMarkdown" class="preview-wrapper">
+                <div class="preview-header">
+                    <h3>Questions Preview</h3>
+                    <p class="preview-subtitle">
+                        Review the extracted questions below. You can edit them before saving to database.
+                    </p>
+                    <div class="preview-stats">
+                        <span class="stat-badge">{{ extractedQuestions.length }} Questions</span>
+                        <span class="stat-badge">{{ totalImages }} Images</span>
+                        <button @click="clearPreview" class="clear-preview-btn">Edit Markdown</button>
+                    </div>
+                </div>
+                <div class="preview-content">
+
+                    <div class="editor">
+                        <h4>Extracted Questions (Editable)</h4>
+                        <textarea v-model="previewMarkdown" class="markdown-editor" />
+                    </div>
+                    <div class="preview">
+                        <h4>Preview</h4>
+                        <div :key="compiledPreviewMarkdown" v-html="compiledPreviewMarkdown"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Process Button (only shows after preview) -->
+            <button v-if="previewMarkdown" class="submit-btn" @click="handleMarkdownSubmit" :disabled="isSaving">
+                {{ isSaving ? 'Processing...' : 'Process & Save to Database' }}
+            </button>
+
+            <!-- Progress Bar -->
+            <div v-if="progressMessage" class="progress-bar-wrapper">
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }"></div>
+                </div>
+                <p>{{ progressMessage }} ({{ progressPercent }}%)</p>
+                <div v-if="processedQuestions.length > 0" class="progress-details">
+                    <p>Processed {{ processedQuestions.length }} questions</p>
+                    <p v-if="processedImages > 0">Downloaded {{ processedImages }} images</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+import PaperDetails from './PaperDetails.vue';
+import EpicMindLoader from './EpicMindLoader.vue';
+import { marked } from 'marked';
+import API_BASE_URL, { authFetch } from '../config/api.js';
+import { toast } from 'vue-sonner';
+
+export default {
+    name: 'MarkdownInsertPaperContent',
+    emits: ['upload-success'],
+    components: { PaperDetails, EpicMindLoader },
+    data() {
+        return {
+            uploadType: '',
+            form: {
+                subject: '',
+                banding: '',
+                level: '',
+                topic_label: '',
+                year: null
+            },
+            markdownInput: '',
+            previewMarkdown: '',
+            paperName: '',
+            progressMessage: '',
+            progressPercent: 0,
+            isSaving: false,
+            isGeneratingPreview: false,
+            extractedQuestions: [],
+            totalImages: 0,
+            processedQuestions: [],
+            processedImages: 0,
+            separateAnswerKey: false,
+            answerKeyInput: '',
+        };
+    },
+    computed: {
+        compiledPreviewMarkdown() {
+            return marked(this.previewMarkdown || '');
+        }
+    },
+    mounted() {
+        // Configure MathJax for LaTeX rendering
+        this.configureMathJax();
+    },
+    watch: {
+        compiledPreviewMarkdown() {
+            this.$nextTick(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise()
+                        .then(() => {
+                            console.log('MathJax preview rendering complete');
+                        })
+                        .catch(err => {
+                            console.error('MathJax preview error:', err);
+                        });
+                }
+            });
+        }
+    },
+    methods: {
+        configureMathJax() {
+            window.MathJax = {
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                    processEscapes: true
+                },
+                options: {
+                    enableMenu: false
+                }
+            };
+
+            if (!window.MathJax || !window.MathJax.typesetPromise) {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+                script.async = true;
+                document.head.appendChild(script);
+            }
+        },
+
+        cleanMarkdownContent(content) {
+            return content
+                // Remove table markup errors but preserve useful content
+                .replace(/Unknown environment 'tabular'/g, '')
+                .replace(/Misplaced [^}]+}/g, '')
+                .replace(/\\hline\s*/g, '')
+                .replace(/\\begin\{tabular\}[^}]*\}/g, '')
+                .replace(/\\end\{tabular\}/g, '')
+                // Fix common LaTeX issues but preserve math
+                .replace(/\\left\(/g, '(')
+                .replace(/\\right\)/g, ')')
+                // Clean up excessive spacing but preserve structure
+                .replace(/\n\s*\n\s*\n/g, '\n\n')
+                .trim();
+        },
+
+        cleanInputContent() {
+            this.markdownInput = this.cleanMarkdownContent(this.markdownInput);
+        },
+
+        async generatePreview() {
+            if (!this.markdownInput.trim()) {
+                toast.warning("Please paste markdown content first.");
+                return;
+            }
+            if (!this.form.subject || !this.form.banding || !this.form.level) {
+                toast.warning("Please complete all required fields.");
+                return;
+            }
+            if (this.uploadType === "topical" && !this.form.topic_label) {
+                toast.warning("Please select a topic for topical revision.");
+                return;
+            }
+
+            try {
+                this.isGeneratingPreview = true;
+
+                // Step 1: Extract questions from markdown
+                const previewRes = await authFetch(`${API_BASE_URL}/api/markdown/preview`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        markdown_content: this.markdownInput,
+                        answer_key_content: this.separateAnswerKey ? this.answerKeyInput : null,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label : null,
+                        year: this.form.year
+                    })
+                });
+
+                if (!previewRes.ok) {
+                    const errorData = await previewRes.json();
+                    throw new Error(errorData.error || 'Failed to generate preview');
+                }
+
+                const previewData = await previewRes.json();
+                this.extractedQuestions = previewData.questions || [];
+
+                // Step 2: Auto-label topics if exam paper
+                if (this.uploadType === "exam") {
+                    try {
+                        const labelRes = await authFetch(`${API_BASE_URL}/api/topic-label/match-topics`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                questions: this.extractedQuestions,
+                                level: this.form.level,
+                                subject: this.form.subject,
+                                paper_type: this.uploadType
+                            })
+                        });
+                        const labelData = await labelRes.json();
+                        if (labelRes.ok) {
+                            this.extractedQuestions = labelData.questions;
+
+                            // Step 3: Upload updated questions to update topic_label
+                            try {
+                                const syllabusRes = await authFetch(`${API_BASE_URL}/uploadSyllabus`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        jsonData: this.extractedQuestions,
+                                        subject: this.form.subject,
+                                        banding: this.form.banding,
+                                        level: this.form.level
+                                    })
+                                });
+
+                                const syllabusData = await syllabusRes.json();
+                                if (!syllabusRes.ok) {
+                                    console.warn("Syllabus upload failed:", syllabusData.error);
+                                } else {
+                                    console.log("Topic labels saved via /uploadSyllabus");
+                                }
+                            } catch (syllabusError) {
+                                console.warn("Error uploading topic labels:", syllabusError);
+                            }
+
+                        } else {
+                            console.warn("Topic labelling failed:", labelData.error);
+                        }
+                    } catch (labelError) {
+                        console.warn("Error during topic labelling:", labelError);
+                    }
+                }
+
+                // Step 4: Count total images
+                this.totalImages = this.extractedQuestions.reduce((total, q) => {
+                    return total + (Array.isArray(q.image_path) ? q.image_path.length : 0);
+                }, 0);
+
+                // Step 5: Generate preview markdown
+                this.previewMarkdown = this.extractedQuestions.map((q) => {
+                    const options = (q.answer_options || [])
+                        .map((opt) => `- **${opt.option}** ${opt.text}`)
+                        .join('\n');
+
+                    const images = Array.isArray(q.image_path)
+                        ? q.image_path.map((img) => `![Diagram](${img})`)
+                        : [];
+
+                    let answer = '';
+                    if (q.answer_key) {
+                        const cleanAnswer = typeof q.answer_key === 'string'
+                            ? (JSON.parse(q.answer_key).correct_answer || '')
+                            : (q.answer_key.correct_answer || '');
+                        answer = cleanAnswer ? `\n\n**Answer:** ${cleanAnswer}` : '';
+                    }
+
+                    return `### Q${q.question_number} (${q.topic_label || 'Topic'})\n\n${q.question_text}\n\n${options}\n\n${images.join('\n')}${answer}`;
+                }).join('\n\n---\n\n');
+
+            } catch (error) {
+                console.error("generatePreview error:", error);
+                toast.error("Failed to generate preview: " + error.message);
+            } finally {
+                this.isGeneratingPreview = false;
+            }
+        }
+        ,
+
+        clearPreview() {
+            this.previewMarkdown = '';
+            this.extractedQuestions = [];
+            this.totalImages = 0;
+        },
+        handleInsertMarkdown(markdownImage) {
+            if (!this.previewMarkdown) return;
+            const marker = `### Q${this.selectedQuestionNumber}`;
+            const parts = this.previewMarkdown.split(marker);
+            if (parts.length < 2) {
+                toast.warning(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                return;
+            }
+            // Insert the image right after the marker
+            parts[1] = `\n\n${markdownImage}\n` + parts[1];
+            this.previewMarkdown = parts.join(marker);
+        },
+
+        async handleMarkdownSubmit() {
+            // Validation
+            if (!this.previewMarkdown.trim()) {
+                toast.warning("Please generate a preview first.");
+                return;
+            }
+
+            try {
+                this.isSaving = true;
+
+                // Generate paper name
+                // Require user input
+                if (!this.paperName.trim()) {
+                    toast.warning("Please enter a paper name.");
+                    return;
+                }
+
+                // Use input + metadata to build final name
+                const baseName = this.paperName.trim().replace(/\s+/g, "_");
+                const suffix = `${this.form.subject}_${this.form.banding}_${this.form.level}`.replace(/\s+/g, "_");
+                this.paperName = `${baseName}_${suffix}`;
+
+
+                // Step 1: Check if paper exists
+                this.progressMessage = "Checking for existing paper...";
+                this.progressPercent = 10;
+
+                const existsRes = await authFetch(`${API_BASE_URL}/api/paper/exists/${encodeURIComponent(this.paperName)}`);
+                const { exists } = await existsRes.json();
+                if (exists) {
+                    toast.warning(`Paper "${this.paperName}" already exists in the database.`);
+                    this.progressMessage = "Duplicate paper detected.";
+                    this.progressPercent = 0;
+                    return;
+                }
+
+                // Step 2: Process markdown content with images and save to DB
+                this.progressMessage = "Processing images and saving to database...";
+                this.progressPercent = 50;
+
+                const processRes = await authFetch(`${API_BASE_URL}/api/markdown/process`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        questions: this.extractedQuestions, // Send the extracted questions
+                        paper_name: this.paperName,
+                        subject: this.form.subject,
+                        banding: this.form.banding,
+                        level: this.form.level,
+                        paper_type: this.uploadType,
+                        topic_label: this.uploadType === "topical" ? this.form.topic_label.label : null,
+                        year: this.form.year
+                    })
+                });
+
+                if (!processRes.ok) {
+                    const errorData = await processRes.json();
+                    throw new Error(errorData.error || 'Failed to process markdown');
+                }
+
+                const processData = await processRes.json();
+                this.processedQuestions = processData.questions || [];
+                this.processedImages = processData.images_processed || 0;
+
+                this.progressMessage = "Processing complete!";
+                this.progressPercent = 100;
+
+                // Show success toast
+                toast.success(`Paper "${this.paperName}" uploaded successfully! Redirecting to View All Papers...`);
+
+                // Clear progress and reset form after a moment, then emit success
+                setTimeout(() => {
+                    this.progressMessage = "";
+                    this.progressPercent = 0;
+                    this.resetForm();
+                    this.$emit('upload-success');
+                }, 1500);
+
+            } catch (error) {
+                console.error("handleMarkdownSubmit error:", error);
+                toast.error("Something went wrong: " + error.message);
+                this.progressMessage = "";
+                this.progressPercent = 0;
+            } finally {
+                this.isSaving = false;
+            }
+        },
+
+        resetForm() {
+            this.uploadType = '';
+            this.form = { subject: '', banding: '', level: '', topic_label: '', year: null };
+            this.markdownInput = '';
+            this.previewMarkdown = '';
+            this.paperName = '';
+            this.extractedQuestions = [];
+            this.totalImages = 0;
+            this.processedQuestions = [];
+            this.processedImages = 0;
+            this.separateAnswerKey = false;
+            this.answerKeyInput = '';
+        }
+    }
+};
+</script>
+
+<style scoped>
+.markdown-insert-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.upload-page {
+    padding: 2rem;
+    max-width: 100%;
+    font-family: Arial, sans-serif;
+}
+
+.subtitle {
+    color: #666;
+    margin-bottom: 2rem;
+}
+
+.recent-item {
+    list-style: none;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+}
+
+.recent-item-row {
+    padding: 1rem;
+    border-radius: 8px;
+    background-color: #f8f8f8;
+    transition: background-color 0.2s ease;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.recent-item-row:hover {
+    background-color: #e0f5ed;
+}
+
+.paper-name {
+    font-weight: 600;
+    color: #333;
+    flex-shrink: 0;
+}
+
+.upload-time {
+    color: #888;
+}
+
+.paper-topic {
+    color: #66CC99;
+    font-weight: 500;
+    margin-left: 0.5rem;
+    background-color: rgba(102, 204, 153, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.paper-type-exam {
+    background-color: rgba(74, 144, 226, 0.1);
+    color: #4A90E2;
+    font-weight: 600;
+}
+
+.type-toggle {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.type-toggle button {
+    padding: 0.75rem 1.5rem;
+    border: 2px solid #66CC99;
+    background-color: white;
+    color: #333;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.type-toggle button.active,
+.type-toggle button:hover {
+    background-color: #66CC99;
+    color: white;
+}
+
+.markdown-input-section {
+    margin: 2rem 0;
+}
+
+.input-help {
+    color: #666;
+    margin-bottom: 1rem;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.markdown-input-textarea {
+    width: 100%;
+    min-height: 400px;
+    padding: 1.5rem;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 2px solid #ddd;
+    border-radius: 12px;
+    background-color: #fafafa;
+    resize: vertical;
+    transition: border-color 0.2s ease;
+}
+
+.markdown-input-textarea:focus {
+    outline: none;
+    border-color: #66CC99;
+    background-color: white;
+}
+
+.input-stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 12px;
+    color: #888;
+}
+
+.preview-btn {
+    background-color: #4A90E2;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 1rem;
+    width: 100%;
+    border-radius: 12px;
+    font-size: 16px;
+    cursor: pointer;
+    margin: 1rem 0;
+    transition: background-color 0.2s ease;
+}
+
+.preview-btn:hover:not(:disabled) {
+    background-color: #357ABD;
+}
+
+.preview-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.preview-wrapper {
+    margin: 2rem 0;
+    border: 2px solid #4A90E2;
+    border-radius: 12px;
+    background-color: #f8f9fa;
+}
+
+.preview-header {
+    padding: 1.5rem;
+    background-color: #4A90E2;
+    color: white;
+    border-radius: 10px 10px 0 0;
+}
+
+.preview-header h3 {
+    margin: 0 0 0.5rem 0;
+}
+
+.preview-subtitle {
+    margin: 0 0 1rem 0;
+    opacity: 0.9;
+    font-size: 14px;
+}
+
+.preview-stats {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.preview img,
+.output-wrapper .preview img {
+    max-width: 100%;
+    max-height: 200px;
+    /* adjust as needed */
+    object-fit: contain;
+    display: block;
+    margin: 1rem auto;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+
+.stat-badge {
+    background-color: rgba(255, 255, 255, 0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.clear-preview-btn {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.clear-preview-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+.preview-content {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.markdown-input-section {
+    margin: 2rem 0;
+}
+
+.input-help {
+    color: #666;
+    margin-bottom: 1rem;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.input-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.clean-btn,
+.clear-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.clean-btn:hover {
+    background-color: #e0f7fa;
+    border-color: #66CC99;
+}
+
+.clear-btn:hover {
+    background-color: #ffebee;
+    border-color: #f44336;
+}
+
+@media (min-width: 1024px) {
+    .preview-content {
+        flex-direction: row;
+    }
+}
+
+.preview-content .editor,
+.preview-content .preview {
+    flex: 1;
+    padding: 1.5rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: white;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.preview-content h4 {
+    margin-top: 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.submit-btn {
+    background-color: #66CC99;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 1rem;
+    width: 100%;
+    border-radius: 12px;
+    font-size: 16px;
+    cursor: pointer;
+    margin: 2rem 0;
+    transition: background-color 0.2s ease;
+}
+
+.submit-btn:hover:not(:disabled) {
+    background-color: #4CAF50;
+}
+
+.submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.progress-bar-wrapper {
+    margin: 2rem 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #e6e6e6;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #66CC99;
+    transition: width 0.3s ease-in-out;
+}
+
+.progress-details {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #f0f8ff;
+    border-radius: 8px;
+    border-left: 4px solid #66CC99;
+}
+
+.progress-details p {
+    margin: 0.25rem 0;
+    font-size: 14px;
+}
+
+.output-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.answer-key-toggle {
+    margin-top: 1rem;
+    font-size: 14px;
+    color: #444;
+}
+
+.answer-key-toggle input {
+    margin-right: 0.5rem;
+}
+
+
+@media (min-width: 1024px) {
+    .output-wrapper {
+        flex-direction: row;
+    }
+}
+
+.editor,
+.preview {
+    flex: 1;
+    width: 100%;
+    padding: 2rem;
+    font-size: 16px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    overflow: auto;
+    max-height: 900px;
+}
+
+.preview img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+    object-fit: contain;
+}
+
+.markdown-editor {
+    width: 100%;
+    min-height: 600px;
+    height: auto;
+    padding: 1.5rem;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    line-height: 1.6;
+    background: #fefefe;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    resize: vertical;
+}
+
+.save-section {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: center;
+}
+
+.save-btn {
+    background-color: #66CC99;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-size: 18px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.save-btn:hover {
+    background-color: #4CAF50;
+}
+
+.overlay-spinner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.85);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    color: #333;
+}
+
+.spinner {
+    border: 6px solid #eee;
+    border-top: 6px solid #66cc99;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+</style>

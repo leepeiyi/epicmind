@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: epicmind-postgres
+    environment:
+      POSTGRES_USER: epicmind
+      POSTGRES_PASSWORD: your-db-password
+      POSTGRES_DB: epicmind
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U epicmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: node:20-alpine
+    container_name: epicmind-backend
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=epicmind
+      - DB_PASSWORD=your-db-password
+      - DB_DATABASE=epicmind
+      - DB_SSL=false
+      - STORAGE_TYPE=local
+      - LOCAL_STORAGE_PATH=/app/uploads
+      - PUBLIC_URL_BASE=https://your-api-domain.com/uploads
+      - JWT_SECRET=your-jwt-secret
+      - BREVO_API_KEY=your-brevo-api-key
+      - RESET_PASSWORD_URL=https://your-frontend-url/reset-password
+      - FRONTEND_BASE_URL=https://your-frontend-url
+      - MATHPIX_APP_ID=your-mathpix-app-id
+      - MATHPIX_APP_KEY=your-mathpix-app-key
+      - GEMINI_API_KEY=your-gemini-api-key
+      - GOOGLE_API_KEY=your-google-api-key
+    command: sh -c "npm install && npm start"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: epicmind-tunnel
+    command: tunnel --no-autoupdate run --token your-cloudflare-tunnel-token
+    restart: unless-stopped
+    depends_on:
+      - backend

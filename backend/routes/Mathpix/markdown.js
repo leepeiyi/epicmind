@@ -1,0 +1,764 @@
+// backend/routes/markdown.js
+const express = require("express");
+const router = express.Router();
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const insertJSONPayload = require("../Mathpix/insertPostgresql");
+const axios = require("axios");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
+const requireTeacher = require("../../middleware/require-teacher");
+const storage = require("../../utils/storage");
+require("dotenv").config();
+
+// Switch to Flash-Lite for better availability (less overloaded) - still capable for markdown parsing
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+
+// Configure multer for image uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Check if file is an image
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed"), false);
+    }
+  },
+});
+
+// Helper function to get file extension from mimetype
+function getFileExtension(mimetype) {
+  const extensions = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff",
+  };
+  return extensions[mimetype] || ".jpg";
+}
+
+// Helper function to sanitize filename
+function sanitizeFilename(filename) {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, "_") // Replace special chars with underscore
+    .replace(/_{2,}/g, "_") // Replace multiple underscores with single
+    .toLowerCase();
+}
+
+// Helper function to download and upload image to storage
+async function downloadAndUploadImage(
+  mathpixUrl,
+  paperName,
+  questionNumber,
+  imageIndex
+) {
+  try {
+    console.log(`📥 Downloading image: ${mathpixUrl}`);
+
+    const fileName = `diagram_q${questionNumber}_${imageIndex}.png`;
+    const key = `${paperName}/${fileName}`;
+
+    // Use storage abstraction (works for both S3 and local)
+    const imageUrl = await storage.uploadFromUrl(mathpixUrl, key, "image/png");
+
+    console.log(`✅ Uploaded image: ${imageUrl}`);
+    return imageUrl;
+  } catch (err) {
+    console.warn(`⚠️ Failed to upload image: ${err.message}`);
+    return mathpixUrl; // Return original URL as fallback
+  }
+}
+
+// Helper function to extract questions using Gemini
+async function extractQuestionsFromMarkdown(markdownContent, paperMetadata) {
+  const prompt = `You are extracting questions from a mathematics exam worksheet in Markdown format.
+
+CRITICAL JSON FORMATTING RULES:
+1. Return VALID JSON - in JSON strings, backslashes MUST be escaped as \\\\
+2. For LaTeX in JSON: $\\\\frac{1}{2}$ not $\\frac{1}{2}$
+3. Do NOT wrap response in markdown code blocks
+4. Escape ALL special characters properly in JSON strings
+
+Instructions:
+- Extract each question's number and full text (preserve LaTeX formatting)
+- Extract answer options (A, B, C, D) if present
+- Extract image URLs from ![...](https://cdn.mathpix.com/cropped/...)
+- Question numbers should be sequential integers (1, 2, 3, etc.)
+- If answer is inline (e.g. "Ans:" or "Answer:"), extract to "answer_key.correct_answer"
+
+EXAMPLE OUTPUT (valid JSON):
+[{
+  "question_number": "1",
+  "question_text": "Solve $\\\\log_2 x = 3$",
+  "answer_options": [
+    {"option": "A", "text": "x = 8"},
+    {"option": "B", "text": "x = 4"}
+  ],
+  "answer_key": {"correct_answer": "x = 8"},
+  "image_path": [],
+  "subject": "${paperMetadata.subject}",
+  "banding": "${paperMetadata.banding}",
+  "level": "${paperMetadata.level}",
+  "paper_type": "${paperMetadata.paper_type}",
+  "topic_label": "${paperMetadata.topic_label || ""}"
+}]
+
+MARKDOWN CONTENT TO PROCESS:
+${markdownContent}
+
+Return the JSON array directly:`;
+
+  try {
+    const result = await model.generateContent([{ text: prompt }]);
+    const rawResponse =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    console.log("📝 Gemini raw response length:", rawResponse.length);
+    console.log("📝 First 500 chars:", rawResponse.substring(0, 500));
+
+    // Debug: Show area around common error positions
+    if (rawResponse.length > 1988) {
+      console.log("📝 Around position 1988:", rawResponse.substring(1900, 2100));
+    }
+    if (rawResponse.length > 2299) {
+      console.log("📝 Around position 2299:", rawResponse.substring(2200, 2400));
+    }
+
+    // Parse the JSON response with multiple strategies
+    let parsed;
+    try {
+      parsed = await parseGeminiJsonResponse(rawResponse);
+    } catch (parseError) {
+      console.error("❌ Failed to parse Gemini response:", parseError.message);
+      throw new Error(`Failed to extract questions: ${parseError.message}`);
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("Gemini response is not an array");
+    }
+
+    console.log(
+      `✅ Successfully parsed ${parsed.length} questions from markdown`
+    );
+    return parsed;
+  } catch (error) {
+    console.error("❌ Error extracting questions with Gemini:", error);
+    throw new Error(`Failed to extract questions: ${error.message}`);
+  }
+}
+
+// Helper function to parse Gemini JSON responses with multiple strategies
+async function parseGeminiJsonResponse(rawResponse) {
+  const strategies = [
+    // Strategy 1: Double all backslashes, then fix over-escaping
+    {
+      name: "Fix invalid JSON escape sequences",
+      parse: (raw) => {
+        const cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+
+        let jsonString = jsonMatch[0];
+
+        // Step 1: Replace all single backslashes with double backslashes
+        jsonString = jsonString.replace(/\\/g, '\\\\');
+
+        // Step 2: Fix over-escaped valid JSON sequences
+        // \\\" → \" (quote)
+        // \\\\\\\\ → \\\\ (backslash)
+        // \\\/ → \/ (slash)
+        jsonString = jsonString
+          .replace(/\\\\\\\\/g, '\\\\') // Fix quadruple backslashes
+          .replace(/\\\\\"/g, '\\"')      // Fix over-escaped quotes
+          .replace(/\\\\\//g, '\\/')       // Fix over-escaped slashes
+          .replace(/\\\\n/g, '\\n')        // Fix newlines
+          .replace(/\\\\r/g, '\\r')        // Fix carriage returns
+          .replace(/\\\\t/g, '\\t')        // Fix tabs
+          .replace(/\\\\b/g, '\\b');       // Fix backspace
+
+        return JSON.parse(jsonString);
+      },
+    },
+
+    // Strategy 2: Clean response and parse directly
+    {
+      name: "Direct parsing after cleanup",
+      parse: (raw) => {
+        const cleaned = raw.replace(/^```json\s*|```\s*$/gm, "").trim();
+        const jsonMatch = cleaned.match(/\[\s*{[\s\S]*}\s*\]/);
+        if (!jsonMatch) throw new Error("No JSON array found");
+        return JSON.parse(jsonMatch[0]);
+      },
+    },
+  ];
+
+  // Try each strategy in order
+  for (const strategy of strategies) {
+    try {
+      console.log(`🔧 Trying parsing strategy: ${strategy.name}`);
+      const result = strategy.parse(rawResponse);
+
+      if (Array.isArray(result) && result.length > 0) {
+        console.log(`✅ Success with strategy: ${strategy.name}`);
+        return result;
+      } else {
+        console.log(
+          `⚠️ Strategy ${strategy.name} returned empty/invalid result`
+        );
+      }
+    } catch (error) {
+      console.log(`❌ Strategy ${strategy.name} failed:`, error.message);
+      continue;
+    }
+  }
+
+  // If all strategies fail
+  throw new Error(
+    "All JSON parsing strategies failed. Gemini response may be fundamentally malformed."
+  );
+}
+
+async function matchAnswersWithGemini(questions, answerKeyMarkdown) {
+  const prompt = `
+  You are given a list of math questions and a separate answer key in text.
+  
+  Match each question to its correct answer based on question number.
+  
+  If the answer key includes sub-parts (like 1a, 1b), combine them under the main number:
+  (e.g., "1a: 5", "1b: 7" => "correct_answer": "(a) 5, (b) 7")
+  
+  Return the updated array of questions like this:
+  [
+    {
+      "question_number": "1",
+      "question_text": "...",
+      "answer_options": [...],
+      "answer_key": { "question_number": "1", "correct_answer": "B" },
+      ...
+    }
+  ]
+  
+  QUESTIONS:
+  ${JSON.stringify(questions)}
+  
+  ANSWER KEY:
+  ${answerKeyMarkdown}
+  
+  Return only the valid JSON array. Do not include markdown, code blocks, or explanations.`;
+
+  try {
+    const result = await model.generateContent([{ text: prompt }]);
+    const raw =
+      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    const cleaned = raw.replace(/^```json\s*|```$/gm, "").trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error("❌ Failed to parse Gemini answer match:", err.message);
+    return questions; // fallback
+  }
+}
+
+// ===== IMAGE UPLOAD ROUTES =====
+
+// Route to upload single image
+router.post("/upload/image", requireTeacher, upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+
+    console.log(`📸 Uploading image: ${req.file.originalname}`);
+
+    // Get folder from request or use default
+    const folder = req.body.folder || "manual-uploads";
+
+    // Generate unique filename
+    const fileExtension = getFileExtension(req.file.mimetype);
+    const sanitizedOriginalName = sanitizeFilename(
+      path.parse(req.file.originalname).name
+    );
+    const uniqueId = uuidv4().substring(0, 8);
+    const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
+    const key = `${folder}/${fileName}`;
+
+    // Upload using storage abstraction (works for both S3 and local)
+    const imageUrl = await storage.uploadFile(req.file.buffer, key, req.file.mimetype);
+
+    console.log(`✅ Image uploaded successfully: ${imageUrl}`);
+
+    res.json({
+      success: true,
+      message: "Image uploaded successfully",
+      imageUrl: imageUrl,
+      fileName: fileName,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      storageKey: key,
+    });
+  } catch (error) {
+    console.error("❌ Image upload error:", error);
+
+    if (error.message === "Only image files are allowed") {
+      return res.status(400).json({ error: "Only image files are allowed" });
+    }
+
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res
+        .status(400)
+        .json({ error: "File too large. Maximum size is 10MB." });
+    }
+
+    res.status(500).json({
+      error: "Failed to upload image",
+      details: error.message,
+    });
+  }
+});
+
+// Route to upload multiple images
+router.post("/upload/images", requireTeacher, upload.array("images", 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No image files provided" });
+    }
+
+    console.log(`📸 Uploading ${req.files.length} images`);
+
+    const folder = req.body.folder || "manual-uploads";
+    const uploadResults = [];
+    const errors = [];
+
+    // Upload each file
+    for (const file of req.files) {
+      try {
+        // Generate unique filename
+        const fileExtension = getFileExtension(file.mimetype);
+        const sanitizedOriginalName = sanitizeFilename(
+          path.parse(file.originalname).name
+        );
+        const uniqueId = uuidv4().substring(0, 8);
+        const fileName = `${sanitizedOriginalName}_${uniqueId}${fileExtension}`;
+        const key = `${folder}/${fileName}`;
+
+        // Upload using storage abstraction (works for both S3 and local)
+        const imageUrl = await storage.uploadFile(file.buffer, key, file.mimetype);
+
+        uploadResults.push({
+          success: true,
+          imageUrl: imageUrl,
+          fileName: fileName,
+          originalName: file.originalname,
+          size: file.size,
+          mimetype: file.mimetype,
+          storageKey: key,
+        });
+
+        console.log(`✅ Uploaded: ${fileName}`);
+      } catch (uploadError) {
+        console.error(`❌ Failed to upload ${file.originalname}:`, uploadError);
+        errors.push({
+          fileName: file.originalname,
+          error: uploadError.message,
+        });
+      }
+    }
+
+    res.json({
+      success: uploadResults.length > 0,
+      message: `Uploaded ${uploadResults.length} of ${req.files.length} images`,
+      results: uploadResults,
+      errors: errors,
+      totalUploaded: uploadResults.length,
+      totalFailed: errors.length,
+    });
+  } catch (error) {
+    console.error("❌ Batch image upload error:", error);
+    res.status(500).json({
+      error: "Failed to upload images",
+      details: error.message,
+    });
+  }
+});
+
+// Route to get upload info/stats
+router.get("/upload/info", (req, res) => {
+  res.json({
+    maxFileSize: "10MB",
+    allowedTypes: [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+      "image/bmp",
+    ],
+    maxFiles: 10,
+    storageType: storage.getStorageType(),
+  });
+});
+
+// ===== EXISTING MARKDOWN PROCESSING ROUTES =====
+
+// ROUTE 1: Preview route - extract questions and optionally match answers
+router.post("/preview", requireTeacher, async (req, res) => {
+  try {
+    const {
+      markdown_content,
+      answer_key_content, // ✅ NEW
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      year,
+    } = req.body;
+
+    // Validation
+    if (!markdown_content || !subject || !banding || !level || !paper_type) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: markdown_content, subject, banding, level, paper_type",
+      });
+    }
+
+    console.log(`🔍 Generating preview for markdown content`);
+    console.log(`📊 Content length: ${markdown_content.length} characters`);
+
+    const paperMetadata = {
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      year,
+    };
+
+    // Step 1: Extract questions from markdown
+    let extractedQuestions = await extractQuestionsFromMarkdown(
+      markdown_content,
+      paperMetadata
+    );
+
+    if (!extractedQuestions || extractedQuestions.length === 0) {
+      return res.status(400).json({
+        error: "No questions could be extracted from the markdown content",
+      });
+    }
+
+    // Step 2: Extract original Mathpix image links from markdown
+    const imageRegex =
+      /!\[.*?\]\((https:\/\/cdn\.mathpix\.com\/cropped[^\s)]+)\)/g;
+    const markdownImages = [];
+    let match;
+    while ((match = imageRegex.exec(markdown_content)) !== null) {
+      markdownImages.push(match[1]);
+    }
+
+    // Step 3: Override Gemini image_path with original Mathpix links
+    let imgIndex = 0;
+    for (const q of extractedQuestions) {
+      if (Array.isArray(q.image_path) && q.image_path.length > 0) {
+        const newPaths = [];
+        for (let i = 0; i < q.image_path.length; i++) {
+          if (markdownImages[imgIndex]) {
+            newPaths.push(markdownImages[imgIndex]);
+            imgIndex++;
+          }
+        }
+        q.image_path = newPaths;
+      }
+    }
+
+    // Step 4: If separate answer_key_content is provided, match answers
+    if (answer_key_content && answer_key_content.trim().length > 0) {
+      console.log("🔗 Matching answers using Gemini...");
+      const matched = await matchAnswersWithGemini(
+        extractedQuestions,
+        answer_key_content
+      );
+
+      // 🔁 Re-apply original markdown image paths to maintain visual consistency
+      let imgIdx = 0;
+      for (let i = 0; i < matched.length; i++) {
+        const q = matched[i];
+        if (Array.isArray(q.image_path) && q.image_path.length > 0) {
+          const newPaths = [];
+          for (let j = 0; j < q.image_path.length; j++) {
+            if (markdownImages[imgIdx]) {
+              newPaths.push(markdownImages[imgIdx]);
+              imgIdx++;
+            }
+          }
+          q.image_path = newPaths;
+        }
+      }
+
+      extractedQuestions = matched;
+    }
+
+    res.json({
+      success: true,
+      questions: extractedQuestions,
+      message: `Successfully extracted ${extractedQuestions.length} questions for preview`,
+    });
+  } catch (error) {
+    console.error("❌ Error generating markdown preview:", error);
+    res.status(500).json({
+      error: "Failed to generate preview: " + error.message,
+    });
+  }
+});
+
+// ROUTE 2: Process route - for when user wants to save after preview
+router.post("/process", requireTeacher, async (req, res) => {
+  try {
+    const {
+      questions, // Pre-extracted questions from preview
+      paper_name,
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      year,
+    } = req.body;
+
+    // Validation
+    if (
+      !questions ||
+      !Array.isArray(questions) ||
+      !paper_name ||
+      !subject ||
+      !banding ||
+      !level ||
+      !paper_type
+    ) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: questions, paper_name, subject, banding, level, paper_type",
+      });
+    }
+
+    console.log(
+      `📝 Processing ${questions.length} questions for paper: ${paper_name}`
+    );
+
+    // Process images and upload to S3
+    let imagesProcessed = 0;
+    const updatedQuestions = await Promise.all(
+      questions.map(async (question) => {
+        // Create URL mapping for replacement
+        const urlMapping = new Map();
+
+        if (
+          !Array.isArray(question.image_path) ||
+          question.image_path.length === 0
+        ) {
+          return { ...question, image_path: [] };
+        }
+
+        const newImagePaths = await Promise.all(
+          question.image_path.map(async (rawUrl, index) => {
+            const cleanedUrl = rawUrl.replace(/\\&/g, "&");
+            if (cleanedUrl.includes("cdn.mathpix.com")) {
+              const s3Url = await downloadAndUploadImage(
+                cleanedUrl,
+                paper_name,
+                question.question_number,
+                index
+              );
+              if (s3Url !== rawUrl) {
+                imagesProcessed++;
+                // Store mapping for text replacement
+                urlMapping.set(cleanedUrl, s3Url);
+                urlMapping.set(rawUrl, s3Url); // Also map original URL
+              }
+              return s3Url;
+            }
+            return rawUrl;
+          })
+        );
+
+        // Replace Mathpix URLs in question_text with S3 URLs
+        let updatedQuestionText = question.question_text;
+        urlMapping.forEach((s3Url, mathpixUrl) => {
+          updatedQuestionText = updatedQuestionText.replace(
+            new RegExp(mathpixUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+            s3Url
+          );
+        });
+
+        return {
+          ...question,
+          image_path: newImagePaths,
+          question_text: updatedQuestionText // Update text with S3 URLs
+        };
+      })
+    );
+
+    console.log(`📸 Processed ${imagesProcessed} images`);
+
+    // Save to database
+    await insertJSONPayload({
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions: updatedQuestions,
+      paper_type,
+      topic_label,
+      year,
+    });
+
+    console.log(
+      `✅ Successfully saved ${updatedQuestions.length} questions to database`
+    );
+
+    res.json({
+      success: true,
+      message: "Questions processed and saved successfully",
+      questions: updatedQuestions,
+      images_processed: imagesProcessed,
+    });
+  } catch (error) {
+    console.error("❌ Error processing questions:", error);
+    res.status(500).json({
+      error: "Failed to process questions: " + error.message,
+    });
+  }
+});
+
+// ROUTE 3: Direct process route (for backward compatibility - processes markdown directly)
+router.post("/process-direct", requireTeacher, async (req, res) => {
+  try {
+    const {
+      markdown_content,
+      paper_name,
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      year,
+    } = req.body;
+
+    // Validation
+    if (
+      !markdown_content ||
+      !paper_name ||
+      !subject ||
+      !banding ||
+      !level ||
+      !paper_type
+    ) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: markdown_content, paper_name, subject, banding, level, paper_type",
+      });
+    }
+
+    console.log(
+      `📝 Direct processing markdown content for paper: ${paper_name}`
+    );
+    console.log(`📊 Content length: ${markdown_content.length} characters`);
+
+    // Step 1: Extract questions using Gemini
+    const paperMetadata = {
+      subject,
+      banding,
+      level,
+      paper_type,
+      topic_label,
+      year,
+    };
+
+    const extractedQuestions = await extractQuestionsFromMarkdown(
+      markdown_content,
+      paperMetadata
+    );
+
+    if (!extractedQuestions || extractedQuestions.length === 0) {
+      return res.status(400).json({
+        error: "No questions could be extracted from the markdown content",
+      });
+    }
+
+    console.log(`📋 Extracted ${extractedQuestions.length} questions`);
+
+    // Step 2: Process images and upload to S3
+    let imagesProcessed = 0;
+    const updatedQuestions = await Promise.all(
+      extractedQuestions.map(async (question) => {
+        if (
+          !Array.isArray(question.image_path) ||
+          question.image_path.length === 0
+        ) {
+          return { ...question, image_path: [] };
+        }
+
+        const newImagePaths = await Promise.all(
+          question.image_path.map(async (mathpixUrl, index) => {
+            if (mathpixUrl && mathpixUrl.includes("cdn.mathpix.com")) {
+              const s3Url = await downloadAndUploadImage(
+                mathpixUrl,
+                paper_name,
+                question.question_number,
+                index
+              );
+              if (s3Url !== mathpixUrl) {
+                imagesProcessed++;
+              }
+              return s3Url;
+            }
+            return mathpixUrl;
+          })
+        );
+
+        return { ...question, image_path: newImagePaths };
+      })
+    );
+
+    console.log(`📸 Processed ${imagesProcessed} images`);
+
+    // Step 3: Save to database
+    await insertJSONPayload({
+      paper_name,
+      subject,
+      banding,
+      level,
+      questions: updatedQuestions,
+      paper_type,
+      topic_label,
+      year,
+    });
+
+    console.log(
+      `✅ Successfully processed markdown and saved ${updatedQuestions.length} questions to database`
+    );
+
+    res.json({
+      success: true,
+      message: "Markdown processed successfully",
+      questions: updatedQuestions,
+      images_processed: imagesProcessed,
+    });
+  } catch (error) {
+    console.error("❌ Error processing markdown:", error);
+    res.status(500).json({
+      error: "Failed to process markdown: " + error.message,
+    });
+  }
+});
+
+module.exports = router;
