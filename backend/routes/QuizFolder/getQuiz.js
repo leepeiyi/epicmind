@@ -222,6 +222,58 @@ router.post("/folders/saveSegmentedQuestions", async (req, res) => {
   }
 });
 
+// PUT /api/quiz/folders/:folderId/rename - Rename a quiz folder
+router.put("/folders/:folderId/rename", async (req, res) => {
+  const { folderId } = req.params;
+  const { name } = req.body;
+  console.log("✏️ Received request to rename folder ID:", folderId, "to:", name);
+
+  if (!folderId) {
+    return res.status(400).json({ error: "Folder ID is required" });
+  }
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "New name is required" });
+  }
+
+  const folderIdInt = parseInt(folderId, 10);
+  if (isNaN(folderIdInt)) {
+    return res.status(400).json({ error: "Invalid folder ID format" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Update the folder name
+    const updateRes = await client.query(
+      `UPDATE quiz_folders
+       SET name = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [name.trim(), folderIdInt]
+    );
+
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
+
+    console.log("✅ Folder renamed successfully:", updateRes.rows[0]);
+    res.status(200).json({
+      success: true,
+      message: "Quiz folder renamed successfully",
+      folder: updateRes.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error renaming folder:", error);
+    res.status(500).json({
+      error: "Failed to rename folder",
+      details: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE /api/quiz/folders/:folderId - Delete a quiz folder
 router.delete("/folders/:folderId", async (req, res) => {
   const { folderId } = req.params;

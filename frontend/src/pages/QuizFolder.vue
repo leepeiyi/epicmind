@@ -88,7 +88,22 @@
         <div v-else class="quiz-grid">
             <div v-for="quiz in filteredQuizzes" :key="quiz.id" class="quiz-card">
                 <div class="quiz-title-row">
-                    <span class="quiz-title">📝 {{ quiz.name || quiz.title }}</span>
+                    <input
+                        v-if="editingQuizId === quiz.id"
+                        v-model="editingQuizName"
+                        class="quiz-title-input"
+                        @keyup.enter="saveQuizRename(quiz.id)"
+                        @keyup.escape="cancelRename"
+                        @blur="saveQuizRename(quiz.id)"
+                        ref="renameInput"
+                        autofocus
+                    />
+                    <span
+                        v-else
+                        class="quiz-title"
+                        @dblclick="startRename(quiz)"
+                        title="Double-click to rename"
+                    >📝 {{ quiz.name || quiz.title }}</span>
                     <div class="quiz-menu-dropdown">
                         <span class="quiz-menu" @click="toggleDropdown(quiz.id)">⋮</span>
                         <div v-if="activeDropdown === quiz.id" class="dropdown-menu">
@@ -349,6 +364,9 @@ export default {
             showAssignModal: false,
             selectedQuizId: null,
 
+            // Inline rename
+            editingQuizId: null,
+            editingQuizName: '',
 
         };
     },
@@ -975,6 +993,72 @@ export default {
         closeAssignModal() {
             this.showAssignModal = false;
             this.selectedQuizId = null;
+        },
+
+        // INLINE RENAME METHODS
+        startRename(quiz) {
+            if (this.userRole !== 'teacher') return; // Only teachers can rename
+            this.editingQuizId = quiz.id;
+            this.editingQuizName = quiz.name || quiz.title || '';
+            // Focus the input after Vue renders it
+            this.$nextTick(() => {
+                const input = this.$refs.renameInput;
+                if (input) {
+                    // Handle array of refs in v-for
+                    const el = Array.isArray(input) ? input[0] : input;
+                    if (el) {
+                        el.focus();
+                        el.select();
+                    }
+                }
+            });
+        },
+
+        cancelRename() {
+            this.editingQuizId = null;
+            this.editingQuizName = '';
+        },
+
+        async saveQuizRename(quizId) {
+            if (!this.editingQuizId || this.editingQuizId !== quizId) return;
+
+            const newName = this.editingQuizName.trim();
+            const quiz = this.quizzes.find(q => q.id === quizId);
+            const oldName = quiz?.name || quiz?.title || '';
+
+            // If name is empty or unchanged, just cancel
+            if (!newName || newName === oldName) {
+                this.cancelRename();
+                return;
+            }
+
+            try {
+                const response = await authFetch(`${API_BASE_URL}/api/quiz/folders/${quizId}/rename`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: newName })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to rename quiz');
+                }
+
+                // Update the local quiz name
+                if (quiz) {
+                    quiz.name = newName;
+                    quiz.title = newName;
+                }
+
+                toast.success('Quiz renamed successfully!');
+            } catch (err) {
+                console.error('❌ Failed to rename quiz:', err);
+                toast.error(err.message || 'Failed to rename quiz. Please try again.');
+            } finally {
+                this.cancelRename();
+            }
         },
     },
     watch: {
@@ -1658,5 +1742,31 @@ export default {
     font-size: 0.85rem;
     color: #666;
     margin-bottom: 0.75rem;
+}
+
+/* Inline rename input */
+.quiz-title-input {
+    flex: 1;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #333;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid #66CC99;
+    border-radius: 4px;
+    outline: none;
+    min-width: 0;
+}
+
+.quiz-title-input:focus {
+    border-color: #0055B8;
+    box-shadow: 0 0 0 2px rgba(0, 85, 184, 0.1);
+}
+
+.quiz-title {
+    cursor: default;
+}
+
+.quiz-title:hover {
+    cursor: text;
 }
 </style>
