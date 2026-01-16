@@ -973,6 +973,89 @@ router.get("/search-questions", async (req, res) => {
   }
 });
 
+// PUT route to rename a paper (updates paper_name in all questions)
+router.put("/rename", requireTeacher, async (req, res) => {
+  const { old_paper_name, new_paper_name } = req.body;
+
+  if (!old_paper_name || !new_paper_name) {
+    return res.status(400).json({
+      error: "Both old_paper_name and new_paper_name are required"
+    });
+  }
+
+  const trimmedNewName = new_paper_name.trim();
+  if (!trimmedNewName) {
+    return res.status(400).json({
+      error: "New paper name cannot be empty"
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    console.log(`✏️ Renaming paper: "${old_paper_name}" to "${trimmedNewName}"`);
+
+    // Begin transaction
+    await client.query("BEGIN");
+
+    // Check if old paper exists
+    const existsCheck = await client.query(
+      "SELECT COUNT(*) as count FROM question WHERE paper_name = $1",
+      [old_paper_name]
+    );
+
+    if (existsCheck.rows[0].count === "0") {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        error: "Paper not found"
+      });
+    }
+
+    // Check if new paper name already exists (to avoid conflicts)
+    if (old_paper_name !== trimmedNewName) {
+      const conflictCheck = await client.query(
+        "SELECT COUNT(*) as count FROM question WHERE paper_name = $1",
+        [trimmedNewName]
+      );
+
+      if (conflictCheck.rows[0].count !== "0") {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "A paper with this name already exists"
+        });
+      }
+    }
+
+    // Update all questions with the new paper name
+    const updateResult = await client.query(
+      "UPDATE question SET paper_name = $1 WHERE paper_name = $2",
+      [trimmedNewName, old_paper_name]
+    );
+
+    // Commit transaction
+    await client.query("COMMIT");
+
+    console.log(`✅ Renamed paper "${old_paper_name}" to "${trimmedNewName}" (${updateResult.rowCount} questions updated)`);
+
+    res.json({
+      success: true,
+      message: `Paper renamed successfully`,
+      old_name: old_paper_name,
+      new_name: trimmedNewName,
+      questions_updated: updateResult.rowCount
+    });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error renaming paper:", err.message);
+    res.status(500).json({
+      error: `Failed to rename paper: ${err.message}`
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE route to delete a paper and all its questions
 router.delete("/delete/:paper_name", requireTeacher, async (req, res) => {
   const { paper_name } = req.params;

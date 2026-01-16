@@ -1020,15 +1020,20 @@ export default {
         },
 
         async saveQuizRename(quizId) {
-            if (!this.editingQuizId || this.editingQuizId !== quizId) return;
+            // Prevent double execution (Enter + blur both fire)
+            if (!this.editingQuizId) return;
+            if (this.editingQuizId !== quizId) return;
 
             const newName = this.editingQuizName.trim();
             const quiz = this.quizzes.find(q => q.id === quizId);
             const oldName = quiz?.name || quiz?.title || '';
 
-            // If name is empty or unchanged, just cancel
+            // Clear editing state immediately to prevent double calls
+            this.editingQuizId = null;
+            this.editingQuizName = '';
+
+            // If name is empty or unchanged, just return
             if (!newName || newName === oldName) {
-                this.cancelRename();
                 return;
             }
 
@@ -1056,8 +1061,6 @@ export default {
             } catch (err) {
                 console.error('❌ Failed to rename quiz:', err);
                 toast.error(err.message || 'Failed to rename quiz. Please try again.');
-            } finally {
-                this.cancelRename();
             }
         },
     },

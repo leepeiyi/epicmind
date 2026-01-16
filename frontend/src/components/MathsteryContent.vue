@@ -60,7 +60,22 @@
                 <div class="papers-grid">
                     <div v-for="paper in paginatedPapers" :key="paper.paper_name" class="paper-card">
                         <div class="paper-card-header">
-                            <span class="paper-name">{{ paper.paper_name }}</span>
+                            <input
+                                v-if="editingPaperName === paper.paper_name"
+                                v-model="editingPaperNewName"
+                                class="paper-name-input"
+                                @keyup.enter="savePaperRename(paper.paper_name)"
+                                @keyup.escape="cancelPaperRename"
+                                @blur="savePaperRename(paper.paper_name)"
+                                @click.stop
+                                autofocus
+                            />
+                            <span
+                                v-else
+                                class="paper-name"
+                                @dblclick.stop="startPaperRename(paper)"
+                                title="Double-click to rename"
+                            >{{ paper.paper_name }}</span>
                             <span v-if="paper.paper_type === 'exam'" class="paper-topic paper-type-exam">Exam</span>
                             <span v-else class="paper-topic">Topical</span>
                         </div>
@@ -348,7 +363,11 @@ export default {
             // New properties for paper type filter and quick select
             paperTypeFilter: 'all', // 'all', 'exam', 'topical'
             selectedQuestionIds: [], // Array of selected question IDs for quiz
-            randomCount: 5 // Default random selection count
+            randomCount: 5, // Default random selection count
+
+            // Inline paper rename
+            editingPaperName: null,
+            editingPaperNewName: ''
         };
     },
     computed: {
@@ -727,6 +746,70 @@ export default {
 
         isQuestionSelected(questionId) {
             return this.selectedQuestionIds.includes(questionId);
+        },
+
+        // Paper Rename Methods
+        startPaperRename(paper) {
+            this.editingPaperName = paper.paper_name;
+            this.editingPaperNewName = paper.paper_name;
+            this.$nextTick(() => {
+                const input = document.querySelector('.paper-name-input');
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            });
+        },
+
+        cancelPaperRename() {
+            this.editingPaperName = null;
+            this.editingPaperNewName = '';
+        },
+
+        async savePaperRename(oldPaperName) {
+            // Prevent double execution (Enter + blur both fire)
+            if (!this.editingPaperName) return;
+            if (this.editingPaperName !== oldPaperName) return;
+
+            const newName = this.editingPaperNewName.trim();
+
+            // Clear editing state immediately to prevent double calls
+            this.editingPaperName = null;
+            this.editingPaperNewName = '';
+
+            // If name is empty or unchanged, just return
+            if (!newName || newName === oldPaperName) {
+                return;
+            }
+
+            try {
+                const response = await authFetch(`${API_BASE_URL}/api/paper/rename`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        old_paper_name: oldPaperName,
+                        new_paper_name: newName
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to rename paper');
+                }
+
+                // Update the local paper name
+                const paper = this.allPapers.find(p => p.paper_name === oldPaperName);
+                if (paper) {
+                    paper.paper_name = newName;
+                }
+
+                toast.success('Paper renamed successfully!');
+            } catch (err) {
+                console.error('❌ Failed to rename paper:', err);
+                toast.error(err.message || 'Failed to rename paper. Please try again.');
+            }
         }
     }
 };
@@ -829,6 +912,32 @@ h1 {
     color: #333;
     font-size: 16px;
     word-break: break-word;
+    cursor: text;
+}
+
+.paper-name:hover {
+    background-color: rgba(102, 204, 153, 0.1);
+    border-radius: 4px;
+    padding: 0.1rem 0.25rem;
+    margin: -0.1rem -0.25rem;
+}
+
+.paper-name-input {
+    flex: 1;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid #66CC99;
+    border-radius: 4px;
+    outline: none;
+    min-width: 0;
+    width: 100%;
+}
+
+.paper-name-input:focus {
+    border-color: #0055B8;
+    box-shadow: 0 0 0 2px rgba(0, 85, 184, 0.1);
 }
 
 .exam-badge {
