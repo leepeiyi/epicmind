@@ -863,16 +863,26 @@ export default {
         handleInsertMarkdown(markdownImage) {
             if (!this.markdownContent || !this.selectedQuestionNumber) return;
 
-            const marker = `### Q${this.selectedQuestionNumber}`;
-            const parts = this.markdownContent.split(marker);
+            // Match the full question header line including topic label: ### Q1 (Topic)
+            const headerRegex = new RegExp(`(### Q${this.selectedQuestionNumber}[^\\n]*)`);
+            const match = this.markdownContent.match(headerRegex);
+
+            if (!match) {
+                toast.error(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
+                return;
+            }
+
+            const fullHeader = match[1]; // e.g., "### Q1 (Polynomials)"
+            const parts = this.markdownContent.split(fullHeader);
+
             if (parts.length < 2) {
                 toast.error(`Could not find question Q${this.selectedQuestionNumber} in markdown.`);
                 return;
             }
 
-            // Insert the image markdown right after the header
-            parts[1] = `\n\n${markdownImage}\n` + parts[1];
-            this.markdownContent = parts.join(marker);
+            // Insert the image markdown right after the full header line
+            parts[1] = `\n\n${markdownImage}` + parts[1];
+            this.markdownContent = parts.join(fullHeader);
         },
 
         async saveEditedMarkdown() {
