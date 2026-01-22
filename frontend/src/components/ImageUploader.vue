@@ -55,7 +55,7 @@
 </template>
 
 <script>
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { getToken } from '../config/api';
 import { toast } from 'vue-sonner';
 export default {
     name: 'ImageUploader',
@@ -154,6 +154,13 @@ export default {
                     reject(new Error('Network error occurred'));
                 });
                 xhr.open('POST', `${this.apiBaseUrl}/api/mathpix/image_to_s3`);
+
+                // Add authorization header
+                const token = getToken();
+                if (token) {
+                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                }
+
                 xhr.send(formData);
             });
         },
