@@ -733,7 +733,12 @@ export default {
             // Update the reactive questions array
             this.questions = updatedQuestions;
             console.log('✅ Finished processing questions');
-            
+
+            // Re-render MathJax for the segmented parts
+            this.$nextTick(() => {
+                this.processMathJax();
+            });
+
             // Save segmented questions back to database if any were processed
             if (needsSplitting) {
                 await this.saveSegmentedQuestions();
@@ -963,7 +968,29 @@ export default {
         },
 
         formatPartText(text) {
-            return text ? marked(text) : '';
+            if (!text) return '';
+
+            // Check if text contains LaTeX commands but missing $ delimiters
+            // Common patterns: \frac, \sqrt, \sum, ^{, _{, etc.
+            const latexPattern = /\\(frac|sqrt|sum|int|lim|prod|sin|cos|tan|log|ln|pi|theta|alpha|beta|gamma|delta|infty|cdot|times|div|pm|mp|leq|geq|neq|approx|equiv|subset|supset|in|notin|cup|cap|forall|exists|partial|nabla|degree|circ)|[\^_]\{/;
+
+            // If contains LaTeX but not already wrapped in $
+            if (latexPattern.test(text) && !text.includes('$')) {
+                // Wrap LaTeX expressions in parentheses with $ delimiters
+                // Pattern: find (...) containing LaTeX and wrap the content
+                text = text.replace(/\(([^()]*\\[a-zA-Z]+[^()]*)\)/g, '($$$1$$)');
+
+                // Also handle standalone LaTeX not in parentheses
+                text = text.replace(/(\\(?:frac|sqrt)\{[^}]+\}(?:\{[^}]+\})?)/g, (match) => {
+                    // Only wrap if not already wrapped
+                    if (!text.includes('$' + match) && !text.includes(match + '$')) {
+                        return '$' + match + '$';
+                    }
+                    return match;
+                });
+            }
+
+            return marked(text);
         },
 
         getOverallFeedback() {
