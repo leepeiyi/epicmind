@@ -605,6 +605,8 @@ router.get("/exists/:paper_name", async (req, res) => {
   } catch (err) {
     console.error("❌ DB check error:", err);
     res.status(500).json({ error: "Database error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -702,6 +704,7 @@ router.post("/add-manual-question", requireTeacher, async (req, res) => {
     );
 
     if (existingQuestion.rows.length > 0) {
+      client.release();
       return res.status(400).json({
         success: false,
         error: `Question ${question_number} already exists for paper ${paper_name}`,
@@ -1012,6 +1015,7 @@ router.put("/rename", requireTeacher, async (req, res) => {
 
     if (existsCheck.rows[0].count === "0") {
       await client.query("ROLLBACK");
+      client.release();
       return res.status(404).json({
         error: "Paper not found"
       });
@@ -1026,6 +1030,7 @@ router.put("/rename", requireTeacher, async (req, res) => {
 
       if (conflictCheck.rows[0].count !== "0") {
         await client.query("ROLLBACK");
+        client.release();
         return res.status(400).json({
           error: "A paper with this name already exists"
         });
@@ -1082,6 +1087,7 @@ router.delete("/delete/:paper_name", requireTeacher, async (req, res) => {
 
     if (questionCount === "0") {
       await client.query("ROLLBACK");
+      client.release();
       return res.status(404).json({
         success: false,
         error: "Paper not found"

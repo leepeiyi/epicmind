@@ -396,11 +396,11 @@ router.get("/cache-status", (req, res) => {
 router.post("/uploadSyllabus", requireTeacher, async (req, res) => {
   const { jsonData, subject, banding, level, paper_name } = req.body;
 
-  const client = await pool.connect();
-
   if (!jsonData || !subject || !banding || !level || !paper_name) {
     return res.status(400).json({ error: "Missing required fields." });
   }
+
+  const client = await pool.connect();
 
   try {
     const updates = await Promise.all(
