@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 
@@ -115,8 +116,26 @@ app.use("/api/flagged", flaggedQuestionsRoutes);
 const quizAttemptsRoutes = require("./routes/QuizAttempts/quizAttempts");
 app.use("/api/attempts", quizAttemptsRoutes);
 
-// Static files
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Static files - using sendFile for better path handling with special characters
+app.use("/uploads", (req, res, next) => {
+  try {
+    let decodedPath = decodeURIComponent(req.path);
+    // Remove trailing slash if present
+    if (decodedPath.endsWith('/') && decodedPath.length > 1) {
+      decodedPath = decodedPath.slice(0, -1);
+    }
+
+    const filePath = path.join(__dirname, "uploads", decodedPath);
+
+    // Check if file exists and serve it
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      return res.sendFile(filePath);
+    }
+    next();
+  } catch (e) {
+    next();
+  }
+});
 
 // FIXED: 404 handler for unknown routes (removed problematic '*' pattern)
 app.use((req, res) => {

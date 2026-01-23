@@ -202,7 +202,7 @@
 
                         <div v-if="currentQuestion.image_paths && currentQuestion.image_paths.length"
                             class="question-images">
-                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="image"
+                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="getImageUrl(image)"
                                 :alt="`Question ${currentQuestion.question_number} diagram ${index + 1}`"
                                 class="question-image" />
                         </div>
@@ -239,7 +239,7 @@
 
                         <div v-if="currentQuestion.image_paths && currentQuestion.image_paths.length"
                             class="question-images">
-                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="image"
+                            <img v-for="(image, index) in currentQuestion.image_paths" :key="index" :src="getImageUrl(image)"
                                 :alt="`Question ${currentQuestion.question_number} diagram ${index + 1}`"
                                 class="question-image" />
                         </div>
@@ -387,7 +387,7 @@
 import Navbar from '../components/Navbar.vue';
 import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { marked } from 'marked';
-import API_BASE_URL, { authFetch, getUser } from '../config/api.js';
+import API_BASE_URL, { authFetch, getUser, getAbsoluteImageUrl } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import VisualMathEditor from '../components/VisualMathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
@@ -569,6 +569,9 @@ export default {
         }
     },
     methods: {
+        getImageUrl(url) {
+            return getAbsoluteImageUrl(url);
+        },
         async fetchQuizData() {
             this.loading = true;
             this.error = null;

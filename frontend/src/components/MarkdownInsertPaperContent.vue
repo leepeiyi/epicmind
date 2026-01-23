@@ -136,7 +136,7 @@ Example format expected:
 import PaperDetails from './PaperDetails.vue';
 import EpicMindLoader from './EpicMindLoader.vue';
 import { marked } from 'marked';
-import API_BASE_URL, { authFetch } from '../config/api.js';
+import API_BASE_URL, { authFetch, processMarkdownImages } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -170,7 +170,9 @@ export default {
     },
     computed: {
         compiledPreviewMarkdown() {
-            return marked(this.previewMarkdown || '');
+            // Process image URLs to use absolute paths before compiling
+            const processedMarkdown = processMarkdownImages(this.previewMarkdown || '');
+            return marked(processedMarkdown);
         }
     },
     mounted() {

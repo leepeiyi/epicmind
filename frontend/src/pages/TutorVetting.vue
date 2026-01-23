@@ -404,7 +404,11 @@ export default {
                 return '';
             }
 
-            if (url.startsWith('/')) {
+            if (url.startsWith('/uploads')) {
+                // /uploads paths should go to the API server
+                url = API_BASE_URL + url;
+            } else if (url.startsWith('/')) {
+                // Other relative paths might be local assets
                 url = window.location.origin + url;
             } else if (!url.startsWith('http')) {
                 url = `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;

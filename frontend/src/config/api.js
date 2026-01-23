@@ -6,6 +6,44 @@ const API_BASE_URL = import.meta.env.PROD
 export default API_BASE_URL;
 
 /**
+ * Convert relative image URLs to absolute URLs with API base
+ * Handles /uploads/ paths and ensures proper URL encoding for special characters
+ */
+export function getAbsoluteImageUrl(url) {
+  if (!url) return url;
+
+  // If already absolute URL, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // If relative path starting with /uploads, prepend API base URL
+  if (url.startsWith('/uploads')) {
+    return `${API_BASE_URL}${url}`;
+  }
+
+  // For other relative paths, also prepend API base URL
+  if (url.startsWith('/')) {
+    return `${API_BASE_URL}${url}`;
+  }
+
+  return url;
+}
+
+/**
+ * Process markdown content to convert relative image URLs to absolute URLs
+ */
+export function processMarkdownImages(markdown) {
+  if (!markdown) return markdown;
+
+  // Replace relative image URLs in markdown syntax: ![alt](/uploads/...)
+  return markdown.replace(
+    /!\[(.*?)\]\((\/uploads\/[^)]+)\)/g,
+    (match, alt, url) => `![${alt}](${API_BASE_URL}${url})`
+  );
+}
+
+/**
  * Get auth token from localStorage or sessionStorage
  */
 export function getToken() {

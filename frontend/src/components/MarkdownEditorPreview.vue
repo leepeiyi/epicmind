@@ -128,6 +128,7 @@
 
 <script>
 import { marked } from 'marked';
+import { getAbsoluteImageUrl, processMarkdownImages } from '@/config/api.js';
 
 export default {
     name: 'MarkdownEditorPreview',
@@ -196,7 +197,7 @@ export default {
                     const isAnswer = label.toLowerCase().includes('answer');
                     if (isAnswer) {
                         answerKeyImages.push({
-                            url,
+                            url: getAbsoluteImageUrl(url),
                             label,
                             isAnswer: true,
                             globalIndex: globalAnswerImageIndex++
@@ -206,8 +207,9 @@ export default {
                     return fullMatch; // Keep non-answer images in the text
                 });
 
-                // Compile the text with question images intact, answer images removed
-                const compiledText = marked.parse(textWithAnswerImagesRemoved);
+                // Process image URLs to use absolute paths, then compile
+                const processedText = processMarkdownImages(textWithAnswerImagesRemoved);
+                const compiledText = marked.parse(processedText);
 
                 questions.push({
                     number,
@@ -507,10 +509,13 @@ export default {
         },
 
         getImageUrl(imgPath) {
+            let url;
             if (typeof imgPath === 'string') {
-                return imgPath;
+                url = imgPath;
+            } else {
+                url = imgPath.url || imgPath.image_url || imgPath;
             }
-            return imgPath.url || imgPath.image_url || imgPath;
+            return getAbsoluteImageUrl(url);
         },
 
         getImageType(imgPath) {

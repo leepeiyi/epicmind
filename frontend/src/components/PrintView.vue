@@ -19,7 +19,7 @@
                     <td>
                         <div v-html="formatQuestionText(q.question_text)"></div>
                         <div v-if="q.image_paths?.length">
-                            <img v-for="(img, index) in q.image_paths" :key="index" :src="img" class="print-diagram" />
+                            <img v-for="(img, index) in q.image_paths" :key="index" :src="getImageUrl(img)" class="print-diagram" />
                         </div>
                         <!-- Answer shown below question on same line as [Ans] -->
                         <div v-if="showAnswers && getAnswerFromQuestion(q)" class="inline-answer">
@@ -35,7 +35,7 @@
 <script>
 import { marked } from 'marked';
 import axios from 'axios';
-import API_BASE_URL from '../config/api.js';
+import API_BASE_URL, { getAbsoluteImageUrl } from '../config/api.js';
 
 export default {
     data() {
@@ -48,6 +48,9 @@ export default {
         };
     },
     methods: {
+        getImageUrl(url) {
+            return getAbsoluteImageUrl(url);
+        },
         getAnswerFromQuestion(question) {
             // The API returns answer_key which may be an object or JSON string
             if (question.answer_key) {

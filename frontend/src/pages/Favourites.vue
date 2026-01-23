@@ -180,7 +180,7 @@ import Navbar from '../components/Navbar.vue';
 import PaperDetails from '../components/PaperDetails.vue';
 import FavouriteButton from '../components/FavouriteButton.vue';
 import EpicMindLoader from '../components/EpicMindLoader.vue';
-import API_BASE_URL, { authFetch, getUser } from '../config/api.js';
+import API_BASE_URL, { authFetch, getUser, getAbsoluteImageUrl } from '../config/api.js';
 import { toast } from 'vue-sonner';
 
 export default {
@@ -556,10 +556,13 @@ export default {
             if (!Array.isArray(parsed)) return [];
 
             // Extract URL from objects if needed (handles both string URLs and {url, is_answer} objects)
+            // Then convert to absolute URLs
             return parsed.map(img => {
-                if (typeof img === 'string') return img;
-                if (typeof img === 'object' && img.url) return img.url;
-                return null;
+                let url;
+                if (typeof img === 'string') url = img;
+                else if (typeof img === 'object' && img.url) url = img.url;
+                else return null;
+                return getAbsoluteImageUrl(url);
             }).filter(Boolean);
         },
 
