@@ -128,7 +128,7 @@
 
 <script>
 import { marked } from 'marked';
-import { getAbsoluteImageUrl, processMarkdownImages } from '@/config/api.js';
+import { getAbsoluteImageUrl, processMarkdownImages } from '../config/api.js';
 
 export default {
     name: 'MarkdownEditorPreview',
