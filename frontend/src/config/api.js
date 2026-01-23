@@ -9,8 +9,17 @@ export default API_BASE_URL;
  * Convert relative image URLs to absolute URLs with API base
  * Handles /uploads/ paths and ensures proper URL encoding for special characters
  */
-export function getAbsoluteImageUrl(url) {
-  if (!url) return url;
+export function getAbsoluteImageUrl(input) {
+  if (!input) return input;
+
+  // Handle object input (e.g., {url: "...", is_answer: true})
+  let url = input;
+  if (typeof input === 'object') {
+    url = input.url || input.image_url || input.path || input.src || '';
+  }
+
+  // Ensure url is a string
+  if (typeof url !== 'string') return '';
 
   // If already absolute URL, return as-is
   if (url.startsWith('http://') || url.startsWith('https://')) {
