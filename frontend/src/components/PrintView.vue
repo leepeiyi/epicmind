@@ -35,7 +35,7 @@
 <script>
 import { marked } from 'marked';
 import axios from 'axios';
-import API_BASE_URL, { getAbsoluteImageUrl } from '../config/api.js';
+import API_BASE_URL, { getAbsoluteImageUrl, processMarkdownImages } from '../config/api.js';
 
 export default {
     data() {
@@ -109,8 +109,9 @@ export default {
                 }
             }
 
-            // Process with marked to convert markdown to HTML
-            return marked(text);
+            // Process image URLs and convert markdown to HTML
+            const processed = processMarkdownImages(text);
+            return marked(processed);
         },
 
         formatAnswerText(answer) {
@@ -150,7 +151,9 @@ export default {
                 }
             }
 
-            return marked(text);
+            // Process image URLs and convert markdown to HTML
+            const processed = processMarkdownImages(text);
+            return marked(processed);
         },
 
         renderMathJax() {
