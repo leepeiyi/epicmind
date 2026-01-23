@@ -387,7 +387,7 @@
 import Navbar from '../components/Navbar.vue';
 import EpicMindLoader from '../components/EpicMindLoader.vue';
 import { marked } from 'marked';
-import API_BASE_URL, { authFetch, getUser, getAbsoluteImageUrl } from '../config/api.js';
+import API_BASE_URL, { authFetch, getUser, getAbsoluteImageUrl, processMarkdownImages } from '../config/api.js';
 import { toast } from 'vue-sonner';
 import VisualMathEditor from '../components/VisualMathEditor.vue';
 import QuestionEditModal from '../components/QuestionEditModal.vue';
@@ -510,7 +510,9 @@ export default {
             return (this.currentQuestionIndex / this.questions.length) * 100;
         },
         formattedQuestionText() {
-            return this.currentQuestion.question_text ? marked(this.currentQuestion.question_text) : '';
+            const text = this.currentQuestion.question_text || '';
+            const processed = processMarkdownImages(text);
+            return marked(processed);
         },
         formattedAnswer() {
             try {
@@ -518,7 +520,9 @@ export default {
                     ? JSON.parse(this.currentQuestion.answer_key)
                     : this.currentQuestion.answer_key;
 
-                return parsed.correct_answer ? marked(parsed.correct_answer) : '';
+                const answer = parsed.correct_answer || '';
+                const processed = processMarkdownImages(answer);
+                return marked(processed);
             } catch {
                 return '';
             }
