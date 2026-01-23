@@ -31,16 +31,25 @@ export function getAbsoluteImageUrl(url) {
 }
 
 /**
- * Process markdown content to convert relative image URLs to absolute URLs
+ * Process markdown/HTML content to convert relative image URLs to absolute URLs
+ * Handles both markdown syntax ![alt](url) and HTML <img src="url">
  */
-export function processMarkdownImages(markdown) {
-  if (!markdown) return markdown;
+export function processMarkdownImages(content) {
+  if (!content) return content;
 
   // Replace relative image URLs in markdown syntax: ![alt](/uploads/...)
-  return markdown.replace(
+  let processed = content.replace(
     /!\[(.*?)\]\((\/uploads\/[^)]+)\)/g,
     (match, alt, url) => `![${alt}](${API_BASE_URL}${url})`
   );
+
+  // Replace relative image URLs in HTML img tags: <img src="/uploads/...">
+  processed = processed.replace(
+    /<img([^>]*)\ssrc=["'](\/uploads\/[^"']+)["']([^>]*)>/gi,
+    (match, before, url, after) => `<img${before} src="${API_BASE_URL}${url}"${after}>`
+  );
+
+  return processed;
 }
 
 /**
