@@ -30,8 +30,11 @@ router.get("/recent", async (req, res) => {
 });
 
 router.get("/all-papers", async (req, res) => {
+  console.log("📥 Fetching all papers...");
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
+    console.log("✅ Database connected for all-papers");
 
     const result = await client.query(`
       SELECT 
@@ -52,9 +55,12 @@ router.get("/all-papers", async (req, res) => {
     `);
 
     client.release();
+    console.log(`✅ Found ${result.rows.length} papers`);
     res.json({ papers: result.rows });
   } catch (err) {
     console.error("❌ Failed to fetch all papers:", err.message);
+    console.error("❌ Full error:", err);
+    if (client) client.release();
     res.status(500).json({ error: "Internal server error" });
   }
 });
