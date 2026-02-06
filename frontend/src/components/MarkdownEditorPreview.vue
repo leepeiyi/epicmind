@@ -550,13 +550,33 @@ export default {
                 // Get content for this question only
                 const questionContent = afterHeader.substring(0, nextQuestionIndex);
 
-                // Add image before the answer if exists, otherwise at the end
+                // Find the --- divider within this question's content
+                const dividerMatch = questionContent.match(/\n---+\s*$/);
+                const dividerIndex = dividerMatch ? questionContent.lastIndexOf(dividerMatch[0]) : -1;
+
                 let newQuestionContent;
-                if (questionContent.includes('**Answer:**')) {
+
+                if (dividerIndex !== -1) {
+                    // Insert image BEFORE the --- divider
+                    const beforeDivider = questionContent.substring(0, dividerIndex);
+                    const dividerAndAfter = questionContent.substring(dividerIndex);
+
+                    // Check if there's an **Answer:** section before the divider
+                    if (beforeDivider.includes('**Answer:**')) {
+                        const beforeAnswer = beforeDivider.split('**Answer:**')[0];
+                        const afterAnswer = '**Answer:**' + beforeDivider.split('**Answer:**')[1];
+                        newQuestionContent = beforeAnswer + '\n\n' + imageMarkdown + '\n\n' + afterAnswer + dividerAndAfter;
+                    } else {
+                        // Add image at the end of content, before the divider
+                        newQuestionContent = beforeDivider + '\n\n' + imageMarkdown + dividerAndAfter;
+                    }
+                } else if (questionContent.includes('**Answer:**')) {
+                    // No divider, but has answer - insert before answer
                     const beforeAnswer = questionContent.split('**Answer:**')[0];
                     const afterAnswer = '**Answer:**' + questionContent.split('**Answer:**')[1];
                     newQuestionContent = beforeAnswer + '\n\n' + imageMarkdown + '\n\n' + afterAnswer;
                 } else {
+                    // No divider, no answer - add at the end
                     newQuestionContent = questionContent + '\n\n' + imageMarkdown;
                 }
 
