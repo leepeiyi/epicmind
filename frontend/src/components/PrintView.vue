@@ -298,4 +298,30 @@ export default {
 .answer-label {
     color: #e65100;
 }
+
+/* Print-specific styles to prevent blank spaces */
+@media print {
+    .print-wrapper {
+        padding: 1rem;
+    }
+
+    .print-table tr {
+        page-break-inside: avoid;
+    }
+
+    .print-table td {
+        page-break-inside: avoid;
+    }
+
+    .print-diagram {
+        page-break-inside: avoid;
+        max-height: 200px;
+    }
+
+    /* Prevent blank pages */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}
 </style>
