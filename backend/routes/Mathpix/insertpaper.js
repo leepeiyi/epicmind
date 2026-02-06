@@ -442,7 +442,8 @@ router.post("/update-question-details", requireTeacher, async (req, res) => {
       if (questionStartIndex !== -1) {
         let questionEndIndex = lines.length;
 
-        // Find the **Answer:** line to know where to stop
+        // Find the **Answer:** line or multiple choice options to know where to stop
+        // IMPORTANT: Keep images in question_text - don't strip them
         for (let i = questionStartIndex + 1; i < lines.length; i++) {
           const line = lines[i].trim();
 
@@ -450,31 +451,6 @@ router.post("/update-question-details", requireTeacher, async (req, res) => {
           if (line.match(/^\*\*Answer:\s*/)) {
             questionEndIndex = i;
             break;
-          }
-
-          // Also stop at images if they appear before answers
-          if (line.match(/^!\[.*?\]/)) {
-            // Check if this image is part of the question or separate
-            // If there are more content lines after, it might be part of the question
-            let hasMoreContent = false;
-            for (let j = i + 1; j < lines.length; j++) {
-              const nextLine = lines[j].trim();
-              if (
-                nextLine &&
-                !nextLine.match(/^\*\*Answer:\s*/) &&
-                !nextLine.match(/^!\[.*?\]/)
-              ) {
-                hasMoreContent = true;
-                break;
-              }
-              if (nextLine.match(/^\*\*Answer:\s*/)) {
-                break;
-              }
-            }
-            if (!hasMoreContent) {
-              questionEndIndex = i;
-              break;
-            }
           }
 
           // Stop at multiple choice options (- **A**, - **B**, etc.)
