@@ -302,16 +302,35 @@ export default {
 /* Print-specific styles to prevent blank spaces */
 @media print {
     .print-wrapper {
-        padding: 0.5rem;
+        padding: 0;
         margin: 0;
     }
 
     .print-header {
         margin-bottom: 0.5rem;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+
+    .print-logo {
+        width: 60px !important;
+        height: auto;
+    }
+
+    .print-header h2 {
+        font-size: 14px;
+        margin: 0.25rem 0;
+    }
+
+    .print-header p {
+        font-size: 11px;
+        margin: 0;
     }
 
     .print-table {
         width: 100%;
+        page-break-before: avoid !important;
+        break-before: avoid !important;
     }
 
     .print-table tr {
@@ -351,7 +370,7 @@ export default {
     }
 
     /* Remove any unnecessary margins */
-    body {
+    html, body {
         margin: 0 !important;
         padding: 0 !important;
     }
