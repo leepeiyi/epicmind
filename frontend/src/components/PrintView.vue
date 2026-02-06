@@ -18,8 +18,9 @@
                     <td>{{ i + 1 }}</td>
                     <td>
                         <div v-html="formatQuestionText(q.question_text)"></div>
-                        <div v-if="q.image_paths?.length">
-                            <img v-for="(img, index) in q.image_paths" :key="index" :src="getImageUrl(img)" class="print-diagram" />
+                        <!-- Only show image_paths images that are NOT already in question_text -->
+                        <div v-if="getUnusedImagePaths(q).length">
+                            <img v-for="(img, index) in getUnusedImagePaths(q)" :key="index" :src="getImageUrl(img)" class="print-diagram" />
                         </div>
                         <!-- Answer shown below question on same line as [Ans] -->
                         <div v-if="showAnswers && getAnswerFromQuestion(q)" class="inline-answer">
@@ -50,6 +51,18 @@ export default {
     methods: {
         getImageUrl(url) {
             return getAbsoluteImageUrl(url);
+        },
+
+        // Filter out images from image_paths that are already in question_text
+        getUnusedImagePaths(question) {
+            if (!question.image_paths?.length) return [];
+            const questionText = question.question_text || '';
+
+            return question.image_paths.filter(img => {
+                const imgUrl = typeof img === 'string' ? img : (img.url || '');
+                // Check if this image URL is already referenced in question_text
+                return !questionText.includes(imgUrl);
+            });
         },
         getAnswerFromQuestion(question) {
             // The API returns answer_key which may be an object or JSON string
