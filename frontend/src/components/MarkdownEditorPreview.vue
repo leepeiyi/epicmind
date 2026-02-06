@@ -533,18 +533,38 @@ export default {
             const imageLabel = imageType === 'Answer Key' ? 'AnswerKey' : 'Diagram';
             const imageMarkdown = `![${imageLabel}](${imageUrl})`;
 
-            // Find the question in markdown and add the image
-            const questionMarker = `### Q${questionNumber}`;
-            const parts = this.modelValue.split(questionMarker);
-            
-            if (parts.length >= 2) {
-                // Add image after the question header but before the answer
-                const beforeAnswer = parts[1].split('**Answer:**')[0];
-                const afterAnswer = parts[1].includes('**Answer:**') ? '\n\n**Answer:**' + parts[1].split('**Answer:**')[1] : '';
-                
-                parts[1] = beforeAnswer + '\n\n' + imageMarkdown + '\n' + afterAnswer;
-                const newContent = parts.join(questionMarker);
-                
+            // Find the question in markdown using regex to match exact question number
+            // Use word boundary approach: ### Q1 ( but not ### Q10 or ### Q11
+            const questionPattern = new RegExp(`(### Q${questionNumber} \\([^)]+\\))`, 'g');
+            const match = this.modelValue.match(questionPattern);
+
+            if (match && match[0]) {
+                const questionHeader = match[0];
+                const headerIndex = this.modelValue.indexOf(questionHeader);
+                const afterHeader = this.modelValue.substring(headerIndex + questionHeader.length);
+
+                // Find where the next question starts (### Q followed by digit)
+                const nextQuestionMatch = afterHeader.match(/\n### Q\d+ \(/);
+                const nextQuestionIndex = nextQuestionMatch ? afterHeader.indexOf(nextQuestionMatch[0]) : afterHeader.length;
+
+                // Get content for this question only
+                const questionContent = afterHeader.substring(0, nextQuestionIndex);
+
+                // Add image before the answer if exists, otherwise at the end
+                let newQuestionContent;
+                if (questionContent.includes('**Answer:**')) {
+                    const beforeAnswer = questionContent.split('**Answer:**')[0];
+                    const afterAnswer = '**Answer:**' + questionContent.split('**Answer:**')[1];
+                    newQuestionContent = beforeAnswer + '\n\n' + imageMarkdown + '\n\n' + afterAnswer;
+                } else {
+                    newQuestionContent = questionContent + '\n\n' + imageMarkdown;
+                }
+
+                // Reconstruct the markdown
+                const beforeQuestion = this.modelValue.substring(0, headerIndex);
+                const afterQuestion = this.modelValue.substring(headerIndex + questionHeader.length + nextQuestionIndex);
+                const newContent = beforeQuestion + questionHeader + newQuestionContent + afterQuestion;
+
                 this.$emit('update:modelValue', newContent);
                 this.$emit('image-added', {
                     questionNumber,
@@ -552,8 +572,10 @@ export default {
                     imageType,
                     imageIndex
                 });
-                
+
                 console.log(`✅ Added image to Q${questionNumber}`);
+            } else {
+                console.error(`❌ Could not find Q${questionNumber} in markdown`);
             }
         },
 
