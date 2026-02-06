@@ -302,26 +302,58 @@ export default {
 /* Print-specific styles to prevent blank spaces */
 @media print {
     .print-wrapper {
-        padding: 1rem;
+        padding: 0.5rem;
+        margin: 0;
+    }
+
+    .print-header {
+        margin-bottom: 0.5rem;
+    }
+
+    .print-table {
+        width: 100%;
     }
 
     .print-table tr {
         page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .print-table td {
-        page-break-inside: avoid;
+        padding: 0.5rem;
     }
 
+    /* Make images smaller to fit better on page */
     .print-diagram {
-        page-break-inside: avoid;
-        max-height: 200px;
+        max-width: 180px !important;
+        max-height: 150px !important;
+        margin: 0.25rem;
+    }
+
+    /* Images inside question text (markdown) */
+    .print-table td img {
+        max-width: 180px !important;
+        max-height: 150px !important;
+        display: inline-block;
+        vertical-align: top;
+        margin: 0.25rem;
+    }
+
+    /* Allow images to sit side by side */
+    .print-table td > div {
+        display: inline;
     }
 
     /* Prevent blank pages */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+    }
+
+    /* Remove any unnecessary margins */
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
     }
 }
 </style>
